@@ -4,9 +4,10 @@
 
 ---
 
-> [!IMPORTANT]
-> **🚀 Google Antigravity 專用技能 (Antigravity Exclusive Skill)**  
-> 本工具套件是專為 **Google Antigravity Agent** 原生打造的技能（深度依賴 Antigravity 的 1M Context 多模態影片分析能力與 Skill 載入規範）。**目前無法運行於 Claude Code、OpenAI Codex、Cursor 等其他 AI 程式助手或 Agent 工具**，目前僅支援 Antigravity。
+> [!NOTE]
+> **🚀 原生設計與平台支援說明 (Platform Support & Compatibility)**  
+> 本工具套件最初是專為 **Google Antigravity Agent** 原生設計並完成完整端到端驗證（深度發揮 1M Context 多模態影片分析與對話剪輯能力）。  
+> 為了提升開放性，本專案已採用 **[Agent Plugins 1.0 規範](https://agent-plugins.org/specification)** 進行標準化封裝，理論上支援符合該規範的 Agent 客戶端（如 **OpenAI Codex 桌面版** 等）直接安裝；但目前尚未在所有第三方平台上完成全面測試。
 
 ---
 
@@ -14,7 +15,7 @@
 
 ---
 
-## 📦 Antigravity 匯入與安裝結構 (Antigravity Skill Import)
+## 📦 安裝與匯入說明 (Installation & Setup)
 
 本專案已完全適配 Antigravity Skill 標準結構，可直接 Clone 至 Antigravity 技能目錄下無縫啟用：
 

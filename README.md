@@ -4,9 +4,10 @@
 
 ---
 
-> [!IMPORTANT]
-> **🚀 Google Antigravity Exclusive Skill**  
-> This suite is custom-engineered natively for **Google Antigravity Agent** (deeply relying on Antigravity's native 1M multimodal video reasoning and skill architecture). **It currently CANNOT run on other AI coding agents or assistants such as Claude Code, OpenAI Codex, Cursor, etc.** Currently Antigravity is exclusively supported.
+> [!NOTE]
+> **🚀 Design Focus & Platform Compatibility Notice**  
+> This toolkit was originally designed and fully verified for the **Google Antigravity Agent** (leveraging native 1M context multimodal video understanding and conversational editing workflows).  
+> To maximize interoperability, this repository is packaged according to the **[Agent Plugins 1.0 Specification](https://agent-plugins.org/specification)**, allowing conformant clients (such as **OpenAI Codex Desktop**) to discover and install it. Please note that comprehensive testing across all third-party platforms is ongoing.
 
 ---
 
@@ -14,7 +15,7 @@ Modular, high-performance multi-camera video processing pipeline and AI rough-cu
 
 ---
 
-## 📦 Antigravity Skill Import & Installation
+## 📦 Installation & Setup
 
 This repository adheres strictly to the Antigravity Skill specification and can be cloned directly into your Antigravity skills directory:
 

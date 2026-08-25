@@ -4,9 +4,10 @@
 
 ---
 
-> [!IMPORTANT]
-> **🚀 Google Antigravity 専用スキル (Antigravity Exclusive Skill)**  
-> 本ツールキットは、**Google Antigravity Agent** 向けにネイティブ設計された専用スキルです（Antigravity の 1M マルチモーダル映像認識能力およびスキル仕様に依存）。**Claude Code、OpenAI Codex、Cursor などの他の AI コーディングアシスタントやエージェントツールでは動作しません**。現時点では Antigravity のみをサポートしています。
+> [!NOTE]
+> **🚀 設計方針およびプラットフォーム互換性について (Platform Support & Compatibility)**  
+> 本ツールキットは、当初 **Google Antigravity Agent** 向けにネイティブ設計され、完全なエンドツーエンド検証が行われています（1M コンテキストのマルチモーダル動画分析および対話型編集機能を最大活用）。  
+> 相互運用性を高めるため、本プロジェクトは **[Agent Plugins 1.0 仕様](https://agent-plugins.org/specification)** に準拠してパッケージ化されており、対応クライアント（**OpenAI Codex デスクトップ版**など）でもインストール可能です。なお、現時点で全サードパーティプラットフォームでの網羅的な動作確認は完了していません。
 
 ---
 
@@ -14,7 +15,7 @@
 
 ---
 
-## 📦 Antigravity スキル導入＆インストール
+## 📦 インストール＆導入ガイド (Installation & Setup)
 
 Antigravity Skill 仕様に準拠しており、Antigravity スキルディレクトリに直接クローンして使用できます：
 

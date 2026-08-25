@@ -4,9 +4,10 @@
 
 ---
 
-> [!IMPORTANT]
-> **🚀 Google Antigravity 전용 스킬 (Antigravity Exclusive Skill)**  
-> 본 툴킷은 **Google Antigravity Agent** 전용으로 네이티브 설계된 스킬입니다(Antigravity의 1M 멀티모달 비디오 인식 기능 및 스킬 아키텍처 의존). **현재 Claude Code, OpenAI Codex, Cursor 등 다른 AI 코딩 도구 및 에이전트에서는 실행할 수 없습니다**. 현재 Antigravity만 전적으로 지원합니다.
+> [!NOTE]
+> **🚀 설계 배경 및 플랫폼 호환성 안내 (Platform Support & Compatibility)**  
+> 본 툴킷은 원래 **Google Antigravity Agent**를 위해 네이티브로 설계 및 엔드투엔드 검증되었습니다(1M 컨텍스트 멀티모달 비디오 분석 및 대화형 편집 워크플로우 활용).  
+> 상호 운용성을 극대화하기 위해 본 프로젝트는 **[Agent Plugins 1.0 표준 규격](https://agent-plugins.org/specification)**에 맞춰 패키징되어 규격을 준수하는 에이전트 클라이언트(**OpenAI Codex 데스크톱** 등)에서도 설치할 수 있습니다. 단, 모든 서드파티 플랫폼에 대한 전수 테스트는 아직 진행 중입니다.
 
 ---
 
@@ -14,7 +15,7 @@
 
 ---
 
-## 📦 Antigravity 스킬 임포트 및 설치
+## 📦 설치 및 도입 가이드 (Installation & Setup)
 
 Antigravity Skill 표준 규격을 준수하며, Antigravity 스킬 디렉터리로 바로 복제하여 사용할 수 있습니다:
 
