@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity 專用技能 (Antigravity Exclusive Skill)**  
-> 本工具套件是專為 **Google Antigravity Agent 架構（基於 Gemini 3.7 Flash 1M 多模態長上下文）** 量身打造的原生技能。目前**不相容於其他 Agent 框架**（如 LangChain、CrewAI、AutoGen 等）。
+> 本工具套件是專為 **Google Antigravity Agent** 原生打造的技能（深度依賴 Antigravity 的 1M Context 多模態影片分析能力與 Skill 載入規範）。**目前無法運行於 Claude Code、OpenAI Codex、Cursor 等其他 AI 程式助手或 Agent 工具**，目前僅支援 Antigravity。
 
 ---
 

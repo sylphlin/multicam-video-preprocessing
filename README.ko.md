@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity 전용 스킬 (Antigravity Exclusive Skill)**  
-> 본 툴킷은 **Google Antigravity Agent 프레임워크(Gemini 3.7 Flash 1M 멀티모달 롱 컨텍스트 기반)**를 위해 네이티브로 설계된 전용 스킬입니다. 현재 **다른 에이전트 프레임워크(LangChain, CrewAI, AutoGen 등)와는 호환되지 않습니다**.
+> 본 툴킷은 **Google Antigravity Agent** 전용으로 네이티브 설계된 스킬입니다(Antigravity의 1M 멀티모달 비디오 인식 기능 및 스킬 아키텍처 의존). **현재 Claude Code, OpenAI Codex, Cursor 등 다른 AI 코딩 도구 및 에이전트에서는 실행할 수 없습니다**. 현재 Antigravity만 전적으로 지원합니다。
 
 ---
 

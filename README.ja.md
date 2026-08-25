@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity 専用スキル (Antigravity Exclusive Skill)**  
-> 本ツールキットは、**Google Antigravity Agent フレームワーク（Gemini 3.7 Flash 1M マルチモーダル長文コンテキスト）** 向けにネイティブ設計された専用スキルです。現在、**他のエージェントフレームワーク（LangChain、CrewAI、AutoGen など）とは互換性がありません**。
+> 本ツールキットは、**Google Antigravity Agent** 向けにネイティブ設計された専用スキルです（Antigravity の 1M マルチモーダル映像認識能力およびスキル仕様に依存）。**Claude Code、OpenAI Codex、Cursor などの他の AI コーディングアシスタントやエージェントツールでは動作しません**。現時点では Antigravity のみをサポートしています。
 
 ---
 

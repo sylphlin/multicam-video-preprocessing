@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity Exclusive Skill**  
-> This suite is custom-engineered natively for the **Google Antigravity Agent Framework (Gemini 3.7 Flash 1M multimodal context)**. It is currently **NOT compatible with other agent frameworks** (e.g. LangChain, CrewAI, AutoGen, etc.).
+> This suite is custom-engineered natively for **Google Antigravity Agent** (deeply relying on Antigravity's native 1M multimodal video reasoning and skill architecture). **It currently CANNOT run on other AI coding agents or assistants such as Claude Code, OpenAI Codex, Cursor, etc.** Currently Antigravity is exclusively supported.
 
 ---
 
