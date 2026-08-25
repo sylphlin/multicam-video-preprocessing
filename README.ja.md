@@ -1,10 +1,43 @@
-# マルチカメラ映像前処理＆AI編集スイート (Multicam Video Preprocessing & AI Editing Suite)
+# マルチカメラ映像智慧処理＆AI編集スイート (Multicam Video Pipeline & AI Editing Suite)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
-大規模マルチモーダルAIモデル（Gemini 3.7 Flash 1Mトークンコンテキスト）およびプロフェッショナル向けNLE（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）に最適化された、高効率・モジュール式マルチカメラ映像前処理＆AI編集ツールキットです。
+> [!IMPORTANT]
+> **🚀 Google Antigravity 専用スキル (Antigravity Exclusive Skill)**  
+> 本ツールキットは、**Google Antigravity Agent フレームワーク（Gemini 3.7 Flash 1M マルチモーダル長文コンテキスト）** 向けにネイティブ設計された専用スキルです。現在、**他のエージェントフレームワーク（LangChain、CrewAI、AutoGen など）とは互換性がありません**。
+
+---
+
+大規模マルチモーダルAIモデル（Gemini 3.7 Flash 1Mトークンコンテキスト）およびプロフェッショナル向けNLE（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）に最適化された、高効率・モジュール式マルチカメラ映像処理パイプライン＆AI編集ツールキットです。
+
+---
+
+## 📦 Antigravity スキル導入＆インストール
+
+Antigravity Skill 仕様に準拠しており、Antigravity スキルディレクトリに直接クローンして使用できます：
+
+```bash
+# Antigravity Skills ディレクトリに直接クローン
+git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+```
+
+### 📁 Skill ディレクトリ構成
+```text
+multicam-video-preprocessing/
+├── SKILL.md                  # Antigravity スキル定義＆分岐判断ルール
+├── assets/                   # Antigravity プロンプト資産 (Prompt Assets)
+│   └── edl_interview_template.md  # 2台カメラインタビュー用プロンプトテンプレート
+├── scripts/                  # 実行スクリプト＆処理モジュール
+│   ├── multicam_pipeline.py  # Step 1: 音声同期、EBU R128、チャプター分割、グリッド合成
+│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL 編集決定生成
+│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML タイムラインエクスポート (⭐ 主要)
+│   ├── edl_to_video.py       # Step 3B: ハードウェアアクセラレーション直接動画出力 (🎬 次要)
+│   ├── concat_videos.py      # Step 4B: 全編無損失ストリーム結合 (🎬 次要)
+│   └── modules/              # 内部音声・映像アルゴリズムモジュール
+└── README.md
+```
 
 ---
 

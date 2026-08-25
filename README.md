@@ -1,10 +1,43 @@
-# Multicam Video Preprocessing & AI Editing Suite
+# Multi-Camera Video Pipeline & AI Editing Suite
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
-A high-performance, modular multi-camera (2 to 6+ cameras) audio-visual preprocessing and AI editing pipeline designed for Large Multimodal Models (Gemini 3.7 Flash 1M Context Window) and Professional NLEs (DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro).
+> [!IMPORTANT]
+> **🚀 Google Antigravity Exclusive Skill**  
+> This suite is custom-engineered natively for the **Google Antigravity Agent Framework (Gemini 3.7 Flash 1M multimodal context)**. It is currently **NOT compatible with other agent frameworks** (e.g. LangChain, CrewAI, AutoGen, etc.).
+
+---
+
+Modular, high-performance multi-camera video processing pipeline and AI rough-cut suite optimized for large multimodal models (Gemini 3.7 Flash with 1M Token Context) and professional NLE editing software (DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro).
+
+---
+
+## 📦 Antigravity Skill Import & Installation
+
+This repository adheres strictly to the Antigravity Skill specification and can be cloned directly into your Antigravity skills directory:
+
+```bash
+# Clone directly into Antigravity Skills directory
+git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+```
+
+### 📁 Skill Directory Structure
+```text
+multicam-video-preprocessing/
+├── SKILL.md                  # Antigravity skill specification & branching decision rules
+├── assets/                   # Antigravity prompt assets
+│   └── edl_interview_template.md  # Dual-camera interview prompt template
+├── scripts/                  # Executable CLI scripts & processing modules
+│   ├── multicam_pipeline.py  # Step 1: Time sync, EBU R128, auto-split, synced masters, grid merge
+│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL generation
+│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
+│   ├── edl_to_video.py       # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
+│   ├── concat_videos.py      # Step 4B: Full episode lossless concat (🎬 Secondary)
+│   └── modules/              # Internal audiovisual algorithms
+└── README.md
+```
 
 ---
 

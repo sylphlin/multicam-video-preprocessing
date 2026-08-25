@@ -1,10 +1,43 @@
-# 멀티카메라 영상 전처리 및 AI 편집 스위트 (Multicam Video Preprocessing & AI Editing Suite)
+# 멀티카메라 영상 파이프라인 및 AI 편집 스위트 (Multicam Video Pipeline & AI Editing Suite)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
-대규모 멀티모달 AI 모델(Gemini 3.7 Flash 1M 컨텍스트 윈도우) 및 전문 NLE(DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro)에 최적화된 고성능 모듈형 멀티카메라 영상 전처리 및 AI 편집 툴킷입니다.
+> [!IMPORTANT]
+> **🚀 Google Antigravity 전용 스킬 (Antigravity Exclusive Skill)**  
+> 본 툴킷은 **Google Antigravity Agent 프레임워크(Gemini 3.7 Flash 1M 멀티모달 롱 컨텍스트 기반)**를 위해 네이티브로 설계된 전용 스킬입니다. 현재 **다른 에이전트 프레임워크(LangChain, CrewAI, AutoGen 등)와는 호환되지 않습니다**.
+
+---
+
+대규모 멀티모달 AI 모델(Gemini 3.7 Flash 1M 컨텍스트 윈도우) 및 전문 NLE(DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro)에 최적화된 고성능 모듈형 멀티카메라 영상 처리 파이프라인 및 AI 편집 툴킷입니다.
+
+---
+
+## 📦 Antigravity 스킬 임포트 및 설치
+
+Antigravity Skill 표준 규격을 준수하며, Antigravity 스킬 디렉터리로 바로 복제하여 사용할 수 있습니다:
+
+```bash
+# Antigravity Skills 디렉터리로 직접 Clone
+git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+```
+
+### 📁 Skill 디렉토리 구조
+```text
+multicam-video-preprocessing/
+├── SKILL.md                  # Antigravity 스킬 규격 및 분기 판단 규칙
+├── assets/                   # Antigravity 프롬프트 에셋 (Prompt Assets)
+│   └── edl_interview_template.md  # 2대 카메라 인터뷰 프롬프트 템플릿
+├── scripts/                  # 실행 스크립트 및 처리 모듈
+│   ├── multicam_pipeline.py  # Step 1: 오디오 동기화, EBU R128, 챕터 분할, 그리드 합성
+│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL 편집 결정 생성
+│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML 타임라인 내보내기 (⭐ 주요 경로)
+│   ├── edl_to_video.py       # Step 3B: 하드웨어 가속 직접 영상 렌더링 (🎬 차선 경로)
+│   ├── concat_videos.py      # Step 4B: 전체 무손실 스트림 결합 (🎬 차선 경로)
+│   └── modules/              # 내부 영상/오디오 핵심 알고리즘
+└── README.md
+```
 
 ---
 

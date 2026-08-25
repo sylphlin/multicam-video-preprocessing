@@ -1,10 +1,43 @@
-# 多机位视频预处理与 AI 剪辑套件 (Multicam Video Preprocessing & AI Editing Suite)
+# 多机位视频智慧处理与 AI 剪辑套件 (Multicam Video Pipeline & AI Editing Suite)
 
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
-高性能、模块化的多机位（2、4、6 乃至 N 机位）音视频预处理与 AI 剪辑工具库，专为大语言/多模态模型（Gemini 3.7 Flash 1M Context Window）与专业剪辑软件（DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro）设计。
+> [!IMPORTANT]
+> **🚀 Google Antigravity 专属技能 (Antigravity Exclusive Skill)**  
+> 本工具套件专为 **Google Antigravity Agent 架构（基于 Gemini 3.7 Flash 1M 多模态长上下文）** 量身定制。目前**不兼容于其他 Agent 框架**（如 LangChain、CrewAI、AutoGen 等）。
+
+---
+
+本专案为针对大语言模型（Gemini 3.7 Flash 1M Token Context）与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多机位（2~6 机）视频智慧处理管线与 AI 粗剪套件。
+
+---
+
+## 📦 Antigravity 导入与安装结构 (Antigravity Skill Import)
+
+本专案已完全适配 Antigravity Skill 标准结构，可直接 Clone 至 Antigravity 技能目录下无缝启用：
+
+```bash
+# 直接复制至 Antigravity Skills 目录
+git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+```
+
+### 📁 Skill 文件结构
+```text
+multicam-video-preprocessing/
+├── SKILL.md                  # Antigravity 技能规范与分流决策指引
+├── assets/                   # Antigravity 提示词资产 (Prompt Assets)
+│   └── edl_interview_template.md  # 双机访谈提示词样板
+├── scripts/                  # 核心执行脚本与处理模块
+│   ├── multicam_pipeline.py  # Step 1: 多机时间同步、音量标准化、分段与网格合成
+│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL 决策生成
+│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML 时间线导出 (⭐ 主路径)
+│   ├── edl_to_video.py       # Step 3B: 硬件加速直接渲染成片 (🎬 次路径)
+│   ├── concat_videos.py      # Step 4B: 全集无损拼接成片 (🎬 次路径)
+│   └── modules/              # 内部音视频核心算法库
+└── README.md
+```
 
 ---
 
