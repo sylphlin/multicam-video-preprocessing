@@ -5,7 +5,7 @@ Uploads multi-camera / multi-in-one merged video to Gemini File API,
 applies the editable EDL Prompt Template, and extracts standard EDL CSV + Trimming Report.
 
 Default Model: gemini-3.7-flash (or customizable via --model)
-Prompt Assets : templates/edl_interview_template.md
+Prompt Assets : assets/edl_interview_template.md
 """
 
 import argparse
@@ -23,9 +23,7 @@ import urllib.request
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "edl_interview_template.md"),
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "edl_interview_template.md"),
     os.path.expanduser("~/.gemini/config/skills/multicam-video-preprocessing/assets/edl_interview_template.md"),
-    os.path.expanduser("~/.gemini/config/skills/multicam-video-preprocessing/templates/edl_interview_template.md"),
     os.path.expanduser("~/.gemini/config/skills/gemini-edl-generation/assets/edl_interview_template.md"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "edl_interview_template.md"),
 ]
