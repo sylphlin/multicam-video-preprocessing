@@ -5,9 +5,10 @@
 ---
 
 > [!NOTE]
-> **🚀 설계 배경 및 플랫폼 호환성 안내 (Platform Support & Compatibility)**  
-> 본 툴킷은 원래 **Google Antigravity Agent**를 위해 네이티브로 설계 및 엔드투엔드 검증되었습니다(1M 컨텍스트 멀티모달 비디오 분석 및 대화형 편집 워크플로우 활용).  
-> 상호 운용성을 극대화하기 위해 본 프로젝트는 **[Agent Plugins 1.0 표준 규격](https://agent-plugins.org/specification)**에 맞춰 패키징되어 규격을 준수하는 에이전트 클라이언트(**OpenAI Codex 데스크톱** 등)에서도 설치할 수 있습니다. 단, 모든 서드파티 플랫폼에 대한 전수 테스트는 아직 진행 중입니다.
+> **🚀 설계 환경 및 플랫폼 호환성 안내 (Platform Support & Compatibility)**  
+> - **실측 검증 환경**: 본 툴킷은 **Google Antigravity 2.0** 및 **Gemini 3.7 Flash (Thinking: Medium)** 환경을 기반으로 최적화 설계 및 엔드투엔드 검증을 마쳤습니다.  
+> - **크로스 플랫폼 지원**: **[Agent Plugins 1.0 표준 규격](https://agent-plugins.org/specification)**에 맞춰 패키징되어 규격을 준수하는 에이전트 클라이언트(**OpenAI Codex 데스크톱** 등)에서도 설치할 수 있습니다. 타 플랫폼에 대한 전수 테스트는 아직 진행 중이므로 커뮤니티의 테스트 및 피드백을 적극 환영합니다!  
+> - **컨텍스트 윈도우 및 분할 주의사항**: 다른 멀티모달 모델을 선택할 경우 해당 모델의 **컨텍스트 윈도우(Context Window) 크기**를 반드시 확인하고, 필요에 따라 Step 1의 챕터 분할 시간 파라미터(`--split-min-dur`, `--split-max-dur`, 기본값: 30–40분)를 적절히 조절해 주세요.
 
 ---
 

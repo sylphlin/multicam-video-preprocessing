@@ -6,8 +6,9 @@
 
 > [!NOTE]
 > **🚀 原生設計與平台支援說明 (Platform Support & Compatibility)**  
-> 本工具套件最初是專為 **Google Antigravity Agent** 原生設計並完成完整端到端驗證（深度發揮 1M Context 多模態影片分析與對話剪輯能力）。  
-> 為了提升開放性，本專案已採用 **[Agent Plugins 1.0 規範](https://agent-plugins.org/specification)** 進行標準化封裝，理論上支援符合該規範的 Agent 客戶端（如 **OpenAI Codex 桌面版** 等）直接安裝；但目前尚未在所有第三方平台上完成全面測試。
+> - **實測驗證環境**：本套件專為 **Google Antigravity 2.0** 搭配 **Gemini 3.7 Flash (Thinking: Medium)** 深度設計與完整端到端實測驗證。  
+> - **跨平台與 Agent 支援**：本專案已採用 **[Agent Plugins 1.0 規範](https://agent-plugins.org/specification)** 進行標準化封裝，理論上支援符合規範的 Agent 客戶端（如 **OpenAI Codex 桌面版** 等）。目前尚未在所有第三方平台上完成完整測試，歡迎社群自行嘗試並回報反饋！  
+> - **模型選用與切片提醒**：更換或選用其他多模態模型時，請務必留意該模型的**上下文窗口大小（Context Window）**，並視需要調整 Step 1 的章節切分時長參數（`--split-min-dur` 與 `--split-max-dur`，預設為 30 至 40 分鐘）。
 
 ---
 

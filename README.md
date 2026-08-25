@@ -5,9 +5,10 @@
 ---
 
 > [!NOTE]
-> **🚀 Design Focus & Platform Compatibility Notice**  
-> This toolkit was originally designed and fully verified for the **Google Antigravity Agent** (leveraging native 1M context multimodal video understanding and conversational editing workflows).  
-> To maximize interoperability, this repository is packaged according to the **[Agent Plugins 1.0 Specification](https://agent-plugins.org/specification)**, allowing conformant clients (such as **OpenAI Codex Desktop**) to discover and install it. Please note that comprehensive testing across all third-party platforms is ongoing.
+> **🚀 Platform Support & Model Compatibility Notice**  
+> - **Verified Environment**: This suite was primarily engineered and end-to-end verified using **Google Antigravity 2.0** powered by **Gemini 3.7 Flash (Thinking: Medium)**.  
+> - **Cross-Platform & Agent Plugins**: Packaged according to the **[Agent Plugins 1.0 Specification](https://agent-plugins.org/specification)**, allowing conformant clients (such as **OpenAI Codex Desktop**) to discover and install it. As third-party platforms have not been exhaustively tested, community testing and feedback/PRs are warmly welcomed!  
+> - **Context Window & Split Duration**: When using alternative multimodal models, ensure you verify their **Context Window capacity** and adjust the Step 1 chapter split duration parameters accordingly (`--split-min-dur` and `--split-max-dur`, default: 30 to 40 minutes).
 
 ---
 
