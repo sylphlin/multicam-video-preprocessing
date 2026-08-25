@@ -32,8 +32,8 @@ multicam-video-preprocessing/
 │   ├── multicam_pipeline.py       # Step 1: 多機時間同步、音量標準化、分段與網格合成
 │   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL 決策生成
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML 時間線匯出 (⭐ 主路徑)
-│   ├── edl_to_video.py            # Step 3B: 硬體加速直接渲染成片 (🎬 次路徑)
-│   ├── concat_videos.py           # Step 4B: 全集無損拼接成片 (🎬 次路徑)
+│   ├── edl_to_video.py            # Step 3B: 硬件加速直接渲染成片 (🎬 次路径)
+│   ├── concat_videos.py           # Step 3B: 全集章节无损拼接 (🎬 次路径)
 │   └── modules/                   # 內部音影核心算法庫
 └── README.md
 ```

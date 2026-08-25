@@ -26,7 +26,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | **2. AI EDL** | `scripts/generate_edl_with_gemini.py` | `gemini-edl-generation` | Prompt asset + Gemini 3.7 Flash -> `edl_partX.csv` + Report |
 | **3A. NLE XML (⭐ Primary)** | `scripts/export_fcp7_xml.py` | `fcp7-xml-export` | Multi-part EDL CSV -> FCP7 XML (`final_cut_full.xml`) for NLEs |
 | **3B. Direct Render (🎬 Preview)** | `scripts/edl_to_video.py` | `edl-video-rendering` | EDL CSV -> Hardware-accelerated `final_cut_partX.mp4` |
-| **4B. Concat (🎬 Preview)** | `scripts/concat_videos.py` | `video-concatenation` | Lossless Concat -> Full episode `final_cut_full.mp4` |
+| **3B. Concat (🎬 Preview)** | `scripts/concat_videos.py` | `video-concatenation` | Lossless Concat -> Full episode `final_cut_full.mp4` |
 
 ---
 
@@ -44,7 +44,7 @@ When processing multi-camera projects, follow this decision tree:
      - *Action*: Execute **Step 3A (`export_fcp7_xml.py`)** to output `final_cut_full.xml`.
    - 🎬 **Path B: Direct MP4 Video Preview (Secondary / 10% Use Case)**
      - *Trigger*: User explicitly requests a rendered video file, quick preview MP4, or headless server video assembly without opening an NLE.
-     - *Action*: Execute **Step 3B (`edl_to_video.py`)** and **Step 4B (`concat_videos.py`)** to output `final_cut_full.mp4`.
+     - *Action*: Execute **Step 3B (`edl_to_video.py` & `concat_videos.py`)** to output `final_cut_full.mp4`.
 
 ---
 
@@ -85,6 +85,6 @@ python3 scripts/generate_edl_with_gemini.py -v ./output/multicam_merged_part2.mp
 python3 scripts/edl_to_video.py --edl ./output/edl_part1.csv
 python3 scripts/edl_to_video.py --edl ./output/edl_part2.csv
 
-# 4B. Lossless Concatenation to Full Episode Video
+# 3B. Lossless Concatenation to Full Episode Video (concat_videos.py)
 python3 scripts/concat_videos.py -d ./output/ -o ./output/final_cut_full.mp4
 ```

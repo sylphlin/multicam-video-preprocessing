@@ -33,7 +33,7 @@ multicam-video-preprocessing/
 │   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL generation
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
 │   ├── edl_to_video.py            # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
-│   ├── concat_videos.py           # Step 4B: Full episode lossless concat (🎬 Secondary)
+│   ├── concat_videos.py           # Step 3B: Full episode lossless concat (🎬 Secondary)
 │   └── modules/                   # Internal audiovisual algorithms
 └── README.md
 ```
