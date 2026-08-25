@@ -1,0 +1,28 @@
+# Test files and test outputs
+test/
+final_multicam_output/
+split_output/
+output/
+
+# Raw media files
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.m4a
+*.aac
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
