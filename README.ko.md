@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity 전용 스킬 (Antigravity Exclusive Skill)**  
-> 본 툴킷은 **Google Antigravity Agent** 전용으로 네이티브 설계된 스킬입니다(Antigravity의 1M 멀티모달 비디오 인식 기능 및 스킬 아키텍처 의존). **현재 Claude Code, OpenAI Codex, Cursor 등 다른 AI 코딩 도구 및 에이전트에서는 실행할 수 없습니다**. 현재 Antigravity만 전적으로 지원합니다。
+> 본 툴킷은 **Google Antigravity Agent** 전용으로 네이티브 설계된 스킬입니다(Antigravity의 1M 멀티모달 비디오 인식 기능 및 스킬 아키텍처 의존). **현재 Claude Code, OpenAI Codex, Cursor 등 다른 AI 코딩 도구 및 에이전트에서는 실행할 수 없습니다**. 현재 Antigravity만 전적으로 지원합니다.
 
 ---
 
@@ -19,151 +19,110 @@
 Antigravity Skill 표준 규격을 준수하며, Antigravity 스킬 디렉터리로 바로 복제하여 사용할 수 있습니다:
 
 ```bash
-# Antigravity Skills 디렉터리로 직접 Clone
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
 ```
 
 ### 📁 Skill 디렉토리 구조
 ```text
 multicam-video-preprocessing/
-├── SKILL.md                  # Antigravity 스킬 규격 및 분기 판단 규칙
-├── assets/                   # Antigravity 프롬프트 에셋 (Prompt Assets)
+├── SKILL.md                       # Antigravity 스킬 규격 및 분기 판단 규칙
+├── assets/                        # Antigravity 프롬프트 에셋 (Prompt Assets)
 │   └── edl_interview_template.md  # 2대 카메라 인터뷰 프롬프트 템플릿
-├── scripts/                  # 실행 스크립트 및 처리 모듈
-│   ├── multicam_pipeline.py  # Step 1: 오디오 동기화, EBU R128, 챕터 분할, 그리드 합성
-│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL 편집 결정 생성
-│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML 타임라인 내보내기 (⭐ 주요 경로)
-│   ├── edl_to_video.py       # Step 3B: 하드웨어 가속 직접 영상 렌더링 (🎬 차선 경로)
-│   ├── concat_videos.py      # Step 4B: 전체 무손실 스트림 결합 (🎬 차선 경로)
-│   └── modules/              # 내부 영상/오디오 핵심 알고리즘
+├── scripts/                       # 실행 스크립트 및 처리 모듈
+│   ├── multicam_pipeline.py       # Step 1: 오디오 동기화, EBU R128, 챕터 분할, 그리드 합성
+│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL 편집 결정 생성
+│   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML 타임라인 내보내기 (⭐ 주요 경로)
+│   ├── edl_to_video.py            # Step 3B: 하드웨어 가속 직접 영상 렌더링 (🎬 차선 경로)
+│   ├── concat_videos.py           # Step 4B: 전체 무손실 스트림 결합 (🎬 차선 경로)
+│   └── modules/                   # 내부 영상/오디오 핵심 알고리즘
 └── README.md
 ```
 
 ---
 
-## 🌟 엔드투엔드 전체 워크플로우 (Full End-to-End Workflow)
+## 🌟 엔드투엔드 전체 워크플로우
 
 ```mermaid
 flowchart TD
-    A["미처리 멀티카메라 원본 (2–6 CAMs)<br/>C6036, C6051..."] --> B["Step 1: 전처리 (multicam_pipeline.py)<br/>• 8kHz FFT 오디오 타임라인 동기화 (Δt)<br/>• EBU R128 (-14 LUFS) 전체 음량 표준화<br/>• 30–40분 자연스러운 멈춤 챕터 분할<br/>• 멀티인원 화면 합성 (<=1080P, 대당>=640x480)"]
+    A["미처리 멀티카메라 원본 (2–6 CAMs)"] --> B["1단계: 멀티카메라 동기화 및 AI 그리드 전처리"]
     
-    B --> C["【전체 동기화 마스터 영상】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI 토큰 절약 그리드 영상】<br/>• multicam_merged_part1.mp4<br/>• multicam_merged_part2.mp4"]
+    B --> C["【전체 동기화 마스터 영상】"]
+    B --> D["【AI 분석용 그리드 영상】"]
     
-    D --> E["Step 2: AI 멀티카메라 EDL 편집 결정<br/>(Gemini 3.7 Flash 멀티모달 컨텍스트)<br/>• 페르소나 및 화자 분리<br/>• 편집 규칙 마커 및 트리밍 리포트"]
+    D --> E["2단계: AI 멀티모달 가편집 결정"]
+    E --> F["【EDL 편집 결정 목록 (CSV)】"]
     
-    E --> F["【EDL 편집 결정 목록】<br/>• edl_part1.csv<br/>• edl_part2.csv"]
-    
-    C --> G["Step 3: FCP7 XML 타임라인 내보내기 (export_fcp7_xml.py)<br/>【⭐ 주요 프로 워크플로우 - 90%】"]
+    C --> G{"출력 포맷 선택"}
     F --> G
-    G --> H["【통합 표준 XML】final_cut_full.xml<br/>• 1:1 타임코드 완벽 일치 (start == in)<br/>• 컬러 마커 (강제/일반) 및 사유 Marker<br/>• 미디어 풀에 2개의 동기화 마스터만 넣으면 1초 만에 로드"]
     
-    C --> I["Step 4: CLI 직접 영상 렌더링 (edl_to_video.py)<br/>【🎬 간이 프리뷰 워크플로우 - 10%】"]
-    F --> I
-    I --> J["【직접 출력 영상】final_cut_full.mp4<br/>• Apple Silicon 하드웨어 가속 (h264_videotoolbox)<br/>• 챕터 무손실 스트림 결합 (concat_videos.py)"]
+    G -->|"주요: 전문 NLE 소프트웨어 (90%)"| H["3A단계: FCP7 XML 타임라인 내보내기<br/>(DaVinci / Premiere 직접 가져오기)"]
+    G -->|"차선: 간이 프리뷰 영상 (10%)"| I["3B단계: MP4 영상 직접 렌더링<br/>(NLE 없이 즉시 출력)"]
 ```
 
 ---
 
-## 📁 깔끔한 출력 디렉토리 구조 (Clean Directory Structure)
+## 💬 사용 시나리오 및 대화형 프롬프트 예시
 
-```text
-output/
- ├── multicam_sync.json           # 타임 동기화 오프셋 및 챕터 메타데이터
- ├── multicam_sync.csv            # 테이블 형식 데이터
- │
- ├── CAM1_synced.mp4              # 전체 동기화 마스터 (CAM1, EBU R128 -14 LUFS)
- ├── CAM2_synced.mp4              # 전체 동기화 마스터 (CAM2, Δt 오프셋 정렬 완료)
- │
- ├── multicam_merged_part1.mp4    # 경량 멀티인원 (Part 1, 토큰 50–83% 절약)
- ├── multicam_merged_part2.mp4    # 경량 멀티인원 (Part 2, 토큰 50–83% 절약)
- │
- ├── edl_part1.csv                # Gemini AI 편집 결정 (Part 1)
- ├── edl_part2.csv                # Gemini AI 편집 결정 (Part 2)
- │
- ├── final_cut_full.xml           # ⭐【주요】NLE 임포트용 FCP7 XML 타임라인
- └── final_cut_full.mp4           # 🎬【차선】직접 렌더링 완성 영상
-```
+Antigravity 채팅창에서 자연어로 요청하기만 하면 Agent가 백엔드 모듈을 자동 호출하여 처리합니다:
+
+### 시나리오 1: 편집용 XML 내보내기 (전문가 워크플로우 ⭐ 추천)
+- **적용 대상**: 가편집 결과를 DaVinci Resolve, Adobe Premiere Pro 또는 Final Cut Pro로 가져와 후속 색보정 및 오디오 믹싱을 진행할 때.
+- **프롬프트 예시**:
+  > "*2대의 멀티카메라 인터뷰 영상 `CAM1.mp4`와 `CAM2.mp4`가 있습니다. 타임코드 동기화와 음량 표준화를 진행하고 인터뷰 편집 규칙을 적용하여 DaVinci Resolve로 바로 가져갈 수 있는 XML 타임라인을 생성해 주세요.*"
+- **산출물**:
+  1. `final_cut_full.xml` (98개 이상의 컷과 컬러 사유 마커가 포함된 단일 시퀀스 타임라인)
+  2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (완벽 동기화 및 -14 LUFS 표준화 마스터)
+- **DaVinci Resolve 가져오기 3단계**:
+  1. DaVinci Resolve를 열고 새 프로젝트를 생성합니다.
+  2. `CAM1_synced.mp4`와 `CAM2_synced.mp4`를 **미디어 풀**로 드래그합니다.
+  3. **파일 $\rightarrow$ 가져오기 $\rightarrow$ 타임라인...** (`Cmd + Shift + I`)을 클릭하여 `final_cut_full.xml`을 선택합니다!
 
 ---
 
-## 🛠️ 요구 사항
-
-- **FFmpeg** (`h264_videotoolbox` 및 `loudnorm` 필터 지원)
-- **Python 3.8+**
-- **NumPy** (`pip install numpy`)
-
----
-
-## 🚀 단계별 CLI 실행 가이드
-
-### Step 1: 멀티카메라 전처리 (동기화 + 음량 표준화 + 분할 + 합성)
-
-```bash
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 \
-  --targets CAM2.mp4 \
-  --auto-split \
-  --split-min-dur 30 --split-max-dur 40 \
-  --normalize \
-  --merge \
-  --output-dir ./output/
-```
-
-### Step 2: Gemini AI 멀티카메라 EDL 생성
-`multicam_merged_part1.mp4` / `multicam_merged_part2.mp4`를 Antigravity(Gemini 3.7 Flash)에 직접 업로드하고 편집 규칙 프롬프트를 적용하여 `edl_part1.csv` 및 `edl_part2.csv`를 생성합니다.
-
-### Step 3 (주요 경로): DaVinci / Premiere용 FCP7 XML 내보내기
-
-```bash
-python3 scripts/export_fcp7_xml.py \
-  -d ./output/ \
-  -o ./output/final_cut_full.xml
-```
-
-#### 🎬 DaVinci Resolve 임포트 단계:
-1. DaVinci Resolve를 열고 새 프로젝트를 생성합니다.
-2. `CAM1_synced.mp4` 및 `CAM2_synced.mp4`를 **미디어 풀(Media Pool)**로 드래그합니다.
-3. **파일 $\\rightarrow$ 가져오기 $\\rightarrow$ 타임라인...** (`Cmd + Shift + I`)을 클릭하고 `final_cut_full.xml`을 선택합니다.
-4. 98개 이상의 컷, 오디오, 컬러 마커가 타임라인에 즉시 완벽하게 로드됩니다!
+### 시나리오 2: 영상 직접 출력 (간이 프리뷰 워크플로우 🎬)
+- **적용 대상**: 편집 워크스테이션을 사용할 수 없거나 클라이언트에게 편집 템포를 빠르게 검토받아야 할 때.
+- **프롬프트 예시**:
+  > "*이 멀티카메라 영상들을 AI 가편집하여 합본 MP4 프리뷰 영상으로 직접 렌더링해 주세요.*"
+- **산출물**:
+  1. `final_cut_full.mp4` (전체 결합 완성 영상)
 
 ---
 
-### Step 4 (차선 경로): 명령줄 직접 렌더링 및 결합
+## 🔍 각 단계별 상세 실행 내용
 
-```bash
-# 각 Part 렌더링
-python3 scripts/edl_to_video.py -e ./output/edl_part1.csv -d ./output/ -o ./output/final_cut_part1.mp4
-python3 scripts/edl_to_video.py -e ./output/edl_part2.csv -d ./output/ -o ./output/final_cut_part2.mp4
-
-# 전체 무손실 스트림 결합
-python3 scripts/concat_videos.py \
-  --inputs ./output/final_cut_part1.mp4 ./output/final_cut_part2.mp4 \
-  --output ./output/final_cut_full.mp4
-```
+### 1단계: 멀티카메라 동기화 및 AI 그리드 전처리 (`multicam_pipeline.py`)
+1. **전체 구간 8kHz FFT 오디오 타임라인 동기화**:
+   - 8kHz 다운샘플링 상호상관 연산으로 카메라 간 물리적 시간 오차 $\Delta t$를 수 초 만에 밀리초 단위로 산출.
+2. **EBU R128 (-14 LUFS) 방송 표준 음량 표준화**:
+   - 2-Pass 필터링으로 모든 트랙을 -14.0 LUFS, 11.0 LRA, -1.5 dBTP 표준 음량으로 일괄 보정.
+3. **30~40분 자연스러운 멈춤 감지 챕터 분할 (Auto-Split)**:
+   - 음성 에너지 최소 지점과 호흡 멈춤을 자동 감지하여 무손실 스트림 분할.
+4. **전체 동기화 마스터 영상 출력 (`*_synced.mp4`)**:
+   - NLE 타임라인이 직접 참조할 전체 길이 동기화 마스터 파일 즉시 생성.
+5. **2~6대 카메라 멀티인원 컴팩트 화면 합성**:
+   - 전체 $\le 1080P$, 대당 $\ge 640 \times 480$ 화질을 보장하며 멀티모달 **토큰 소모를 50%~83% 대폭 절감**.
 
 ---
 
-## ⚙️ CLI 파라미터 상세 목록 (`multicam_pipeline.py`)
+### 2단계: Gemini AI 멀티모달 가편집 결정 (`generate_edl_with_gemini.py`)
+1. **프롬프트 에셋 로드**: `assets/edl_interview_template.md` 템플릿 적용.
+2. **Phase 0: 도입부/말미 무효 구간 트리밍**:
+   - 촬영 시작 전 테스트 발성 및 준비 구간 제외 (`Global_Start_Time`);
+   - 인터뷰 종료 후 잡담 및 마이크 탈거 등 미종료 구간 완전 절제 (`Global_End_Time`).
+3. **Phase 1~4: 의미 구조 기반 컷 전환**:
+   - 발화자를 음성 주도로 추적하여 어절 경계에 컷 포인트 정렬.
+   - 듣는 이의 2~3초 리액션 샷(웃음, 끄덕임) 삽입.
+   - 단일 컷 $\ge 2.5\text{s}$ 제한으로 깜빡임 방지.
 
-| 파라미터 | 설명 | 기본값 |
-| :--- | :--- | :--- |
-| `--ref` | 기준 카메라 영상 경로 (CAM1) | *필수* |
-| `--targets` / `--target` | 1~5개의 타깃 카메라 영상 경로 (총 2~6대 지원) | *필수* |
-| `--auto-split` | 자연스러운 멈춤 감지 기반 챕터 분할(30~40분) 활성화 | `False` |
-| `--split-min-dur` | 분할 세그먼트 최소 시간(분) | `30.0` |
-| `--split-max-dur` | 분할 세그먼트 최대 시간(분) | `40.0` |
-| `--merge` / `--multi-in-one` | 멀티인원 합성 영상(병렬/그리드) 렌더링 활성화 | `False` |
-| `--encoder` | 영상 인코더 (`h264_videotoolbox` / `libx264`) | `h264_videotoolbox` |
-| `--normalize` | EBU R128 (-14 LUFS) 전체 구간 음량 표준화 활성화 | `False` |
-| `--lufs` | 목표 음량 값 (LUFS) | `-14.0` |
-| `--lra` | 음량 범위 (LU) | `11.0` |
-| `--tp` | 트루 피크 상한 (dBTP) | `-1.5` |
-| `--ref-start` | 기준 카메라 수동 시작 시간 (`HH:MM:SS.mmm` 또는 초) | `None` |
-| `--ref-end` | 기준 카메라 수동 종료 시간 (`HH:MM:SS.mmm` 또는 초) | `None` |
-| `--output-dir` | 동기화 마스터 및 보고서 출력 디렉터리 경로 | `.` (현재 디렉터리) |
-| `--suffix` | 동기화 출력 시 파일명 접미사 | `_synced` |
-| `--sr` | FFT 동기화용 오디오 샘플링 레이트 (Hz) | `8000` |
-| `--workers` | 병렬 처리 스레드 수 | `2` |
-| `--export-json` | JSON 보고서 내보내기 경로 | `None` |
-| `--export-csv` | CSV 보고서 내보내기 경로 | `None` |
+---
+
+### 3A단계 (주요 경로): FCP7 XML 타임라인 내보내기 (`export_fcp7_xml.py`)
+1. **다중 챕터 타임코드 연속 누적**: 여러 Part를 하나의 연속 시퀀스로 매핑.
+2. **1:1 타임코드 완벽 일치 (`start == in`)**: NLE에서 슬립/슬라이드 트리밍 완벽 지원.
+3. **마스터 오디오 트랙 및 사유 마커 주입**: CAM1 주 오디오 연속 배치 및 AI 편집 사유를 컬러 마커로 주입.
+
+---
+
+### 3B단계 (차선 경로): 직접 렌더링 및 무손실 결합 (`edl_to_video.py` & `concat_videos.py`)
+1. **하드웨어 가속 렌더링**: Apple Silicon `h264_videotoolbox` 기반 고속 렌더링.
+2. **초고속 무손실 스트림 결합**: `-c copy` 방식으로 초당 수백 프레임 속도로 결합.

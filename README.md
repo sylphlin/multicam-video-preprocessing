@@ -19,154 +19,117 @@ Modular, high-performance multi-camera video processing pipeline and AI rough-cu
 This repository adheres strictly to the Antigravity Skill specification and can be cloned directly into your Antigravity skills directory:
 
 ```bash
-# Clone directly into Antigravity Skills directory
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
 ```
 
 ### 📁 Skill Directory Structure
 ```text
 multicam-video-preprocessing/
-├── SKILL.md                  # Antigravity skill specification & branching decision rules
-├── assets/                   # Antigravity prompt assets
+├── SKILL.md                       # Antigravity skill specification & branching decision rules
+├── assets/                        # Antigravity prompt assets
 │   └── edl_interview_template.md  # Dual-camera interview prompt template
-├── scripts/                  # Executable CLI scripts & processing modules
-│   ├── multicam_pipeline.py  # Step 1: Time sync, EBU R128, auto-split, synced masters, grid merge
-│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL generation
-│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
-│   ├── edl_to_video.py       # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
-│   ├── concat_videos.py      # Step 4B: Full episode lossless concat (🎬 Secondary)
-│   └── modules/              # Internal audiovisual algorithms
+├── scripts/                       # Executable CLI scripts & processing modules
+│   ├── multicam_pipeline.py       # Step 1: Time sync, EBU R128, auto-split, synced masters, grid merge
+│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL generation
+│   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
+│   ├── edl_to_video.py            # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
+│   ├── concat_videos.py           # Step 4B: Full episode lossless concat (🎬 Secondary)
+│   └── modules/                   # Internal audiovisual algorithms
 └── README.md
 ```
 
 ---
 
-## 🌟 Full End-to-End Workflow
+## 🌟 Full End-to-End Workflow Diagram
 
 ```mermaid
 flowchart TD
-    A["Raw Multi-Camera Footage (2–6 CAMs)<br/>C6036, C6051..."] --> B["Step 1: Preprocessing (multicam_pipeline.py)<br/>• Global 8kHz FFT Audio Time Alignment (Δt)<br/>• Full-Length EBU R128 (-14 LUFS) Audio Normalization<br/>• 30–40 min Natural Pause Chapter Slicing<br/>• Compact Multi-in-One Grid (<=1080P, >=640x480/CAM)"]
+    A["Raw Multicam Footage (2–6 CAMs)"] --> B["Step 1: Multicam Sync & Grid Preprocessing"]
     
-    B --> C["【Full Synced Master Footage】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI Token-Optimized Grids】<br/>• multicam_merged_part1.mp4<br/>• multicam_merged_part2.mp4"]
+    B --> C["【Full-Length Synced Masters】"]
+    B --> D["【AI Token-Optimized Grid Videos】"]
     
-    D --> E["Step 2: AI Multi-Cam EDL Generation<br/>(Gemini 3.7 Flash Multimodal Context)<br/>• Persona & Diarization<br/>• Rule Markers & Trimming Report"]
+    D --> E["Step 2: AI Multimodal Rough-Cut Decision"]
+    E --> F["【EDL Decision Lists (CSV)】"]
     
-    E --> F["【Edit Decision Lists】<br/>• edl_part1.csv<br/>• edl_part2.csv"]
-    
-    C --> G["Step 3: FCP7 XML Export (export_fcp7_xml.py)<br/>[Primary NLE Workflow - 90%]"]
+    C --> G{"Select Delivery Format"}
     F --> G
-    G --> H["【Unified FCP7 XML】final_cut_full.xml<br/>• Full sequence timeline with 1:1 timecode<br/>• Color-coded Rule Markers & reasons<br/>• 100% clean relink with 2 synced masters in DaVinci/Premiere"]
     
-    C --> I["Step 4: Direct Video Rendering (edl_to_video.py)<br/>[Secondary Quick Preview - 10%]"]
-    F --> I
-    I --> J["【Direct Video Output】final_cut_full.mp4<br/>• Hardware-accelerated (h264_videotoolbox)<br/>• Lossless chapter concat (concat_videos.py)"]
+    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(Import directly to DaVinci / Premiere)"]
+    G -->|"Secondary: Quick MP4 Preview (10%)"| I["Step 3B: Direct MP4 Video Render<br/>(No NLE required)"]
 ```
 
 ---
 
-## 📁 Clean Output Directory Structure
+## 💬 Usage Scenarios & Conversational Prompts
 
-```text
-output/
- ├── multicam_sync.json           # Time sync offsets and chapter segment metadata
- ├── multicam_sync.csv            # Formatted alignment table
- │
- ├── CAM1_synced.mp4              # Full-length synced & EBU R128 (-14 LUFS) master (CAM1)
- ├── CAM2_synced.mp4              # Full-length synced & Δt-aligned master (CAM2)
- │
- ├── multicam_merged_part1.mp4    # Lightweight multi-in-one grid (Part 1, saves 50–83% tokens)
- ├── multicam_merged_part2.mp4    # Lightweight multi-in-one grid (Part 2, saves 50–83% tokens)
- │
- ├── edl_part1.csv                # Gemini AI edit decisions (Part 1)
- ├── edl_part2.csv                # Gemini AI edit decisions (Part 2)
- │
- ├── final_cut_full.xml           # ⭐ [Primary] Unified FCP7 XML timeline for NLE import
- └── final_cut_full.mp4           # 🎬 [Secondary] Direct rendered full video
-```
+In the Antigravity chat interface, users simply express their requirements in natural language, and the Agent automatically orchestrates the underlying modules:
+
+### Scenario 1: Export NLE XML Timeline (Professional Workflow ⭐ Recommended)
+- **Use Case**: Need to import the rough cut into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro for color grading, audio mastering, and fine trimming.
+- **Example Prompt**:
+  > "*I have two multi-camera interview video files `CAM1.mp4` and `CAM2.mp4`. Please synchronize their timecodes, normalize audio loudness, and apply the interview editing rules to produce an XML timeline ready for DaVinci Resolve.*"
+- **Delivered Outputs**:
+  1. `final_cut_full.xml` (Unified sequence timeline with 98+ cuts and color-coded rule markers)
+  2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (Synchronized master files at -14 LUFS)
+- **DaVinci Resolve 3-Step Import**:
+  1. Open DaVinci Resolve and create a new project.
+  2. Drag `CAM1_synced.mp4` and `CAM2_synced.mp4` into the **Media Pool**.
+  3. Click **File $\rightarrow$ Import $\rightarrow$ Timeline...** (`Cmd + Shift + I`), select `final_cut_full.xml`, and the timeline is instantly assembled!
 
 ---
 
-## 🛠️ Prerequisites
-
-- **FFmpeg** (with `h264_videotoolbox` and `loudnorm` filter support)
-- **Python 3.8+**
-- **NumPy** (`pip install numpy`)
-
----
-
-## 🚀 Step-by-Step CLI Execution Guide
-
-### Step 1: Preprocessing (Sync + Loudness + Split + Multi-in-One)
-Runs global time alignment, EBU R128 loudness normalization, chapter segmentation, and exports full synced masters + AI grid videos:
-
-```bash
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 \
-  --targets CAM2.mp4 \
-  --auto-split \
-  --split-min-dur 30 --split-max-dur 40 \
-  --normalize \
-  --merge \
-  --output-dir ./output/
-```
-
-### Step 2: Gemini AI Multi-Camera EDL Generation
-Directly upload `multicam_merged_part1.mp4` / `multicam_merged_part2.mp4` into Antigravity (Gemini 3.7 Flash context), apply editing prompt rules, and produce `edl_part1.csv` and `edl_part2.csv`.
-
-### Step 3 (Primary): FCP7 XML Timeline Export for DaVinci / Premiere
-Generate the unified FCP7 XML timeline file linking seamlessly to `CAM1_synced.mp4` and `CAM2_synced.mp4`:
-
-```bash
-python3 scripts/export_fcp7_xml.py \
-  -d ./output/ \
-  -o ./output/final_cut_full.xml
-```
-
-#### 🎬 Importing into DaVinci Resolve:
-1. Open DaVinci Resolve and create a new project.
-2. Drag `CAM1_synced.mp4` and `CAM2_synced.mp4` into the **Media Pool**.
-3. Choose **File $\rightarrow$ Import $\rightarrow$ Timeline...** (`Cmd + Shift + I`) and select `final_cut_full.xml`.
-4. The 98+ cuts, synchronized audio, and color-coded rule markers will mount instantly with 0 missing files!
+### Scenario 2: Direct Video Rendering (Quick Preview Workflow 🎬)
+- **Use Case**: Away from the editing workstation, or need a quick MP4 export to review the edit pacing.
+- **Example Prompt**:
+  > "*Please perform an automated rough cut on these multi-camera video files and render them directly into a merged MP4 preview video for me.*"
+- **Delivered Outputs**:
+  1. `final_cut_full.mp4` (Full episode assembled preview video)
 
 ---
 
-### Step 4 (Secondary): Direct CLI Video Rendering & Concatenation
-If you prefer an immediate rendered `.mp4` video without opening an NLE:
+## 🔍 Detailed Pipeline Steps
 
-```bash
-# Render part video clips
-python3 scripts/edl_to_video.py -e ./output/edl_part1.csv -d ./output/ -o ./output/final_cut_part1.mp4
-python3 scripts/edl_to_video.py -e ./output/edl_part2.csv -d ./output/ -o ./output/final_cut_part2.mp4
-
-# Lossless stream-copy concat into full video
-python3 scripts/concat_videos.py \
-  --inputs ./output/final_cut_part1.mp4 ./output/final_cut_part2.mp4 \
-  --output ./output/final_cut_full.mp4
-```
+### Step 1: Multicam Synchronization & Preprocessing (`multicam_pipeline.py`)
+1. **Global 8kHz FFT Audio Time Alignment**:
+   - Extracts and downsamples audio tracks to 8kHz mono, applying Cross-Correlation to compute millisecond-accurate physical time offsets $\Delta t$ across all cameras.
+2. **EBU R128 (-14 LUFS) Broadcast Loudness Normalization**:
+   - Two-pass loudness analysis and filtering to normalize all audio tracks to standard broadcast levels (-14.0 LUFS, 11.0 LRA, -1.5 dBTP).
+3. **30–40 min Natural Pause Chapter Splitting (Auto-Split)**:
+   - Detects speech energy minima and natural breath pauses within 30–40 min windows, perfectly sizing media for 1M Token Context AI models.
+4. **Full-Length Synchronized Camera Masters Export (`*_synced.mp4`)**:
+   - Produces clean full-length aligned master files for direct reference by the NLE timeline.
+5. **2–6 Camera Multi-in-One Grid Composition**:
+   - Combines multi-camera angles into a single canvas (<= 1080P, >= 640x480/CAM), reducing AI multimodal **token consumption by 50%–83%**.
 
 ---
 
-## ⚙️ CLI Parameter Reference (`multicam_pipeline.py`)
+### Step 2: Gemini Multimodal AI Rough-Cut Decision (`generate_edl_with_gemini.py`)
+1. **Prompt Asset Ingestion**:
+   - Loads editing rules from `assets/edl_interview_template.md`.
+2. **Phase 0: Pre/Post-roll Trimming**:
+   - Identifies and excludes invalid pre-roll setup footage (`Global_Start_Time`) and post-roll chatter/chores (`Global_End_Time`).
+3. **Phase 1–4: Audio-Visual Semantic Editing**:
+   - **Speaker Tracking**: Audio-first tracking to lock active speakers and align cut points with speech boundaries.
+   - **Reaction Shots**: Selectively inserts 2–3s listener reaction shots (smiles, nods, chuckles) while filtering short interruptions.
+   - **Anti-Glitch Pacing**: Enforces minimum cut length $\ge 2.5\text{s}$ to prevent visual flicker.
+4. **Structured Decision Outputs**:
+   - Generates standard CSV tables (`edl_part*.csv`) and Markdown calibration reports (`edl_part*_report.md`).
 
-| Parameter | Description | Default |
-| :--- | :--- | :--- |
-| `--ref` | Reference anchor camera video path (CAM1) | *Required* |
-| `--targets` / `--target` | One or more target camera video paths (supports 2 to 6 cameras) | *Required* |
-| `--auto-split` | Enable natural pause chapter segmentation (30–40 min) | `False` |
-| `--split-min-dur` | Minimum segment duration in minutes | `30.0` |
-| `--split-max-dur` | Maximum segment duration in minutes | `40.0` |
-| `--merge` / `--multi-in-one` | Render merged multi-in-one grid video (side-by-side/grid) to save tokens for AI models | `False` |
-| `--encoder` | Video encoder for rendering (`h264_videotoolbox` / `libx264`) | `h264_videotoolbox` |
-| `--normalize` | Enable EBU R128 (-14 LUFS) full-length audio normalization | `False` |
-| `--lufs` | Target integrated loudness in LUFS | `-14.0` |
-| `--lra` | Target loudness range in LU | `11.0` |
-| `--tp` | Maximum true peak limit in dBTP | `-1.5` |
-| `--ref-start` | Reference camera manual start time (`HH:MM:SS.mmm` or seconds) | `None` |
-| `--ref-end` | Reference camera manual end time (`HH:MM:SS.mmm` or seconds) | `None` |
-| `--output-dir` | Output directory for synced masters, sub-clips, and reports | `.` (Current dir) |
-| `--suffix` | Filename suffix for synchronized master export | `_synced` |
-| `--sr` | Audio sampling rate for FFT alignment in Hz | `8000` |
-| `--workers` | Number of parallel worker threads | `2` |
-| `--export-json` | Path to export JSON report | `None` |
-| `--export-csv` | Path to export CSV report | `None` |
+---
+
+### Step 3A (Primary Path): Export FCP7 XML Sequence Timeline (`export_fcp7_xml.py`)
+1. **Multi-Part Timeline Offset Accumulation**:
+   - Continuously accumulates cut timestamps across all chapter parts onto a single sequence timeline.
+2. **1:1 Timecode Mapping (`start == in`)**:
+   - Maintains exact source-to-timeline correspondence, enabling seamless slip/slide ripple trimming in NLEs.
+3. **Master Audio Track & Decision Markers**:
+   - Generates an uninterrupted CAM1 master audio track and injects color-coded decision Markers with AI reasoning notes.
+
+---
+
+### Step 3B (Secondary Path): Direct Video Rendering & Splicing (`edl_to_video.py` & `concat_videos.py`)
+1. **Hardware-Accelerated Segment Rendering**:
+   - Uses Apple Silicon `h264_videotoolbox` to render individual chapter cuts (`final_cut_part*.mp4`).
+2. **Lossless Stream Concatenation**:
+   - Uses FFmpeg stream copy (`-c copy`) to merge parts into the final episode `final_cut_full.mp4` at hundreds of frames per second.

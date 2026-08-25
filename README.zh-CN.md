@@ -1,172 +1,137 @@
-# 多机位视频智慧处理与 AI 剪辑套件 (Multicam Video Pipeline & AI Editing Suite)
+# 多機位影片智慧處理與 AI 剪輯套件 (Multicam Video Pipeline & AI Editing Suite)
 
-[English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
+[English (en)](README.md) | [简体中文 (zh-CN)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
 > [!IMPORTANT]
-> **🚀 Google Antigravity 专属技能 (Antigravity Exclusive Skill)**  
-> 本工具套件专为 **Google Antigravity Agent** 原生打造的技能（深度依赖 Antigravity 的 1M Context 多模态视频分析能力与 Skill 加载规范）。**目前无法运行于 Claude Code、OpenAI Codex、Cursor 等其他 AI 编程助手或 Agent 工具**，目前仅支持 Antigravity。
+> **🚀 Google Antigravity 專用技能 (Antigravity Exclusive Skill)**  
+> 本工具套件是专为 **Google Antigravity Agent** 原生打造的技能（深度依賴 Antigravity 的 1M Context 多模態影片分析能力與 Skill 載入規範）。**目前無法運行於 Claude Code、OpenAI Codex、Cursor 等其他 AI 程式助手或 Agent 工具**，目前僅支援 Antigravity。
 
 ---
 
-本专案为针对大语言模型（Gemini 3.7 Flash 1M Token Context）与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多机位（2~6 机）视频智慧处理管线与 AI 粗剪套件。
+本项目為針對大語言模型（Gemini 3.7 Flash 1M Token Context）與專業剪輯软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多機位（2~6 機）影片智慧處理管线與 AI 粗剪套件。
 
 ---
 
-## 📦 Antigravity 导入与安装结构 (Antigravity Skill Import)
+## 📦 Antigravity 导入與安裝結構 (Antigravity Skill Import)
 
-本专案已完全适配 Antigravity Skill 标准结构，可直接 Clone 至 Antigravity 技能目录下无缝启用：
+本项目已完全適配 Antigravity Skill 標準結構，可直接 Clone 至 Antigravity 技能目錄下無縫啟用：
 
 ```bash
-# 直接复制至 Antigravity Skills 目录
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
 ```
 
-### 📁 Skill 文件结构
+### 📁 Skill 文件結構
 ```text
 multicam-video-preprocessing/
-├── SKILL.md                  # Antigravity 技能规范与分流决策指引
-├── assets/                   # Antigravity 提示词资产 (Prompt Assets)
-│   └── edl_interview_template.md  # 双机访谈提示词样板
-├── scripts/                  # 核心执行脚本与处理模块
-│   ├── multicam_pipeline.py  # Step 1: 多机时间同步、音量标准化、分段与网格合成
-│   ├── generate_edl_with_gemini.py # Step 2: Gemini 3.7 Flash EDL 决策生成
-│   ├── export_fcp7_xml.py    # Step 3A: FCP7 XML 时间线导出 (⭐ 主路径)
-│   ├── edl_to_video.py       # Step 3B: 硬件加速直接渲染成片 (🎬 次路径)
-│   ├── concat_videos.py      # Step 4B: 全集无损拼接成片 (🎬 次路径)
-│   └── modules/              # 内部音视频核心算法库
+├── SKILL.md                       # Antigravity 技能規範與分流決策指引
+├── assets/                        # Antigravity 提示詞資產 (Prompt Assets)
+│   └── edl_interview_template.md  # 雙機訪談提示詞樣板
+├── scripts/                       # 核心執行腳本與處理模組
+│   ├── multicam_pipeline.py       # Step 1: 多機時間同步、音量標準化、分段與網格合成
+│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL 決策生成
+│   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML 時間線匯出 (⭐ 主路徑)
+│   ├── edl_to_video.py            # Step 3B: 硬體加速直接渲染成片 (🎬 次路徑)
+│   ├── concat_videos.py           # Step 4B: 全集無損拼接成片 (🎬 次路徑)
+│   └── modules/                   # 內部音影核心算法庫
 └── README.md
 ```
 
 ---
 
-## 🌟 端到端全流程图 (Full End-to-End Workflow)
+## 🌟 端到端全流程圖 (Full End-to-End Workflow)
 
 ```mermaid
 flowchart TD
-    A["原始多机位素材 (2–6 CAMs)<br/>C6036, C6051..."] --> B["Step 1: 预处理 (multicam_pipeline.py)<br/>• 全局 8kHz FFT 音频时间对齐 (Δt)<br/>• 原始机位全片 EBU R128 (-14 LUFS) 音量标准化<br/>• 30–40 分钟自然停顿章节分段<br/>• 紧凑多合一画面合成 (<=1080P, 每路>=640x480)"]
+    A["多機位原始素材 (2–6 CAMs)"] --> B["步驟 1：多機同步與 AI 網格前處理"]
     
-    B --> C["【全集同步母带】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI 节省 Token 网格视频】<br/>• multicam_merged_part1.mp4<br/>• multicam_merged_part2.mp4"]
+    B --> C["【全集同步母带】"]
+    B --> D["【AI 分析專用網格影片】"]
     
-    D --> E["Step 2: AI 多机位 EDL 剪辑决策<br/>(Gemini 3.7 Flash 多模态上下文)<br/>• 人格角色与说话者分离<br/>• 剪辑规则标记与修剪报告"]
+    D --> E["步驟 2：AI 多模態智能粗剪決策"]
+    E --> F["【EDL 剪輯決策列表 (CSV)】"]
     
-    E --> F["【EDL 剪辑决策清单】<br/>• edl_part1.csv<br/>• edl_part2.csv"]
-    
-    C --> G["Step 3: FCP7 XML 时间线导出 (export_fcp7_xml.py)<br/>【⭐ 主要专业工作流 - 90%】"]
+    C --> G{"選擇交付格式"}
     F --> G
-    G --> H["【唯一标准 XML】final_cut_full.xml<br/>• 1:1 精确对齐时间码 (start == in)<br/>• 颜色标记 (强制/一般) 与剪辑理由 Marker<br/>• 媒体池只需 2 个 Synced 母带，DaVinci/Premiere 一键秒载入"]
     
-    C --> I["Step 4: 命令行直接视频渲染 (edl_to_video.py)<br/>【🎬 次要快速预览工作流 - 10%】"]
-    F --> I
-    I --> J["【直出完整视频】final_cut_full.mp4<br/>• Apple Silicon 硬件加速 (h264_videotoolbox)<br/>• 无损流复制章节无缝拼接 (concat_videos.py)"]
+    G -->|"主路徑：專業剪輯软件 (90%)"| H["步驟 3A：匯出 FCP7 XML 時間線<br/>(直接導入 DaVinci / Premiere)"]
+    G -->|"次路徑：快速預覽成片 (10%)"| I["步驟 3B：直接渲染 MP4 成片<br/>(免開剪輯软件直出)"]
 ```
 
 ---
 
-## 📁 简洁产出目录结构 (Clean Directory Structure)
+## 💬 使用场景與 Prompt 範例
 
-```text
-output/
- ├── multicam_sync.json           # 时间对齐偏移量与章节时间戳元数据
- ├── multicam_sync.csv            # 格式化表格
- │
- ├── CAM1_synced.mp4              # 全集完整长度同步母带 (CAM1，EBU R128 -14 LUFS)
- ├── CAM2_synced.mp4              # 全集完整长度同步母带 (CAM2，Δt 已校准对齐)
- │
- ├── multicam_merged_part1.mp4    # 轻量多合一网格 (Part 1，节省 50–83% AI Token)
- ├── multicam_merged_part2.mp4    # 轻量多合一网格 (Part 2，节省 50–83% AI Token)
- │
- ├── edl_part1.csv                # Gemini AI 剪辑决策 (Part 1)
- ├── edl_part2.csv                # Gemini AI 剪辑决策 (Part 2)
- │
- ├── final_cut_full.xml           # ⭐【主要】唯一标准 FCP7 XML 时间线 (供剪辑软件导入)
- └── final_cut_full.mp4           # 🎬【次要】命令行直出剪辑完成视频
-```
+使用者在 Antigravity 对话框中，只需以自然語言提出需求，Agent 即會自動調用底層模組完成全自動處理：
+
+### 场景一：出剪輯 XML（專業剪輯工作流 ⭐ 推薦）
+- **適用場景**：需要將粗剪結果導入 DaVinci Resolve、Adobe Premiere Pro 或 Final Cut Pro 進行後續精修、調色與混音。
+- **对话 Prompt 範例**：
+  > 「*我有兩支雙機位的訪談錄影文件 `CAM1.mp4` 與 `CAM2.mp4`，請幫我進行時間同步與音量標準化，並套用訪談剪輯樣板產出可直接進 DaVinci Resolve 的 XML 時間線。*」
+- **交付成果**：
+  1. `final_cut_full.xml`（單一完整時間線，含 98+ 鏡頭切點與紅藍理由 Marker 標記）
+  2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（100% 音畫同步與 -14 LUFS 響度標準化母带）
+- **DaVinci Resolve 導入 3 步驟**：
+  1. 打開 DaVinci Resolve 並新建项目。
+  2. 將 `CAM1_synced.mp4` 與 `CAM2_synced.mp4` 拖入 **Media Pool（媒體池）**。
+  3. 點選 **文件 $\rightarrow$ 導入 $\rightarrow$ 時間線...** (`Cmd + Shift + I`)，選取 `final_cut_full.xml`，全片時間線瞬間載入完畢！
 
 ---
 
-## 🛠️ 前置需求
-
-- **FFmpeg**（支持 `h264_videotoolbox` 与 `loudnorm` 滤镜）
-- **Python 3.8+**
-- **NumPy** (`pip install numpy`)
-
----
-
-## 🚀 完整逐步执行指南
-
-### Step 1：多机位预处理（时间对齐 + 音量标准化 + 分段 + 多合一合成）
-一键执行全局音频对齐、-14 LUFS 音量标准化、自然停顿章节分段，并同时产出完整同步母带与 AI 专用网格视频：
-
-```bash
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 \
-  --targets CAM2.mp4 \
-  --auto-split \
-  --split-min-dur 30 --split-max-dur 40 \
-  --normalize \
-  --merge \
-  --output-dir ./output/
-```
-
-### Step 2：Gemini AI 多机位 EDL 生成
-直接将 `multicam_merged_part1.mp4` / `multicam_merged_part2.mp4` 上传至 Antigravity（Gemini 3.7 Flash 上下文），应用剪辑规则提示词，产出标准决策文件 `edl_part1.csv` 与 `edl_part2.csv`。
-
-### Step 3（主要路径）：导出 FCP7 XML 至 DaVinci / Premiere
-将 EDL 决策转换为专业 NLE 可直接读取的 Final Cut Pro 7 XML，并无缝关联 `CAM1_synced.mp4` 与 `CAM2_synced.mp4`：
-
-```bash
-python3 scripts/export_fcp7_xml.py \
-  -d ./output/ \
-  -o ./output/final_cut_full.xml
-```
-
-#### 🎬 DaVinci Resolve 导入步骤：
-1. 打开 DaVinci Resolve 并创建新项目。
-2. 将 `CAM1_synced.mp4` 与 `CAM2_synced.mp4` 拖入**媒体池 (Media Pool)**。
-3. 点击 **文件 $\rightarrow$ 导入 $\rightarrow$ 时间线...** (`Cmd + Shift + I`)，选取 `final_cut_full.xml`。
-4. 全片 98+ 个镜头、立体声音轨与彩色剪辑规则标记（红色强制 / 蓝色一般）瞬间完整载入！剪辑师可自由滑动微调每个镜头边界。
+### 场景二：直出影片（快速預覽工作流 🎬）
+- **適用場景**：臨時不在剪輯工作站前，或需要快速產出 MP4 影片供客戶審查粗剪節奏。
+- **对话 Prompt 範例**：
+  > 「*請幫我把這兩支多機位素材進行粗剪，並直接渲染合併成一支完整的 MP4 預覽影片給我。*」
+- **交付成果**：
+  1. `final_cut_full.mp4`（全集無損拼接成品影片）
 
 ---
 
-### Step 4（次要路径）：命令行直接渲染与章节合并
-如果您无需在剪辑软件中微调，想直接输出最终剪辑视频：
+## 🔍 各步驟執行細節說明 (Detailed Pipeline Steps)
 
-```bash
-# 渲染各 Part 子视频
-python3 scripts/edl_to_video.py -e ./output/edl_part1.csv -d ./output/ -o ./output/final_cut_part1.mp4
-python3 scripts/edl_to_video.py -e ./output/edl_part2.csv -d ./output/ -o ./output/final_cut_part2.mp4
-
-# 无损流复制拼接为全集视频
-python3 scripts/concat_videos.py \
-  --inputs ./output/final_cut_part1.mp4 ./output/final_cut_part2.mp4 \
-  --output ./output/final_cut_full.mp4
-```
+### 步驟 1：多機同步與 AI 網格前處理 (`multicam_pipeline.py`)
+1. **全域 8kHz FFT 音频時間線對齊**：
+   - 提取各機位音频並降採樣至 8kHz 單聲道，透過互相關（Cross-Correlation）算法在數秒內計算出精確的物理時間偏差 $\Delta t$（精確至毫秒），解決開錄時間差與無效起錄段落。
+2. **EBU R128 (-14 LUFS) 全集廣播級音量標準化**：
+   - 採用雙遍（Two-Pass）音频響度分析與濾鏡處理，將所有機位音频統一標準化至 -14.0 LUFS、11.0 LRA 與 -1.5 dBTP，確保全片各章節音量完全一致且不爆音。
+3. **30~40 分鐘自然停頓點章節智慧分段 (Auto-Split)**：
+   - 自動在 30~40 分鐘目標窗口內偵測語音能量極小值與自然呼吸停頓點進行無損切分，完美適配大模型 1M Token 的最佳分析長度。
+4. **全集同步母带導出 (`*_synced.mp4`)**：
+   - 依據 $\Delta t$ 裁切並導出全長對齊、音量標準化的母带影片，專供 Step 3A 剪輯時間線直接引用。
+5. **2~6 機多合一緊湊網格畫面合成**：
+   - 自動依機位數排版（2機左右並排、3~4機田字格、5~6機六宮格），保證總畫幅 $\le 1920 \times 1080$、每機 $\ge 640 \times 480$，為後續 AI 分析節省 **50%~83% Token 消耗**。
 
 ---
 
-## ⚙️ CLI 参数详细对照表 (`multicam_pipeline.py`)
+### 步驟 2：Gemini 多模態 AI 智能粗剪決策 (`generate_edl_with_gemini.py`)
+1. **載入專屬提示詞資產**：
+   - 讀取 `assets/edl_interview_template.md` 規則樣板。
+2. **Phase 0：頭尾廢料精確裁切 (Pre/Post-roll Trimming)**：
+   - 自動辨識並剔除開拍前試音、倒數、確認設備之廢料畫面（標記 `Global_Start_Time`）；
+   - 自動識別訪談結尾道別語句，徹底切除收尾未關機閒聊與拔麥雜訊（標記 `Global_End_Time`）。
+3. **Phase 1~4：多模態聲畫語義剪輯決策**：
+   - **話者識別與追蹤**：以聲音為主導鎖定當前發話者機位，切鏡點精確對齊語音邊界。
+   - **關鍵反應鏡頭穿插**：過濾 1~2s 短插話，適時切換至聆聽者 2~3s 之大笑、點頭或驚訝反應鏡頭。
+   - **防跳切限制**：強制單鏡頭長度嚴格 $\ge 2.5\text{s}$，確保視覺流暢不閃爍。
+4. **產出標準化結果**：
+   - 輸出標準 CSV 決策表（`edl_part*.csv`）與 Markdown 裁切分析報告（`edl_part*_report.md`）。
 
-| 参数 | 说明 | 默认值 |
-| :--- | :--- | :--- |
-| `--ref` | 基准锚点机位视频路径 (CAM1) | *必填* |
-| `--targets` / `--target` | 一至多个目标机位视频路径（支持 2 至 6 机位） | *必填* |
-| `--auto-split` | 启用 30~40 分钟自然停顿点章节分段切片 | `False` |
-| `--split-min-dur` | 分段最小时长（分钟） | `30.0` |
-| `--split-max-dur` | 分段最大时长（分钟） | `40.0` |
-| `--merge` / `--multi-in-one` | 渲染多合一合并画面（并排/网格）以节省 AI Token | `False` |
-| `--encoder` | 视频编码器 (`h264_videotoolbox` / `libx264`) | `h264_videotoolbox` |
-| `--normalize` | 启用 EBU R128 (-14 LUFS) 全片音量标准化 | `False` |
-| `--lufs` | 目标整合响度 (LUFS) | `-14.0` |
-| `--lra` | 响度范围 (LU) | `11.0` |
-| `--tp` | 真峰值上限 (dBTP) | `-1.5` |
-| `--ref-start` | 基准机位手动剪辑起点 (`HH:MM:SS.mmm` 或秒数) | `None` |
-| `--ref-end` | 基准机位手动剪辑终点 (`HH:MM:SS.mmm` 或秒数) | `None` |
-| `--output-dir` | 输出同步母带、子片段与报表之目录路径 | `.` (当前目录) |
-| `--suffix` | 同步导出之文件名后缀 | `_synced` |
-| `--sr` | 音频 FFT 对齐采样率 (Hz) | `8000` |
-| `--workers` | 并行计算线程数 | `2` |
-| `--export-json` | 指定导出 JSON 报表路径 | `None` |
-| `--export-csv` | 指定导出 CSV 报表路径 | `None` |
+---
+
+### 步驟 3A（主路徑）：匯出 FCP7 XML 剪輯時間線 (`export_fcp7_xml.py`)
+1. **多 Part 跨章節時間戳累加映射**：
+   - 將 Part 1、Part 2 的局部時間戳自動累加為全片連續時間軸。
+2. **1:1 絕對時間碼對應**：
+   - 時間線上每一個鏡頭嚴格保持 `start == in` 與 `end == out`，剪輯師在 NLE 中可自由左右波紋微調（Slip/Slide）。
+3. **建立連續主音軌與規則 Marker 注入**：
+   - 建立全片無斷點的 CAM1 主收音軌道；
+   - 將 AI 的剪輯規則與決策理由轉化為時間線上的**紅藍彩色 Marker 標記**，剪輯師可隨時檢閱 AI 的切鏡依據。
+
+---
+
+### 步驟 3B（次路徑）：直接渲染與無損拼接成片 (`edl_to_video.py` & `concat_videos.py`)
+1. **硬體加速精確分段渲染**：
+   - 調用 Apple Silicon 硬體編碼器（`h264_videotoolbox`），依據 EDL 快速抽取出各章節的剪輯成片（`final_cut_part*.mp4`）。
+2. **極速無損流拼接**：
+   - 使用 FFmpeg Concat Demuxer（`-c copy`）以每秒數百格速度無損合併為全集 `final_cut_full.mp4`。
