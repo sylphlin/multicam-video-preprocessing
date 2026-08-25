@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "multicam-video-preprocessing",
+  "version": "1.0.0",
+  "description": "Universal multi-camera video processing pipeline and AI editing suite for 2 to 6 cameras. Features FFT audio time alignment, EBU R128 loudness normalization, auto chapter splitting, multi-in-one grid composition, multimodal AI rough-cut decisions, and FCP7 XML timeline export.",
+  "author": {
+    "name": "sylphlin",
+    "url": "https://github.com/sylphlin"
+  },
+  "homepage": "https://github.com/sylphlin/multicam-video-preprocessing",
+  "repository": "https://github.com/sylphlin/multicam-video-preprocessing",
+  "license": "MIT",
+  "keywords": [
+    "multicam",
+    "video-editing",
+    "davinci-resolve",
+    "premiere-pro",
+    "fcp7-xml",
+    "ebu-r128",
+    "ai-rough-cut",
+    "edl"
+  ]
+}

@@ -22,15 +22,19 @@ This repository adheres strictly to the Antigravity Skill specification and can 
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
 ```
 
-### 📁 Skill Directory Structure
+### 📁 Directory Structure (Agent Plugins 1.0 & Antigravity Dual-Compatible)
 ```text
 multicam-video-preprocessing/
-├── SKILL.md                       # Antigravity skill specification & branching decision rules
-├── assets/                        # Antigravity prompt assets
+├── plugin.json                    # ⭐ Agent Plugins 1.0 Manifest (for Codex & Agent Plugin clients)
+├── SKILL.md                       # Antigravity skill specification & decision rules
+├── skills/
+│   └── multicam-video-preprocessing/
+│       └── SKILL.md               # ⭐ Agent Plugins 1.0 standard skill entrypoint (for Codex)
+├── assets/                        # Prompt assets
 │   └── edl_interview_template.md  # Dual-camera interview prompt template
 ├── scripts/                       # Executable CLI scripts & processing modules
 │   ├── multicam_pipeline.py       # Step 1: Time sync, EBU R128, auto-split, synced masters, grid merge
-│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL generation
+│   ├── generate_edl.py            # Step 2: Multimodal AI rough-cut decision generation
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
 │   ├── edl_to_video.py            # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
 │   ├── concat_videos.py           # Step 3B: Full episode lossless concat (🎬 Secondary)
@@ -104,7 +108,7 @@ In the Antigravity chat interface, users simply express their requirements in na
 
 ---
 
-### Step 2: Gemini Multimodal AI Rough-Cut Decision (`generate_edl_with_gemini.py`)
+### Step 2: Gemini Multimodal AI Rough-Cut Decision (`generate_edl.py`)
 1. **Prompt Asset Ingestion**:
    - Loads editing rules from `assets/edl_interview_template.md`.
 2. **Phase 0: Pre/Post-roll Trimming**:

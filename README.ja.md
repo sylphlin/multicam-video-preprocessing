@@ -30,7 +30,7 @@ multicam-video-preprocessing/
 │   └── edl_interview_template.md  # 2台カメラインタビュー用プロンプトテンプレート
 ├── scripts/                       # 実行スクリプト＆処理モジュール
 │   ├── multicam_pipeline.py       # Step 1: 音声同期、EBU R128、チャプター分割、グリッド合成
-│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL 編集決定生成
+│   ├── generate_edl.py          # Step 2: Gemini 3.7 Flash EDL 編集決定生成
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML タイムラインエクスポート (⭐ 主要)
 │   ├── edl_to_video.py            # Step 3B: ハードウェアアクセラレーション直接動画出力 (🎬 次要)
 │   ├── concat_videos.py           # Step 3B: 全編無損失ストリーム結合 (🎬 次要)
@@ -104,7 +104,7 @@ Antigravity の対話画面で自然言語で要望を伝えるだけで、Agent
 
 ---
 
-### 手順 2：Gemini AI マルチモーダル粗編集決定 (`generate_edl_with_gemini.py`)
+### 手順 2：Gemini AI マルチモーダル粗編集決定 (`generate_edl.py`)
 1. **プロンプト資産の読み込み**：
    - `assets/edl_interview_template.md` を適用。
 2. **Phase 0：頭尾の無効映像トリミング**：

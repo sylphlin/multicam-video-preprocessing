@@ -22,15 +22,19 @@ Antigravity Skill 표준 규격을 준수하며, Antigravity 스킬 디렉터리
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
 ```
 
-### 📁 Skill 디렉토리 구조
+### 📁 디렉토리 구조 (Agent Plugins 1.0 & Antigravity 동시 호환)
 ```text
 multicam-video-preprocessing/
+├── plugin.json                    # ⭐ Agent Plugins 1.0 매니페스트 (Codex 등 클라이언트 지원)
 ├── SKILL.md                       # Antigravity 스킬 규격 및 분기 판단 규칙
-├── assets/                        # Antigravity 프롬프트 에셋 (Prompt Assets)
+├── skills/
+│   └── multicam-video-preprocessing/
+│       └── SKILL.md               # ⭐ Agent Plugins 1.0 표준 스킬 정의 (Codex 탐색용)
+├── assets/                        # 프롬프트 에셋 (Prompt Assets)
 │   └── edl_interview_template.md  # 2대 카메라 인터뷰 프롬프트 템플릿
 ├── scripts/                       # 실행 스크립트 및 처리 모듈
 │   ├── multicam_pipeline.py       # Step 1: 오디오 동기화, EBU R128, 챕터 분할, 그리드 합성
-│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL 편집 결정 생성
+│   ├── generate_edl.py            # Step 2: 멀티모달 AI 가편집 결정 생성
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML 타임라인 내보내기 (⭐ 주요 경로)
 │   ├── edl_to_video.py            # Step 3B: 하드웨어 가속 직접 영상 렌더링 (🎬 차선 경로)
 │   ├── concat_videos.py           # Step 3B: 전체 무손실 스트림 결합 (🎬 차선 경로)
@@ -104,7 +108,7 @@ Antigravity 채팅창에서 자연어로 요청하기만 하면 Agent가 백엔�
 
 ---
 
-### 2단계: Gemini AI 멀티모달 가편집 결정 (`generate_edl_with_gemini.py`)
+### 2단계: Gemini AI 멀티모달 가편집 결정 (`generate_edl.py`)
 1. **프롬프트 에셋 로드**: `assets/edl_interview_template.md` 템플릿 적용.
 2. **Phase 0: 도입부/말미 무효 구간 트리밍**:
    - 촬영 시작 전 테스트 발성 및 준비 구간 제외 (`Global_Start_Time`);

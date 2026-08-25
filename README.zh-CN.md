@@ -30,7 +30,7 @@ multicam-video-preprocessing/
 │   └── edl_interview_template.md  # 雙機訪談提示詞樣板
 ├── scripts/                       # 核心執行腳本與處理模組
 │   ├── multicam_pipeline.py       # Step 1: 多機時間同步、音量標準化、分段與網格合成
-│   ├── generate_edl_with_gemini.py# Step 2: Gemini 3.7 Flash EDL 決策生成
+│   ├── generate_edl.py          # Step 2: Gemini 3.7 Flash EDL 決策生成
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML 時間線匯出 (⭐ 主路徑)
 │   ├── edl_to_video.py            # Step 3B: 硬件加速直接渲染成片 (🎬 次路径)
 │   ├── concat_videos.py           # Step 3B: 全集章节无损拼接 (🎬 次路径)
@@ -104,7 +104,7 @@ flowchart TD
 
 ---
 
-### 步驟 2：Gemini 多模態 AI 智能粗剪決策 (`generate_edl_with_gemini.py`)
+### 步驟 2：Gemini 多模態 AI 智能粗剪決策 (`generate_edl.py`)
 1. **載入專屬提示詞資產**：
    - 讀取 `assets/edl_interview_template.md` 規則樣板。
 2. **Phase 0：頭尾廢料精確裁切 (Pre/Post-roll Trimming)**：

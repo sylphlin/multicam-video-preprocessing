@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Gemini Multimodal Video to EDL Generator (generate_edl_with_gemini.py).
-Uploads multi-camera / multi-in-one merged video to Gemini File API,
+AI Multimodal Video to EDL Decision Generator (generate_edl.py).
+Uploads multi-camera / multi-in-one merged video to multimodal LLM File API,
 applies the editable EDL Prompt Template, and extracts standard EDL CSV + Trimming Report.
 
-Default Model: gemini-3.7-flash (or customizable via --model)
-Prompt Assets : assets/edl_interview_template.md
+Default Model: gemini-3.7-flash (customizable via --model)
+Prompt Assets: assets/edl_interview_template.md
 """
 
 import argparse
@@ -206,21 +206,21 @@ def extract_csv_and_report(raw_text):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Gemini Video to EDL Generator: Analyze multi-camera video and produce EDL CSV & Trimming Report.",
+        description="AI Multimodal Video to EDL Decision Generator: Analyze multi-camera video and produce EDL CSV & Trimming Report.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-v", "--video", required=True, help="Path to input video file (e.g. multicam_merged_part1.mp4)")
     parser.add_argument("-o", "--output", default=None, help="Output CSV path (default: [video_basename].csv)")
     parser.add_argument("-r", "--report", default=None, help="Output Markdown report path (default: [video_basename]_report.md)")
     parser.add_argument("-t", "--template", default=None, help="Path to custom prompt template asset markdown file")
-    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Gemini model identifier (default: gemini-3.7-flash)")
-    parser.add_argument("-k", "--api-key", default=None, help="Gemini API Key (or set via GEMINI_API_KEY environment variable)")
+    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (default: gemini-3.7-flash)")
+    parser.add_argument("-k", "--api-key", default=None, help="API Key (or set via GEMINI_API_KEY / GOOGLE_API_KEY environment variables)")
 
     args = parser.parse_args()
 
     api_key = get_api_key(args.api_key)
     if not api_key:
-        print("[Error] Missing Gemini API Key! Please pass --api-key or set GEMINI_API_KEY environment variable.", file=sys.stderr)
+        print("[Error] Missing API Key! Please pass --api-key or set GEMINI_API_KEY / GOOGLE_API_KEY environment variable.", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists(args.video):
@@ -236,7 +236,7 @@ def main():
     report_out = args.report or os.path.join(out_dir, f"edl{part_tag}_report.md")
 
     print("\n" + "=" * 78)
-    print("🎬  Gemini Multi-Camera EDL Director")
+    print("🎬  AI Multi-Camera EDL Director (generate_edl.py)")
     print("=" * 78)
     print(f"  • Video Input   : {args.video}")
     print(f"  • Model Choice  : {args.model}")
@@ -261,7 +261,7 @@ def main():
         print(f"  ✓ Saved EDL CSV Decisions: {csv_out}")
 
         print("\n" + "=" * 78)
-        print("✅  Gemini EDL Generation Completed Successfully!")
+        print("✅  AI EDL Generation Completed Successfully!")
         print("=" * 78 + "\n")
 
     except Exception as e:
