@@ -5,43 +5,43 @@
 ---
 
 > [!NOTE]
-> **🚀 Platform Support & Model Compatibility Notice**  
-> - **Verified Environment**: This suite was primarily engineered and end-to-end verified using **Google Antigravity 2.0** powered by **Gemini 3.7 Flash (Thinking: Medium)**.  
-> - **Cross-Platform & Agent Plugins**: Packaged according to the **[Agent Plugins 1.0 Specification](https://agent-plugins.org/specification)**, allowing conformant clients (such as **OpenAI Codex Desktop**) to discover and install it. As third-party platforms have not been exhaustively tested, community testing and feedback/PRs are warmly welcomed!  
-> - **Context Window & Split Duration**: When using alternative multimodal models, ensure you verify their **Context Window capacity** and adjust the Step 1 chapter split duration parameters accordingly (`--split-min-dur` and `--split-max-dur`, default: 30 to 40 minutes).
+> **Platform Support & Environment Notice**  
+> - **Verified Environment**: Designed and tested for **Google Antigravity 2.0** with **Gemini 3.7 Flash (Thinking: Medium)**.  
+> - **Cross-Platform & Agent Support**: Packaged according to the **[Agent Plugins 1.0 Specification](https://agent-plugins.org/specification)**, supporting conformant Agent clients (such as **OpenAI Codex Desktop**). Testing across all third-party platforms is ongoing; community feedback and pull requests are welcomed.  
+> - **Context Window & Chapter Duration**: When using alternative multimodal models, check the model's **Context Window capacity** and adjust the Step 1 chapter split duration parameters accordingly (`--split-min-dur` and `--split-max-dur`, default: 30 to 40 minutes).
 
 ---
 
-Modular, high-performance multi-camera video processing pipeline and AI rough-cut suite optimized for large multimodal models (Gemini 3.7 Flash with 1M Token Context) and professional NLE editing software (DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro).
+A modular multi-camera (2 to 6 cameras) video preprocessing pipeline and AI rough-cut suite built for long-context multimodal models (e.g. Gemini 3.7 Flash with 1M Token Context) and professional NLE software (DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro).
 
 ---
 
 ## 📦 Installation & Setup
 
-This repository adheres strictly to the Antigravity Skill specification and can be cloned directly into your Antigravity skills directory:
+Adheres to Antigravity and Agent Plugins 1.0 standard structures. Clone directly into your skills directory:
 
 ```bash
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
 ```
 
-### 📁 Directory Structure (Agent Plugins 1.0 & Antigravity Dual-Compatible)
+### 📁 Directory Structure
 ```text
 multicam-video-preprocessing/
-├── plugin.json                    # ⭐ Agent Plugins 1.0 Manifest (for Codex & Agent Plugin clients)
+├── plugin.json                    # Agent Plugins 1.0 Manifest (for Codex & conformant clients)
 ├── SKILL.md                       # Antigravity skill specification & decision rules
 ├── skills/
 │   └── multicam-video-preprocessing/
-│       └── SKILL.md               # ⭐ Agent Plugins 1.0 standard skill entrypoint (for Codex)
+│       └── SKILL.md               # Agent Plugins 1.0 standard skill entrypoint
 ├── assets/                        # Prompt assets
 │   ├── edl_interview_template.md  # Dual-camera interview prompt template
 │   └── subtitle_proofread_template.md # YouTube subtitle proofreading template
 ├── scripts/                       # Executable CLI scripts & processing modules
 │   ├── multicam_pipeline.py       # Step 1: Time sync, EBU R128, auto-split, synced masters, grid merge
 │   ├── generate_edl.py            # Step 2: Multimodal AI rough-cut decision generation
-│   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
-│   ├── edl_to_video.py            # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
-│   ├── concat_videos.py           # Step 3B: Full episode lossless concat (🎬 Secondary)
-│   ├── generate_subtitles.py      # Step 4: YouTube Subtitles Generator (Whisper+Gemini)
+│   ├── export_fcp7_xml.py         # Step 3A: Export FCP7 XML timeline (Primary Path)
+│   ├── edl_to_video.py            # Step 3B: Direct video render (Secondary Path)
+│   ├── concat_videos.py           # Step 3B: Full episode lossless concat (Secondary Path)
+│   ├── generate_subtitles.py      # Step 4: Generate YouTube subtitles (Whisper+Gemini)
 │   └── modules/                   # Internal audiovisual algorithms
 └── README.md
 ```
@@ -63,109 +63,111 @@ flowchart TD
     C --> G{"Select Delivery Path"}
     F --> G
     
-    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)<br/>👉 Import into DaVinci Resolve / Premiere Pro"]
-    G -->|"Secondary: Direct Render (10%)"| I["Step 3B: Render & Concat Full MP4 Video<br/>(edl_to_video.py + concat_videos.py)<br/>👉 Outputs final_cut_full.mp4"]
+    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)<br/>Import into DaVinci Resolve / Premiere Pro"]
+    G -->|"Secondary: Direct Render (10%)"| I["Step 3B: Render & Concat Full MP4 Video<br/>(edl_to_video.py + concat_videos.py)<br/>Outputs final_cut_full.mp4"]
     
-    I --> J["Step 4: YouTube High-Quality Subtitles<br/>(generate_subtitles.py)<br/>• Whisper Millisecond Acoustic Alignment + Gemini Proofreading<br/>👉 Outputs final_cut_full.srt / .vtt"]
+    I --> J["Step 4: YouTube Subtitles Generation<br/>(generate_subtitles.py)<br/>Whisper Acoustic Alignment + Gemini Proofreading<br/>Outputs final_cut_full.srt / .vtt"]
 ```
 
 ---
 
 ## 💬 Usage Scenarios & Conversational Prompts
 
-In the Antigravity chat interface, users simply express their requirements in natural language, and the Agent automatically orchestrates the underlying modules:
+In the Antigravity chat interface, describe your requirements in natural language and the Agent handles execution:
 
-### Scenario 1: Export NLE XML Timeline (Professional Workflow ⭐ Recommended)
-- **Use Case**: Need to import the rough cut into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro for color grading, audio mastering, and fine trimming.
-- **Example Prompt**:
-  > "*I have two multi-camera interview video files `CAM1.mp4` and `CAM2.mp4`. Please synchronize their timecodes, normalize audio loudness, and apply the interview editing rules to produce an XML timeline ready for DaVinci Resolve.*"
-- **Delivered Outputs**:
-  1. `final_cut_full.xml` (Unified sequence timeline with 98+ cuts and color-coded rule markers)
-  2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (Synchronized master files at -14 LUFS)
-- **DaVinci Resolve 3-Step Import**:
-  1. Open DaVinci Resolve and create a new project.
+### Scenario 1: Export NLE Timeline XML (Professional Workflow)
+- **Use Case**: Need rough-cut results imported into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro for color grading, finishing, and audio mixing.
+- **Conversational Prompt Example**:
+  > "*I have two multicam interview video files `CAM1.mp4` and `CAM2.mp4`. Please synchronize timecodes, normalize audio loudness, apply the interview editing rules, and generate an XML timeline ready for DaVinci Resolve.*"
+- **Deliverables**:
+  1. `final_cut_full.xml` (Unified timeline with 98+ cut points and color markers)
+  2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (Synchronized and -14 LUFS loudness-normalized masters)
+- **DaVinci Resolve Import Steps**:
+  1. Open DaVinci Resolve and create a project.
   2. Drag `CAM1_synced.mp4` and `CAM2_synced.mp4` into the **Media Pool**.
-  3. Click **File $\rightarrow$ Import $\rightarrow$ Timeline...** (`Cmd + Shift + I`), select `final_cut_full.xml`, and the timeline is instantly assembled!
+  3. Go to **File $\rightarrow$ Import $\rightarrow$ Timeline...** (`Cmd + Shift + I`), select `final_cut_full.xml` to load the full timeline.
 
 ---
 
-### Scenario 2: Direct Video Rendering (Quick Preview Workflow 🎬)
-- **Use Case**: Away from the editing workstation, or need a quick MP4 export to review the edit pacing.
-- **Example Prompt**:
-  > "*Please perform an automated rough cut on these multi-camera video files and render them directly into a merged MP4 preview video for me.*"
-- **Delivered Outputs**:
-  1. `final_cut_full.mp4` (Full episode assembled preview video)
+### Scenario 2: Direct Video Rendering & YouTube Subtitles (Preview & Publishing Workflow)
+- **Use Case**: Away from the NLE workstation, or needing to quickly produce an MP4 video along with YouTube subtitles for review or publishing.
+- **Conversational Prompt Example**:
+  > "*Please rough-cut these two multicam files, render them directly into a full MP4 video, and produce proofread YouTube subtitles for me.*"
+- **Deliverables**:
+  1. `final_cut_full.mp4` (Hardware-accelerated rendered and concatenated full episode video)
+  2. `final_cut_full.srt` / `final_cut_full.vtt` (Whisper acoustic alignment + Gemini proofread YouTube subtitles)
 
 ---
 
 ## 🔍 Detailed Pipeline Steps
 
-### Step 1: Multicam Synchronization & Preprocessing (`multicam_pipeline.py`)
-1. **Global 8kHz FFT Audio Time Alignment**:
-   - Extracts and downsamples audio tracks to 8kHz mono, applying Cross-Correlation to compute millisecond-accurate physical time offsets $\Delta t$ across all cameras.
-2. **EBU R128 (-14 LUFS) Broadcast Loudness Normalization**:
-   - Two-pass loudness analysis and filtering to normalize all audio tracks to standard broadcast levels (-14.0 LUFS, 11.0 LRA, -1.5 dBTP).
+### Step 1: Multicam Sync & Grid Preprocessing (`multicam_pipeline.py`)
+1. **8kHz FFT Audio Time Alignment**:
+   - Downsamples audio tracks to 8kHz mono and applies cross-correlation to calculate exact timecode offsets $\Delta t$ (millisecond precision).
+2. **EBU R128 (-14 LUFS) Full-Length Audio Normalization**:
+   - Two-pass loudness analysis and filter processing, standardizing all camera tracks to -14.0 LUFS, 11.0 LRA, and -1.5 dBTP.
 3. **30–40 min Natural Pause Chapter Splitting (Auto-Split)**:
-   - Detects speech energy minima and natural breath pauses within 30–40 min windows, perfectly sizing media for 1M Token Context AI models.
-4. **Full-Length Synchronized Camera Masters Export (`*_synced.mp4`)**:
-   - Produces clean full-length aligned master files for direct reference by the NLE timeline.
-5. **2–6 Camera Multi-in-One Grid Composition**:
-   - Combines multi-camera angles into a single canvas (<= 1080P, >= 640x480/CAM), reducing AI multimodal **token consumption by 50%–83%**.
+   - Identifies voice energy minimums and natural breath pauses within 30 to 40-minute windows for clean lossless chapter slicing.
+4. **Synchronized Full-Length Masters (`*_synced.mp4`)**:
+   - Trims and exports synchronized, loudness-normalized full-length video masters for NLE timeline linking.
+5. **2 to 6 Camera Multi-in-One Compact Grid Composition**:
+   - Arranges cameras in dynamic grid layouts (Total Canvas $\le 1920 \times 1080$, $\ge 640 \times 480$/CAM), saving **50%–83% multimodal tokens**.
 
 ---
 
 ### Step 2: Gemini Multimodal AI Rough-Cut Decision (`generate_edl.py`)
-1. **Prompt Asset Ingestion**:
+1. **Load Prompt Assets**:
    - Loads editing rules from `assets/edl_interview_template.md`.
 2. **Phase 0: Pre/Post-roll Trimming**:
-   - Identifies and excludes invalid pre-roll setup footage (`Global_Start_Time`) and post-roll chatter/chores (`Global_End_Time`).
-3. **Phase 1–4: Audio-Visual Semantic Editing**:
-   - **Speaker Tracking**: Audio-first tracking to lock active speakers and align cut points with speech boundaries.
-   - **Reaction Shots**: Selectively inserts 2–3s listener reaction shots (smiles, nods, chuckles) while filtering short interruptions.
-   - **Anti-Glitch Pacing**: Enforces minimum cut length $\ge 2.5\text{s}$ to prevent visual flicker.
-4. **Structured Decision Outputs**:
-   - Generates standard CSV tables (`edl_part*.csv`) and Markdown calibration reports (`edl_part*_report.md`).
+   - Identifies and trims pre-roll slate, countdown, and mic checks (`Global_Start_Time`);
+   - Trims post-roll wrap-up chat and mic handling noise (`Global_End_Time`).
+3. **Phase 1–4: Multimodal Semantic Editing Decisions**:
+   - **Speaker Identification & Tracking**: Audio-led speaker switching with cuts on speech boundaries.
+   - **Reaction Cutaways**: Filters 1–2s brief interjections; inserts 2–3s listener reaction shots.
+   - **Pacing & Anti-Glitch**: Enforces minimum single-shot duration $\ge 2.5\text{s}$.
+4. **Standard Output**:
+   - Exports CSV decision lists (`edl_part*.csv`) and Markdown analysis reports (`edl_part*_report.md`).
 
 ---
 
-### Step 3A (Primary Path): Export FCP7 XML Sequence Timeline (`export_fcp7_xml.py`)
-1. **Multi-Part Timeline Offset Accumulation**:
-   - Continuously accumulates cut timestamps across all chapter parts onto a single sequence timeline.
-2. **1:1 Timecode Mapping (`start == in`)**:
-   - Maintains exact source-to-timeline correspondence, enabling seamless slip/slide ripple trimming in NLEs.
-3. **Master Audio Track & Decision Markers**:
-   - Generates an uninterrupted CAM1 master audio track and injects color-coded decision Markers with AI reasoning notes.
+### Step 3A (Primary Path): Export FCP7 XML Timeline (`export_fcp7_xml.py`)
+1. **Cross-Part Timestamp Accumulation**:
+   - Offsets and maps part-level timestamps into a continuous timeline.
+2. **1:1 Exact Timecode Matching**:
+   - Maintains strict `start == in` and `end == out` for timeline clips, allowing slip/slide trimming in NLEs.
+3. **Continuous Audio Track & Rule Markers**:
+   - Builds a continuous CAM1 master audio track;
+   - Embeds red and blue markers with decision reasons directly into the timeline.
 
 ---
 
-### Step 3B (Secondary Path): Direct Video Rendering & Splicing (`edl_to_video.py` & `concat_videos.py`)
-1. **Hardware-Accelerated Segment Rendering**:
-   - Uses Apple Silicon `h264_videotoolbox` to render individual chapter cuts (`final_cut_part*.mp4`).
+### Step 3B (Secondary Path): Direct Video Rendering (`edl_to_video.py` & `concat_videos.py`)
+1. **Hardware-Accelerated Chapter Rendering**:
+   - Uses Apple Silicon hardware encoder (`h264_videotoolbox`) to render EDL cut segments into chapter clips (`final_cut_part*.mp4`).
 2. **Lossless Stream Concatenation**:
-   - Uses FFmpeg stream copy (`-c copy`) to merge parts into the final episode `final_cut_full.mp4` at hundreds of frames per second.
-
+   - Merges chapter clips via FFmpeg Concat Demuxer (`-c copy`) into `final_cut_full.mp4`.
 
 ---
 
-### Step 4: YouTube High-Quality Subtitle Generation (`generate_subtitles.py` ⭐ New)
+### Step 4: YouTube Subtitles Generation (`generate_subtitles.py`)
 
-This suite employs the **Whisper Acoustic Alignment + Gemini Contextual Proofreading** Two-Stage Golden Standard Pipeline, resolving traditional AI subtitle issues of inaccurate timestamps and homophone errors:
+Combines **Whisper (speech recognition and acoustic time alignment)** with **Gemini (contextual proofreading and terminology correction)**:
 
-#### 🌟 Why "Whisper + Gemini" is the Unmatched Best Solution? (Key Advantages)
+#### Why Use "Whisper + Gemini"
 
-| Dimension | Whisper Standalone | Gemini Audio ASR Standalone | Whisper + Gemini Two-Stage (⭐ Sole Project Standard) |
+| Dimension | Whisper Standalone | Gemini Audio ASR Standalone | Whisper + Gemini |
 | :--- | :--- | :--- | :--- |
-| **Timestamp Accuracy** | ⭐⭐⭐ **Millisecond-level precision** | ⚠️ **Coarse timestamps** (Prone to drift) | ⭐⭐⭐ **Millisecond-level precision** (Inherited from Whisper) |
-| **Homophone Correction** | ❌ **Frequent homophone typos** (e.g. phonetic errors) | ⭐⭐⭐ **High contextual comprehension** | ⭐⭐⭐ **99%+ Accuracy** (Fixes homophones, typos, domain terms) |
-| **Reading Rhythm** | ⭐⭐⭐ **YouTube Golden Short Sentences (1.2–2.5s)** | ❌ **Too long (Single sentence 6–8s)** | ⭐⭐⭐ **Golden short lines (8–16 chars, perfectly synced to speech)** |
-| **Verbatim Faithfulness** | ⭐⭐⭐ **100% Faithful verbatim capture** | ⚠️ **Prone to over-summarization/paraphrase** | ⭐⭐⭐ **Verbatim speech preserved + typos fixed** |
-| **Compute & Token Cost** | ⚡ **Extremely Low** (Free local CPU in 2.5 min) | 💰 **Higher** (50m audio consumes ~100k+ Audio Tokens) | ⚡ **Extremely Low** (Audio processed locally; Gemini only proofreads text) |
+| **Timestamp Accuracy** | Millisecond-level precision | Coarse timestamps (by paragraph) | Millisecond-level precision (Inherited from Whisper) |
+| **Homophone Correction** | Frequent phonetic typos | Strong contextual comprehension | Automatically corrects homophones and domain terms |
+| **Reading Rhythm** | Suitable short lines (1.2–2.5s) | Paragraphs are too long (6–8s) | Optimal short lines for YouTube (8–16 characters) |
+| **Verbatim Faithfulness** | Faithful to spoken words | Prone to summarization/paraphrasing | Preserves verbatim speech, correcting only typos |
+| **Compute Cost** | Fast local processing | Consumes audio tokens | Local audio processing, small text token usage |
 
-#### 🔄 Complete End-to-End Subtitle Workflow:
-1. **Audio Extraction**: FFmpeg extracts audio from final video into 16kHz mono WAV format.
-2. **Stage 1 (Whisper Acoustic Alignment)**: Local `faster-whisper` produces baseline SRT subtitles with millisecond-accurate timestamps (`00:01:23,450 --> 00:01:26,800`) and natural reading line breaks.
-3. **Stage 2 (Gemini Contextual Proofreading)**: Applies `assets/subtitle_proofread_template.md` via Gemini 3.7 Flash **with timestamps strictly locked 100% unchanged**, correcting homophones, domain terminology, and English proper nouns (e.g., `Kelly Tsai`, `YouTube`, `DaVinci Resolve`, `Buffet`).
-4. **Dual Standard Deliverables**:
-   - **`final_cut_full.srt`**: Official YouTube SubRip standard subtitle file.
-   - **`final_cut_full.vtt`**: WebVTT format for web players and HTML5.
-   - **`final_cut_full_raw_whisper.srt`**: Preserved raw acoustic baseline for debugging.
+#### Workflow:
+1. **Audio Extraction**: FFmpeg extracts audio into 16kHz mono WAV format.
+2. **Stage 1 (Whisper Transcription)**: Local `faster-whisper` produces baseline SRT with millisecond timestamps (`00:01:23,450 --> 00:01:26,800`).
+3. **Stage 2 (Gemini Proofreading)**: Applies `assets/subtitle_proofread_template.md` via Gemini 3.7 Flash with timestamps locked, correcting typos, names, and English terminology (`Kelly Tsai`, `YouTube`, `DaVinci Resolve`, `Buffet`).
+4. **Outputs**:
+   - **`final_cut_full.srt`**: Standard YouTube SubRip subtitle file.
+   - **`final_cut_full.vtt`**: WebVTT subtitle file.
+   - **`final_cut_full_raw_whisper.srt`**: Raw acoustic baseline backup.
