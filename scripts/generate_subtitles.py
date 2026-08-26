@@ -3,14 +3,9 @@
 YouTube Subtitles Generator CLI Tool (generate_subtitles.py).
 Generates millisecond-accurate, contextually proofread YouTube subtitles (SRT & VTT).
 
-Two-Stage Golden Standard Pipeline:
+Two-Stage Golden Standard Pipeline (Mandatory):
   Stage 1: Fast acoustic transcription via Whisper (faster-whisper) with millisecond-level timestamps.
-  Stage 2: Multimodal LLM (Gemini 3.7 Flash) contextual proofreading (fixes homophones, typos, domain terms, and names without touching timestamps).
-
-Supported Modes:
-  - whisper-gemini : Whisper transcription + Gemini contextual proofreading (⭐ Recommended for YouTube).
-  - whisper-only   : Pure local Whisper transcription (Offline, zero API key).
-  - gemini-only    : Cloud-based audio transcription via Gemini.
+  Stage 2: Contextual LLM Proofreading (Gemini 3.7 Flash) to eliminate homophones, typos, and domain term mistakes without touching timestamps.
 
 Usage Examples:
   # Example 1: Standard End-to-End YouTube Subtitle Generation (Whisper + Gemini)
@@ -261,8 +256,6 @@ def main():
 
     parser.add_argument("-i", "--input", required=True, help="Path to input video (e.g. final_cut_full.mp4) or audio file")
     parser.add_argument("-o", "--output-dir", default=None, help="Output directory for SRT/VTT subtitles (default: same as input)")
-    parser.add_argument("--mode", choices=["whisper-gemini", "whisper-only", "gemini-only"], default="whisper-gemini",
-                        help="Subtitle generation mode: whisper-gemini (default), whisper-only, gemini-only")
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
                         help="Whisper model size for Stage 1 acoustic transcription (default: base)")
     parser.add_argument("--gemini-model", default="gemini-3.7-flash",
@@ -286,20 +279,19 @@ def main():
     raw_srt_path = os.path.join(out_dir, f"{input_basename}_raw_whisper.srt")
 
     api_key = get_api_key(args.api_key)
-    effective_mode = args.mode
-
-    if effective_mode == "whisper-gemini" and not api_key:
-        print("[Notice] No GEMINI_API_KEY detected. Stage 1 Whisper will generate baseline subtitles; Stage 2 proofreading will be skipped or done via Antigravity.")
-        effective_mode = "whisper-only"
+    if not api_key:
+        print("[Error] Missing Gemini API Key for subtitle proofreading! Please pass --api-key or set GEMINI_API_KEY / GOOGLE_API_KEY environment variable.", file=sys.stderr)
+        print("  • To ensure broadcast-grade quality and avoid homophone typos, Whisper + Gemini proofreading is mandatory.", file=sys.stderr)
+        sys.exit(1)
 
     print("\n" + "=" * 78)
     print("🎬  YouTube Subtitles Generator (Whisper + Gemini Proofreading)")
     print("=" * 78)
-    print(f"  • Input Media  : {args.input}")
-    print(f"  • Mode         : {args.mode} (Effective: {effective_mode})")
-    print(f"  • Whisper Model: {args.whisper_model} (Language: {args.language})")
-    print(f"  • Target SRT   : {final_srt_path}")
-    print(f"  • Target VTT   : {final_vtt_path}")
+    print(f"  • Input Media   : {args.input}")
+    print(f"  • Pipeline Mode : Whisper ASR + Gemini 3.7 Flash Proofreading (Sole Standard)")
+    print(f"  • Whisper Model : {args.whisper_model} (Language: {args.language})")
+    print(f"  • Target SRT    : {final_srt_path}")
+    print(f"  • Target VTT    : {final_vtt_path}")
     print("-" * 78)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -311,16 +303,13 @@ def main():
         segments = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language)
         raw_srt = build_srt_from_segments(segments)
 
-        # Stage 2: Contextual Proofreading
-        if effective_mode == "whisper-gemini" and api_key:
-            # Save raw whisper backup
-            with open(raw_srt_path, "w", encoding="utf-8") as f:
-                f.write(raw_srt)
-            print(f"  • Saved baseline Whisper SRT: {raw_srt_path}")
+        # Save raw whisper backup for reference/debugging
+        with open(raw_srt_path, "w", encoding="utf-8") as f:
+            f.write(raw_srt)
+        print(f"  • Saved raw acoustic baseline: {raw_srt_path}")
 
-            final_srt = proofread_srt_with_gemini(raw_srt, api_key, model=args.gemini_model, chunk_size=args.chunk_size)
-        else:
-            final_srt = raw_srt
+        # Stage 2: Mandatory Gemini Contextual Proofreading
+        final_srt = proofread_srt_with_gemini(raw_srt, api_key, model=args.gemini_model, chunk_size=args.chunk_size)
 
         # Write Final SRT
         with open(final_srt_path, "w", encoding="utf-8") as f:
