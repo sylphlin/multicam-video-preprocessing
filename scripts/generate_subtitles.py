@@ -11,8 +11,8 @@ Usage Examples:
   # Example 1: Standard End-to-End YouTube Subtitle Generation (Whisper + Gemini)
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
-  # Example 2: Offline Mode with specific Whisper model
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --mode whisper-only --whisper-model small
+  # Example 2: Specify Whisper model size
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --whisper-model small
 
   # Example 3: Custom Output Directory and Language
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 -o ./subtitles/ --language zh
