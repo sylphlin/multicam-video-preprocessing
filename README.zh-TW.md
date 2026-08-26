@@ -33,13 +33,15 @@ multicam-video-preprocessing/
 │   └── multicam-video-preprocessing/
 │       └── SKILL.md               # ⭐ Agent Plugins 1.0 標準 Skill 入口 (供 Codex 探索)
 ├── assets/                        # 提示詞資產 (Prompt Assets)
-│   └── edl_interview_template.md  # 雙機訪談提示詞樣板
+│   ├── edl_interview_template.md  # 雙機訪談提示詞樣板
+│   └── subtitle_proofread_template.md # YouTube 字幕高品質語意校對樣板
 ├── scripts/                       # 核心執行腳本與處理模組
 │   ├── multicam_pipeline.py       # Step 1: 多機時間同步、音量標準化、分段與網格合成
-│   ├── generate_edl.py            # Step 2: 多模態 AI 剪輯決策生成 (支援 Gemini/OpenAI)
+│   ├── generate_edl.py            # Step 2: 多模態 AI 剪輯決策生成
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML 時間線匯出 (⭐ 主路徑)
 │   ├── edl_to_video.py            # Step 3B: 硬體加速直接渲染成片 (🎬 次路徑)
 │   ├── concat_videos.py           # Step 3B: 全集章節無損拼接 (🎬 次路徑)
+│   ├── generate_subtitles.py      # Step 4: YouTube 高精度字幕生成 (Whisper+Gemini)
 │   └── modules/                   # 內部音影核心演算法庫
 └── README.md
 ```
@@ -63,6 +65,8 @@ flowchart TD
     
     G -->|"主路徑：專業剪輯軟體 (90%)"| H["步驟 3A：匯出 FCP7 XML 時間線<br/>(直接導入 DaVinci / Premiere)"]
     G -->|"次路徑：快速預覽成片 (10%)"| I["步驟 3B：直接渲染 MP4 成片<br/>(免開剪輯軟體直出)"]
+    
+    I --> J["【可選】步驟 4：YouTube 字幕生成 (generate_subtitles.py)<br/>• Whisper 毫秒級聲學對齊 + Gemini 語意校對<br/>• 產出 final_cut_full.srt / final_cut_full.vtt"]
 ```
 
 ---
@@ -85,12 +89,13 @@ flowchart TD
 
 ---
 
-### 情境二：直出影片（快速預覽工作流 🎬）
-- **適用場景**：臨時不在剪輯工作站前，或需要快速產出 MP4 影片供客戶審查粗剪節奏。
+### 情境二：直出影片與 YouTube 字幕（快速預覽與發布工作流 🎬）
+- **適用場景**：臨時不在剪輯工作站前，或需要快速產出 MP4 影片與高精度 YouTube 字幕供審片或直接發布。
 - **對話 Prompt 範例**：
-  > 「*請幫我把這兩支多機位素材進行粗剪，並直接渲染合併成一支完整的 MP4 預覽影片給我。*」
+  > 「*請幫我把這兩支多機位素材進行粗剪，直接渲染合併成一支完整的 MP4 預覽影片，並產出校對後的 YouTube 字幕。*」
 - **交付成果**：
-  1. `final_cut_full.mp4`（全集無損拼接成品影片）
+  1. `final_cut_full.mp4`（全集硬體加速渲染與無損拼接成品影片）
+  2. `final_cut_full.srt` / `final_cut_full.vtt`（Whisper 毫秒聲學對齊 + Gemini 語意校對之 YouTube 標準字幕）
 
 ---
 
@@ -141,3 +146,13 @@ flowchart TD
    - 調用 Apple Silicon 硬體編碼器（`h264_videotoolbox`），依據 EDL 快速抽取出各章節的剪輯成片（`final_cut_part*.mp4`）。
 2. **極速無損流拼接**：
    - 使用 FFmpeg Concat Demuxer（`-c copy`）以每秒數百格速度無損合併為全集 `final_cut_full.mp4`。
+
+
+---
+
+### 步驟 4：YouTube 高品質字幕生成 (`generate_subtitles.py` ⭐ 新增)
+1. **兩階段黃金字幕工作流 (Two-Stage Pipeline)**：
+   - **階段一（Whisper 聲學對齊）**：使用本地 `faster-whisper` 高速提取音訊並生成帶有毫秒級時間戳（`00:01:23,450 --> 00:01:26,800`）的基準 SRT 字幕。
+   - **階段二（Gemini 語意校對）**：將基準字幕送入 Gemini 3.7 Flash 進行上下文修訂，**在 100% 嚴格鎖定時間戳不動**的前提下，自動修正同音錯字（如「戲鼓 $\rightarrow$ 矽谷」、「心水 $\rightarrow$ 薪水」、「把費 $\rightarrow$ Buffet」）與中英專業術語。
+2. **雙格式無縫交付**：
+   - 同時輸出 **`final_cut_full.srt`**（YouTube 標準字幕檔）與 **`final_cut_full.vtt`**（網頁與現代播放器最佳格式），免校對直接上傳！

@@ -129,3 +129,13 @@ Antigravity の対話画面で自然言語で要望を伝えるだけで、Agent
 ### 手順 3B（次要）：直接レンダリング＆結合 (`edl_to_video.py` & `concat_videos.py`)
 1. **ハードウェアアクセラレーション書き出し**：Apple Silicon `h264_videotoolbox` による高速レンダリング。
 2. **無損失ストリーム結合**：`-c copy` による秒速マージ。
+
+
+---
+
+### 手順 4：YouTube 高品質字幕生成 (`generate_subtitles.py` ⭐ 新機能)
+1. **2段階黄金字幕パイプライン (Two-Stage Pipeline)**：
+   - **第1段階（Whisper 音声認識）**：ローカルの `faster-whisper` でミリ秒単位のタイムスタンプ付き基準 SRT を高速生成。
+   - **第2段階（Gemini 意味校正）**：タイムスタンプを 100% 保持したまま、同音異義語の誤変換や専門用語を文脈に沿って高精度に自動修正。
+2. **2種類のフォーマット出力**：
+   - **`final_cut_full.srt`**（YouTube 標準）および **`final_cut_full.vtt`**（WebVTT 形式）を同時出力。

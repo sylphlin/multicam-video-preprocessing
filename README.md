@@ -33,13 +33,15 @@ multicam-video-preprocessing/
 │   └── multicam-video-preprocessing/
 │       └── SKILL.md               # ⭐ Agent Plugins 1.0 standard skill entrypoint (for Codex)
 ├── assets/                        # Prompt assets
-│   └── edl_interview_template.md  # Dual-camera interview prompt template
+│   ├── edl_interview_template.md  # Dual-camera interview prompt template
+│   └── subtitle_proofread_template.md # YouTube subtitle proofreading template
 ├── scripts/                       # Executable CLI scripts & processing modules
 │   ├── multicam_pipeline.py       # Step 1: Time sync, EBU R128, auto-split, synced masters, grid merge
 │   ├── generate_edl.py            # Step 2: Multimodal AI rough-cut decision generation
 │   ├── export_fcp7_xml.py         # Step 3A: FCP7 XML timeline export (⭐ Primary Path)
 │   ├── edl_to_video.py            # Step 3B: Hardware-accelerated direct video render (🎬 Secondary)
 │   ├── concat_videos.py           # Step 3B: Full episode lossless concat (🎬 Secondary)
+│   ├── generate_subtitles.py      # Step 4: YouTube Subtitles Generator (Whisper+Gemini)
 │   └── modules/                   # Internal audiovisual algorithms
 └── README.md
 ```
@@ -139,3 +141,13 @@ In the Antigravity chat interface, users simply express their requirements in na
    - Uses Apple Silicon `h264_videotoolbox` to render individual chapter cuts (`final_cut_part*.mp4`).
 2. **Lossless Stream Concatenation**:
    - Uses FFmpeg stream copy (`-c copy`) to merge parts into the final episode `final_cut_full.mp4` at hundreds of frames per second.
+
+
+---
+
+### Step 4: YouTube High-Quality Subtitle Generation (`generate_subtitles.py` ⭐ New)
+1. **Two-Stage Golden Subtitle Pipeline**:
+   - **Stage 1 (Whisper Acoustic Alignment)**: Leverages local `faster-whisper` for fast audio transcription with millisecond-level timestamps (`00:01:23,450 --> 00:01:26,800`).
+   - **Stage 2 (Gemini Contextual Proofreading)**: Feeds baseline subtitles to Gemini 3.7 Flash to fix homophones, typos, English proper nouns, and domain terminology while strictly locking all timestamps 100% unchanged.
+2. **Dual-Format Delivery**:
+   - Automatically exports **`final_cut_full.srt`** (YouTube standard) and **`final_cut_full.vtt`** (WebVTT for web players), ready for instant YouTube upload without manual proofreading!
