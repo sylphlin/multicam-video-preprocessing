@@ -45,19 +45,21 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["多機位原始素材 (2–6 CAMs)"] --> B["步驟 1：多機同步與 AI 網格前處理"]
+    A["多机位原始素材 (2–6 CAMs)"] --> B["步骤 1：多机同步与 AI 网格预处理<br/>(multicam_pipeline.py)"]
     
-    B --> C["【全集同步母带】"]
-    B --> D["【AI 分析專用網格影片】"]
+    B --> C["【全集同步母带】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
+    B --> D["【AI 分析专用网格视频】<br/>• multicam_merged_part*.mp4"]
     
-    D --> E["步驟 2：AI 多模態智能粗剪決策"]
-    E --> F["【EDL 剪輯決策列表 (CSV)】"]
+    D --> E["步骤 2：AI 多模态智能粗剪决策<br/>(generate_edl.py / Antigravity)"]
+    E --> F["【EDL 剪辑决策列表】<br/>• edl_part*.csv"]
     
-    C --> G{"選擇交付格式"}
+    C --> G{"选择交付路径"}
     F --> G
     
-    G -->|"主路徑：專業剪輯软件 (90%)"| H["步驟 3A：匯出 FCP7 XML 時間線<br/>(直接導入 DaVinci / Premiere)"]
-    G -->|"次路徑：快速預覽成片 (10%)"| I["步驟 3B：直接渲染 MP4 成片<br/>(免開剪輯软件直出)"]
+    G -->|"主路径：专业剪辑 (90%)"| H["步骤 3A：导出 FCP7 XML 时间线<br/>(export_fcp7_xml.py)<br/>👉 导入 DaVinci Resolve / Premiere Pro"]
+    G -->|"次路径：直出成片 (10%)"| I["步骤 3B：直接渲染与拼接 MP4 成片<br/>(edl_to_video.py + concat_videos.py)<br/>👉 产出 final_cut_full.mp4"]
+    
+    I --> J["步骤 4：YouTube 高品质字幕生成<br/>(generate_subtitles.py)<br/>• Whisper 毫秒声学对齐 + Gemini 语义校对<br/>👉 产出 final_cut_full.srt / .vtt"]
 ```
 
 ---

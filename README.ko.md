@@ -52,19 +52,21 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["미처리 멀티카메라 원본 (2–6 CAMs)"] --> B["1단계: 멀티카메라 동기화 및 AI 그리드 전처리"]
+    A["미처리 멀티카메라 원본 (2–6 CAMs)"] --> B["1단계: 멀티카메라 동기화 및 그리드 전처리<br/>(multicam_pipeline.py)"]
     
-    B --> C["【전체 동기화 마스터 영상】"]
-    B --> D["【AI 분석용 그리드 영상】"]
+    B --> C["【전체 동기화 마스터 영상】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
+    B --> D["【AI 분석용 그리드 영상】<br/>• multicam_merged_part*.mp4"]
     
-    D --> E["2단계: AI 멀티모달 가편집 결정"]
-    E --> F["【EDL 편집 결정 목록 (CSV)】"]
+    D --> E["2단계: AI 멀티모달 가편집 결정<br/>(generate_edl.py / Antigravity)"]
+    E --> F["【EDL 편집 결정 목록】<br/>• edl_part*.csv"]
     
-    C --> G{"출력 포맷 선택"}
+    C --> G{"출력 경로 선택"}
     F --> G
     
-    G -->|"주요: 전문 NLE 소프트웨어 (90%)"| H["3A단계: FCP7 XML 타임라인 내보내기<br/>(DaVinci / Premiere 직접 가져오기)"]
-    G -->|"차선: 간이 프리뷰 영상 (10%)"| I["3B단계: MP4 영상 직접 렌더링<br/>(NLE 없이 즉시 출력)"]
+    G -->|"주요: 전문가용 NLE 편집 (90%)"| H["3A단계: FCP7 XML 타임라인 내보내기<br/>(export_fcp7_xml.py)<br/>👉 DaVinci Resolve / Premiere Pro 가져오기"]
+    G -->|"차선: 직접 영상 렌더링 (10%)"| I["3B단계: MP4 완성본 직접 렌더링 및 결합<br/>(edl_to_video.py + concat_videos.py)<br/>👉 final_cut_full.mp4 출력"]
+    
+    I --> J["4단계: YouTube 고품질 자막 생성<br/>(generate_subtitles.py)<br/>• Whisper 밀리초 음향 정렬 + Gemini 문맥 교정<br/>👉 final_cut_full.srt / .vtt 출력"]
 ```
 
 ---

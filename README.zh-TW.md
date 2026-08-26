@@ -52,21 +52,21 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["多機位原始素材 (2–6 CAMs)"] --> B["步驟 1：多機同步與 AI 網格前處理"]
+    A["多機位原始素材 (2–6 CAMs)"] --> B["步驟 1：多機同步與 AI 網格前處理<br/>(multicam_pipeline.py)"]
     
-    B --> C["【全集同步母帶】"]
-    B --> D["【AI 分析專用網格影片】"]
+    B --> C["【全集同步母帶】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
+    B --> D["【AI 分析專用網格影片】<br/>• multicam_merged_part*.mp4"]
     
-    D --> E["步驟 2：AI 多模態智能粗剪決策"]
-    E --> F["【EDL 剪輯決策列表 (CSV)】"]
+    D --> E["步驟 2：AI 多模態智能粗剪決策<br/>(generate_edl.py / Antigravity)"]
+    E --> F["【EDL 剪輯決策列表】<br/>• edl_part*.csv"]
     
-    C --> G{"選擇交付格式"}
+    C --> G{"選擇交付路徑"}
     F --> G
     
-    G -->|"主路徑：專業剪輯軟體 (90%)"| H["步驟 3A：匯出 FCP7 XML 時間線<br/>(直接導入 DaVinci / Premiere)"]
-    G -->|"次路徑：快速預覽成片 (10%)"| I["步驟 3B：直接渲染 MP4 成片<br/>(免開剪輯軟體直出)"]
+    G -->|"主路徑：專業剪輯 (90%)"| H["步驟 3A：匯出 FCP7 XML 時間線<br/>(export_fcp7_xml.py)<br/>👉 導入 DaVinci Resolve / Premiere Pro"]
+    G -->|"次路徑：直出成片 (10%)"| I["步驟 3B：直接渲染與拼接 MP4 成片<br/>(edl_to_video.py + concat_videos.py)<br/>👉 產出 final_cut_full.mp4"]
     
-    I --> J["【可選】步驟 4：YouTube 字幕生成 (generate_subtitles.py)<br/>• Whisper 毫秒級聲學對齊 + Gemini 語意校對<br/>• 產出 final_cut_full.srt / final_cut_full.vtt"]
+    I --> J["步驟 4：YouTube 高品質字幕生成<br/>(generate_subtitles.py)<br/>• Whisper 毫秒聲學對齊 + Gemini 語意校對<br/>👉 產出 final_cut_full.srt / .vtt"]
 ```
 
 ---
@@ -167,7 +167,11 @@ flowchart TD
 #### 🔄 完整端到端字幕執行流程：
 1. **音訊提取**：自動透過 FFmpeg 提取成片音訊並轉換為 16kHz 單聲道 WAV 格式。
 2. **階段一（Whisper 聲學對齊）**：使用本地 `faster-whisper` 高速生成帶有毫秒級精確時間戳（`00:01:23,450 --> 00:01:26,800`）與自然短句斷句的基準 SRT 字幕。
-3. **階段二（Gemini 語意審校）**：載入 `assets/subtitle_proofread_template.md`，調用 Gemini 3.7 Flash **在 100% 嚴格鎖定時間戳與序號不動的前提下**，自動修復同音錯字（如「戲鼓 $ightarrow$ 矽谷」、「心水 $ightarrow$ 薪水」、「把費 $ightarrow$ Buffet」、「思想時間試 $ightarrow$ 思想實驗室」）與科技業英文專有名詞（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
+3. **階段二（Gemini 語意審校）**：載入 `assets/subtitle_proofread_template.md`，調用 Gemini 3.7 Flash **在 100% 嚴格鎖定時間戳與序號不動的前提下**，自動修復同音錯字（如「戲鼓 $
+ightarrow$ 矽谷」、「心水 $
+ightarrow$ 薪水」、「把費 $
+ightarrow$ Buffet」、「思想時間試 $
+ightarrow$ 思想實驗室」）與科技業英文專有名詞（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
 4. **雙格式標準交付**：
    - **`final_cut_full.srt`**：YouTube 官方標準 SubRip 字幕檔。
    - **`final_cut_full.vtt`**：WebVTT 網頁與現代播放器最佳相容格式。

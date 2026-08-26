@@ -52,19 +52,21 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["Raw Multicam Footage (2–6 CAMs)"] --> B["Step 1: Multicam Sync & Grid Preprocessing"]
+    A["Raw Multicam Footage (2–6 CAMs)"] --> B["Step 1: Multicam Sync & Grid Preprocessing<br/>(multicam_pipeline.py)"]
     
-    B --> C["【Full-Length Synced Masters】"]
-    B --> D["【AI Token-Optimized Grid Videos】"]
+    B --> C["【Full-Length Synced Masters】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
+    B --> D["【AI Token-Optimized Grid Videos】<br/>• multicam_merged_part*.mp4"]
     
-    D --> E["Step 2: AI Multimodal Rough-Cut Decision"]
-    E --> F["【EDL Decision Lists (CSV)】"]
+    D --> E["Step 2: AI Multimodal Rough-Cut Decision<br/>(generate_edl.py / Antigravity)"]
+    E --> F["【EDL Decision Lists】<br/>• edl_part*.csv"]
     
-    C --> G{"Select Delivery Format"}
+    C --> G{"Select Delivery Path"}
     F --> G
     
-    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(Import directly to DaVinci / Premiere)"]
-    G -->|"Secondary: Quick MP4 Preview (10%)"| I["Step 3B: Direct MP4 Video Render<br/>(No NLE required)"]
+    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)<br/>👉 Import into DaVinci Resolve / Premiere Pro"]
+    G -->|"Secondary: Direct Render (10%)"| I["Step 3B: Render & Concat Full MP4 Video<br/>(edl_to_video.py + concat_videos.py)<br/>👉 Outputs final_cut_full.mp4"]
+    
+    I --> J["Step 4: YouTube High-Quality Subtitles<br/>(generate_subtitles.py)<br/>• Whisper Millisecond Acoustic Alignment + Gemini Proofreading<br/>👉 Outputs final_cut_full.srt / .vtt"]
 ```
 
 ---

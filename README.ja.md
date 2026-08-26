@@ -46,19 +46,21 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["未処理マルチカメラ素材 (2–6 CAMs)"] --> B["手順 1：マルチカメラ同期＆AIグリッド前処理"]
+    A["未処理マルチカメラ素材 (2–6 CAMs)"] --> B["手順 1：マルチカメラ同期＆グリッド前処理<br/>(multicam_pipeline.py)"]
     
-    B --> C["【全編同期マスター動画】"]
-    B --> D["【AI分析用グリッド動画】"]
+    B --> C["【全編同期マスター動画】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
+    B --> D["【AI 分析用グリッド動画】<br/>• multicam_merged_part*.mp4"]
     
-    D --> E["手順 2：AIマルチモーダル粗編集決定"]
-    E --> F["【EDL 編集決定リスト (CSV)】"]
+    D --> E["手順 2：AI マルチモーダル粗編集決定<br/>(generate_edl.py / Antigravity)"]
+    E --> F["【EDL 編集決定リスト】<br/>• edl_part*.csv"]
     
-    C --> G{"出力フォーマット選択"}
+    C --> G{"出力形式の選択"}
     F --> G
     
-    G -->|"主要：プロ向けNLE (90%)"| H["手順 3A：FCP7 XML タイムライン出力<br/>(DaVinci / Premiere 直接インポート)"]
-    G -->|"次要：簡易プレビュー (10%)"| I["手順 3B：MP4動画直接レンダリング<br/>(NLE不要・一発出力)"]
+    G -->|"主要：プロ向け NLE 編集 (90%)"| H["手順 3A：FCP7 XML タイムライン出力<br/>(export_fcp7_xml.py)<br/>👉 DaVinci Resolve / Premiere Pro にインポート"]
+    G -->|"次要：直接動画出力 (10%)"| I["手順 3B：MP4 完成動画の直接レンダリング＆結合<br/>(edl_to_video.py + concat_videos.py)<br/>👉 final_cut_full.mp4 を出力"]
+    
+    I --> J["手順 4：YouTube 高品質字幕生成<br/>(generate_subtitles.py)<br/>• Whisper ミリ秒音声同期 ＋ Gemini 意味校正<br/>👉 final_cut_full.srt / .vtt を出力"]
 ```
 
 ---
