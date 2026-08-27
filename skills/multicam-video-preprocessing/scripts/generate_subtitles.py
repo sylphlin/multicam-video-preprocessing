@@ -408,25 +408,31 @@ def main():
             f.write(raw_srt)
         print(f"  • Saved raw acoustic baseline: {raw_srt_path}")
 
-        # Stage 2A: Global Consistency Glossary Extraction (Full 1M Context Scan)
-        global_glossary = extract_global_glossary(
-            segments, api_key=args.api_key, base_url=args.base_url, model=args.model
-        )
-        if global_glossary:
-            with open(glossary_path, "w", encoding="utf-8") as f:
-                f.write(global_glossary + "\n")
-            print(f"  • Saved Global Glossary: {glossary_path}")
+        resolved_key = resolve_api_key(args.api_key, args.base_url, args.model)
+        if not resolved_key and not args.base_url:
+            print(f"\n[Stage 2/2] ℹ️  No LLM API Key (GEMINI_API_KEY / OPENAI_API_KEY) found.")
+            print(f"            Saving raw Whisper acoustic transcription directly as final SRT/VTT.")
+            final_srt = raw_srt
+        else:
+            # Stage 2A: Global Consistency Glossary Extraction (Full 1M Context Scan)
+            global_glossary = extract_global_glossary(
+                segments, api_key=args.api_key, base_url=args.base_url, model=args.model
+            )
+            if global_glossary:
+                with open(glossary_path, "w", encoding="utf-8") as f:
+                    f.write(global_glossary + "\n")
+                print(f"  • Saved Global Glossary: {glossary_path}")
 
-        # Stage 2B: Parallel Chunked Proofreading with Injected Glossary
-        final_srt = proofread_srt_with_llm(
-            raw_srt,
-            global_glossary=global_glossary,
-            api_key=args.api_key,
-            base_url=args.base_url,
-            model=args.model,
-            chunk_size=args.chunk_size,
-            max_workers=args.workers
-        )
+            # Stage 2B: Parallel Chunked Proofreading with Injected Glossary
+            final_srt = proofread_srt_with_llm(
+                raw_srt,
+                global_glossary=global_glossary,
+                api_key=args.api_key,
+                base_url=args.base_url,
+                model=args.model,
+                chunk_size=args.chunk_size,
+                max_workers=args.workers
+            )
 
         # Write Final SRT
         with open(final_srt_path, "w", encoding="utf-8") as f:

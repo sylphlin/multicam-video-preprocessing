@@ -43,9 +43,10 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
    - Whisper ASR transcription is **STRICTLY RESTRICTED to Step 4** (`scripts/generate_subtitles.py`) on the finalized `final_cut_full.mp4`.
    - **STRICTLY FORBIDDEN**: Running Whisper, speech-to-text, or generating `transcript_part*.json` during Step 1, Step 2, or Step 3. Speech-to-text is NOT used for multi-camera synchronization or EDL cut decisions.
 
-4. **Universal Multi-Modal & API Key Autonomy**:
-   - For Step 2 EDL decisions, the Agent can either analyze the composite video directly in its multimodal context, or execute `scripts/generate_edl.py` (which supports Gemini, Codex GPT-5.6 Luna, or Local Gemma 4).
-   - **Never halt the pipeline or ask the user for an API key**. The script automatically resolves keys from environment variables or local endpoints (`localhost`).
+4. **Antigravity Multimodal Native Mode vs CLI Script Mode**:
+   - **Inside Antigravity**: The Agent itself is natively a Gemini 3.7 Flash 1M multimodal model. For Step 2 (EDL), the Agent directly inspects the composite video (`multicam_merged_part*.mp4`) with `assets/edl_interview_template.md`, and outputs `edl_part*.csv` and `edl_part*_report.md` directly. **Zero external API keys required.**
+   - **CLI / Standalone Terminal Mode**: `scripts/generate_edl.py` is for external scripts or Codex/Local models, resolving `GEMINI_API_KEY`, `OPENAI_API_KEY`, or local endpoints.
+   - **NEVER fallback to Whisper**: If an external script encounter an issue, the Agent must NEVER fall back to running Whisper speech-to-text to guess visual cut points. Whisper is strictly for Step 4 subtitle generation.
 
 ---
 
