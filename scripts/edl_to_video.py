@@ -311,14 +311,14 @@ def cut_segment_stream_copy(input_path, output_path, start_sec, end_sec):
 def cut_segment_reencode(input_path, output_path, start_sec, end_sec,
                          encoder="h264_videotoolbox", video_bitrate="8000k", audio_bitrate="192k"):
     """
-    Extract a segment using frame-accurate hardware-accelerated re-encoding.
-    Matches reference format: ffmpeg -nostdin -i input -ss start -to end -c:v h264_videotoolbox -b:v 8000k -c:a aac output
+    Extract a segment using frame-accurate hardware-accelerated re-encoding with fast input seeking.
     """
+    dur_sec = max(0.001, end_sec - start_sec)
     cmd = [
         "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", input_path,
         "-ss", format_seconds(start_sec),
-        "-to", format_seconds(end_sec),
+        "-i", input_path,
+        "-t", format_seconds(dur_sec),
         "-c:v", encoder,
         "-b:v", video_bitrate,
         "-c:a", "aac",

@@ -62,9 +62,10 @@ def load_prompt_template(custom_path=None):
     raise FileNotFoundError(f"Could not locate EDL prompt template. Searched: {paths_to_try}")
 
 
-def upload_video_resumable(video_path, api_key):
+def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     """
     Upload video file using Google Generative Language Resumable File API.
+    Uses chunked upload (default 64MB) with automatic exponential backoff retries.
     Zero-dependency implementation using Python standard urllib.
     """
     file_size = os.path.getsize(video_path)
@@ -73,8 +74,9 @@ def upload_video_resumable(video_path, api_key):
     mime_type = mime_type or "video/mp4"
 
     print(f"\n[Step 1/3] 📤 Uploading video to Gemini File API...")
-    print(f"  • File Name: {file_name} ({file_size / (1024 * 1024):.1f} MB)")
-    print(f"  • MIME Type: {mime_type}")
+    print(f"  • File Name  : {file_name} ({file_size / (1024 * 1024):.1f} MB)")
+    print(f"  • Chunk Size : {chunk_size_mb} MB")
+    print(f"  • MIME Type  : {mime_type}")
 
     # 1. Initial Resumable Upload Request
     init_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={api_key}"
@@ -98,12 +100,13 @@ def upload_video_resumable(video_path, api_key):
     if not upload_url:
         raise RuntimeError("No upload URL returned by Gemini Resumable Upload API.")
 
-    # 2. Upload in 16MB Binary Chunks (Avoids 500MB single-payload limit)
-    CHUNK_SIZE = 16 * 1024 * 1024  # 16 MB chunks
-    print("  ► Uploading bytes in 16MB chunks...")
+    # 2. Upload in Binary Chunks with Exponential Backoff Auto-Retry
+    CHUNK_SIZE = chunk_size_mb * 1024 * 1024
+    print(f"  ► Uploading bytes in {chunk_size_mb}MB chunks...")
     t0 = time.time()
     offset = 0
     file_info = {}
+    max_retries = 5
 
     with open(video_path, "rb") as f:
         while offset < file_size:
@@ -117,20 +120,31 @@ def upload_video_resumable(video_path, api_key):
                 "X-Goog-Upload-Offset": str(offset),
                 "X-Goog-Upload-Command": command
             }
-            upload_req = urllib.request.Request(upload_url, data=chunk, headers=upload_headers, method="POST")
 
-            try:
-                with urllib.request.urlopen(upload_req) as resp:
-                    if is_last:
-                        resp_data = json.loads(resp.read().decode("utf-8"))
-                        file_info = resp_data.get("file", {})
-            except urllib.error.HTTPError as e:
-                err = e.read().decode("utf-8", errors="ignore")
-                raise RuntimeError(f"Failed to upload video chunk at offset {offset}: HTTP {e.code} - {err}")
+            # Retry loop with exponential backoff for network resilience
+            chunk_uploaded = False
+            for attempt in range(max_retries):
+                upload_req = urllib.request.Request(upload_url, data=chunk, headers=upload_headers, method="POST")
+                try:
+                    with urllib.request.urlopen(upload_req) as resp:
+                        if is_last:
+                            resp_data = json.loads(resp.read().decode("utf-8"))
+                            file_info = resp_data.get("file", {})
+                    chunk_uploaded = True
+                    break
+                except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                    if attempt < max_retries - 1:
+                        sleep_sec = 2 ** attempt
+                        print(f"\n  [Retry {attempt+1}/{max_retries}] Upload chunk at offset {offset / (1024 * 1024):.1f}MB failed ({e}). Retrying in {sleep_sec}s...")
+                        time.sleep(sleep_sec)
+                    else:
+                        raise RuntimeError(f"Failed to upload video chunk at offset {offset} after {max_retries} attempts: {e}")
 
             offset += chunk_len
             pct = min(100.0, (offset / file_size) * 100.0)
-            print(f"\r  ► Uploaded {offset / (1024 * 1024):.1f} / {file_size / (1024 * 1024):.1f} MB ({pct:.1f}%)...", end="", flush=True)
+            elapsed = time.time() - t0
+            speed_mbps = (offset / (1024 * 1024)) / max(0.1, elapsed) * 8
+            print(f"\r  ► Uploaded {offset / (1024 * 1024):.1f} / {file_size / (1024 * 1024):.1f} MB ({pct:.1f}% | {speed_mbps:.1f} Mbps)...", end="", flush=True)
 
     print()
     file_uri = file_info.get("uri")
@@ -237,6 +251,7 @@ def main():
     parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
     parser.add_argument("--base-url", default=None, help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("-k", "--api-key", default=None, help="API Key (or set via GEMINI_API_KEY / OPENAI_API_KEY environment variables)")
+    parser.add_argument("--upload-chunk-size", type=int, default=64, help="Resumable upload chunk size in MB (default: 64)")
 
     args = parser.parse_args()
 
@@ -264,6 +279,7 @@ def main():
     print(f"  • Model Choice  : {args.model}")
     if args.base_url:
         print(f"  • Base URL      : {args.base_url}")
+    print(f"  • Chunk Size    : {args.upload_chunk_size} MB")
     print(f"  • CSV Output    : {csv_out}")
     print(f"  • Report Output : {report_out}")
     print("-" * 78)
@@ -272,7 +288,7 @@ def main():
 
     try:
         if not args.base_url and "gemini" in args.model.lower():
-            file_uri, file_id = upload_video_resumable(args.video, api_key)
+            file_uri, file_id = upload_video_resumable(args.video, api_key, chunk_size_mb=args.upload_chunk_size)
             raw_response = call_llm(prompt_template, model=args.model, file_uri=file_uri, api_key=api_key)
         else:
             raw_response = call_llm(prompt_template, model=args.model, base_url=args.base_url, api_key=api_key)
