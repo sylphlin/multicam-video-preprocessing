@@ -20,18 +20,27 @@ from .audio_normalizer import build_loudnorm_filter
 # 1. Silence Detection & Natural Pause Analysis
 # ---------------------------------------------------------------------------
 
-def detect_all_silences(video_or_audio_path, noise_threshold="-30dB", min_duration=0.5):
+def detect_all_silences(video_or_audio_path, noise_threshold="-30dB", min_duration=0.5, start_sec=None, dur_sec=None):
     """
-    Scan entire audio track for silence intervals using FFmpeg silencedetect.
+    Scan audio track for silence intervals using FFmpeg silencedetect.
+    Supports fast seeking to a candidate window (start_sec, dur_sec) to avoid scanning full file.
     """
-    cmd = [
-        "ffmpeg", "-i", video_or_audio_path,
-        "-vn",
+    cmd = ["ffmpeg"]
+    if start_sec is not None and start_sec > 0:
+        cmd.extend(["-ss", str(start_sec)])
+    if dur_sec is not None and dur_sec > 0:
+        cmd.extend(["-t", str(dur_sec)])
+
+    cmd.extend([
+        "-i", video_or_audio_path,
+        "-vn", "-sn", "-dn",
         "-af", f"silencedetect=noise={noise_threshold}:d={min_duration}",
         "-f", "null", "-"
-    ]
+    ])
     res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     output = res.stderr
+
+    time_offset = start_sec if (start_sec is not None and start_sec > 0) else 0.0
 
     silence_starts = []
     silence_ends = []
@@ -41,11 +50,11 @@ def detect_all_silences(video_or_audio_path, noise_threshold="-30dB", min_durati
         if "silence_start:" in line:
             m = re.search(r"silence_start:\s*([0-9\.]+)", line)
             if m:
-                silence_starts.append(float(m.group(1)))
+                silence_starts.append(float(m.group(1)) + time_offset)
         elif "silence_end:" in line:
             m = re.search(r"silence_end:\s*([0-9\.]+)\s*\|\s*silence_duration:\s*([0-9\.]+)", line)
             if m:
-                silence_ends.append(float(m.group(1)))
+                silence_ends.append(float(m.group(1)) + time_offset)
                 silence_durations.append(float(m.group(2)))
 
     intervals = []
@@ -136,8 +145,6 @@ def find_natural_split_points(ref_path, start_sec=0.0, end_sec=None, total_durat
     if num_parts == 1 and valid_duration > max_dur_sec:
         num_parts = 2
 
-    silence_intervals = detect_all_silences(ref_path, noise_threshold="-30dB", min_duration=0.5)
-
     split_points = [start_sec]
     curr_pos = start_sec
 
@@ -145,8 +152,10 @@ def find_natural_split_points(ref_path, start_sec=0.0, end_sec=None, total_durat
         nominal_cut = start_sec + (valid_duration / num_parts) * p_idx
         win_start = max(curr_pos + min_dur_sec * 0.7, nominal_cut - 300)
         win_end = min(nominal_cut + 300, end_sec - (min_dur_sec * 0.7))
+        win_dur = max(1.0, win_end - win_start)
 
-        cands = [s for s in silence_intervals if win_start <= s["start"] <= win_end or win_start <= s["end"] <= win_end]
+        # Fast windowed silence detection (scans only candidate window, not full file)
+        cands = detect_all_silences(ref_path, noise_threshold="-30dB", min_duration=0.5, start_sec=win_start, dur_sec=win_dur)
 
         if cands:
             cands.sort(key=lambda s: abs(s["mid"] - nominal_cut) - min(s["duration"], 3.0) * 15)
