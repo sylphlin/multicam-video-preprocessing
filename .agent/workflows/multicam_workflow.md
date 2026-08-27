@@ -1,12 +1,14 @@
 ---
-description: "Universal 4-stage gated workflow for 2-6 multi-camera audio sync, chapter splitting, Gemini AI rough-cut, NLE XML export, and subtitles."
+description: "Universal 4-stage gated execution runbook for 2 to 6 camera audio sync, chapter splitting, Gemini AI rough-cut, NLE XML export, and subtitles."
 ---
 
-# Multi-Camera Video Editing & Production Workflow
+# Multi-Camera AI Preprocessing & Video Editing Workflow
 
-Follow this step-by-step workflow when processing multi-camera projects:
+This runbook defines the exact execution sequence, stage gates, CLI commands, and verification criteria for processing multi-camera video footage in Antigravity.
 
-## 🚦 Workflow Stage Gates
+---
+
+## 🚦 4-Stage Gated Workflow Architecture
 
 ```mermaid
 flowchart TD
@@ -21,42 +23,75 @@ flowchart TD
     S4 --> G4{"Gate 4 Verification<br/>final_cut_full.srt / .vtt exist"}
 ```
 
-## Step 1: Multi-Camera Preprocessing
-- **Command**:
+---
+
+## 📋 Stage-by-Stage Execution Runbook
+
+### Stage 1: Physical Preprocessing (Sync, Normalization, Split, Grid)
+- **Goal**: Global 8kHz FFT time alignment, EBU R128 (-14 LUFS) audio normalization, 30-40 min natural pause chapter segmentation, full-length synced camera masters export, and compact multi-in-one grid composition (max <= 1920x1080).
+- **Execution Command**:
   ```bash
   python3 scripts/multicam_pipeline.py \
     --ref <CAM1.mp4> --targets <CAM2.mp4...> \
     --auto-split --split-min-dur 30 --split-max-dur 40 \
     --normalize --merge -o <OUTPUT_DIR>
   ```
-- **Exit Gate 1**: Verify `<OUTPUT_DIR>/multicam_sync.json` and `<OUTPUT_DIR>/multicam_merged_part*.mp4` exist.
+- **Exit Gate 1 Verification**:
+  - [x] `<OUTPUT_DIR>/multicam_sync.json` exists with valid offset data.
+  - [x] `<OUTPUT_DIR>/<CAM>_synced.mp4` full-length synchronized masters exist.
+  - [x] At least one `<OUTPUT_DIR>/multicam_merged_part*.mp4` grid video exists.
+  - 🚨 *Do NOT proceed to Stage 2 until all Gate 1 criteria pass.*
 
-## Step 2: Gemini AI Multimodal Rough-Cut
-- **Command** (run for EVERY part produced in Step 1):
+---
+
+### Stage 2: Gemini AI Multimodal Rough-Cut (EDL Generation)
+- **Goal**: Gemini 3.7 Flash 1M Context multimodal video inspection using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste and generates speech-driven and reaction cut decisions.
+- **Execution Command** (run for **EVERY** part produced in Stage 1):
   ```bash
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_part1.mp4
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_part2.mp4  # If Part 2 exists
   ```
-- **Exit Gate 2**: Verify all corresponding `<OUTPUT_DIR>/edl_part*.csv` exist and size > 0 bytes.
+- **Exit Gate 2 Verification**:
+  - [x] All corresponding `<OUTPUT_DIR>/edl_part*.csv` files exist.
+  - [x] Every CSV file size $> 0\text{ bytes}$ with valid timecodes and camera angles.
+  - 🚨 *Do NOT proceed to Stage 3 until all Gate 2 criteria pass.*
 
-## Step 3A: NLE Timeline Export (Primary ⭐)
-- **Command**:
+---
+
+### Stage 3A: Export NLE Timeline (⭐ Primary Path / 90% Use Case)
+- **Goal**: Multi-part timestamp accumulation, continuous master audio track, and color marker injection into standard FCP7 XML (`xmeml version 4`).
+- **Execution Command**:
   ```bash
   python3 scripts/export_fcp7_xml.py -d <OUTPUT_DIR> -o <OUTPUT_DIR>/final_cut_full.xml
   ```
-- **Exit Gate 3A**: Verify `<OUTPUT_DIR>/final_cut_full.xml` exists. Provide DaVinci Resolve / Premiere Pro import guide.
+- **Exit Gate 3A Verification**:
+  - [x] `<OUTPUT_DIR>/final_cut_full.xml` exists.
+- **NLE Import Instructions for User**:
+  1. Open DaVinci Resolve (or Premiere Pro / Final Cut Pro) and create a project.
+  2. Drag all synchronized camera masters (`CAM1_synced.mp4`, `CAM2_synced.mp4`...) into the **Media Pool**.
+  3. Go to **File -> Import -> Timeline...**, and select `final_cut_full.xml`.
+  4. All cut points, audio tracks, and color decision markers will load instantly!
 
-## Step 3B: Direct Rendering (Secondary 🎬)
-- **Command**:
+---
+
+### Stage 3B: Direct Video Rendering (🎬 Secondary Fast Preview Path / 10% Use Case)
+- **Goal**: Hardware-accelerated clip rendering and lossless concat into full-length `final_cut_full.mp4`.
+- **Execution Command**:
   ```bash
   python3 scripts/edl_to_video.py --edl <OUTPUT_DIR>/edl_part1.csv
+  python3 scripts/edl_to_video.py --edl <OUTPUT_DIR>/edl_part2.csv  # If Part 2 exists
   python3 scripts/concat_videos.py -d <OUTPUT_DIR> -o <OUTPUT_DIR>/final_cut_full.mp4
   ```
-- **Exit Gate 3B**: Verify `<OUTPUT_DIR>/final_cut_full.mp4` exists with duration > 0.
+- **Exit Gate 3B Verification**:
+  - [x] `<OUTPUT_DIR>/final_cut_full.mp4` exists with duration $> 0$.
 
-## Step 4: YouTube Subtitles (On-Demand 📝)
-- **Command**:
+---
+
+### Stage 4: YouTube Subtitles Generation (📝 On-Demand / Subtitle Requests)
+- **Goal**: Local Whisper ASR millisecond acoustic alignment + Gemini 1M Context global glossary extraction & parallel chunked contextual proofreading.
+- **Execution Command**:
   ```bash
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4
   ```
-- **Exit Gate 4**: Verify `<OUTPUT_DIR>/final_cut_full.srt` and `.vtt` exist.
+- **Exit Gate 4 Verification**:
+  - [x] `<OUTPUT_DIR>/final_cut_full.srt` and `<OUTPUT_DIR>/final_cut_full.vtt` exist and contain corrected subtitles.
