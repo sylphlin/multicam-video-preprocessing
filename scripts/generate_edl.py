@@ -220,7 +220,7 @@ def main():
     parser.add_argument("-o", "--output", default=None, help="Output CSV path (default: [video_basename].csv)")
     parser.add_argument("-r", "--report", default=None, help="Output Markdown report path (default: [video_basename]_report.md)")
     parser.add_argument("-t", "--template", default=None, help="Path to custom prompt template asset markdown file")
-    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma-4)")
+    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
     parser.add_argument("--base-url", default=None, help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("-k", "--api-key", default=None, help="API Key (or set via GEMINI_API_KEY / OPENAI_API_KEY environment variables)")
 

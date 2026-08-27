@@ -184,7 +184,7 @@ flowchart TD
 
 ## 🌐 多模型與跨平台支援 (Multi-Provider & Local Models)
 
-本套件採用通用 OpenAI-Compatible 通訊協議適配層，除了預設的 **Google Gemini 3.7 Flash** 之外，可無縫切換至 **OpenAI / Codex 雲端模型（如 GPT-5.6 Luna）** 或 **本機離線模型（如 Gemma 4）**：
+本套件採用通用 OpenAI-Compatible 通訊協議適配層，除了預設的 **Google Gemini 3.7 Flash** 之外，可無縫切換至 **OpenAI / Codex 雲端模型（如 GPT-5.6 Luna）** 或 **本機離線模型（如 Gemma 4 (gemma4:e4b)）**：
 
 ### 範例 A：Google Gemini 雲端環境（預設）
 ```bash
@@ -204,11 +204,11 @@ python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
 ```
 
-### 範例 C：本機離線模型環境（使用 Ollama / vLLM 運行 Gemma 4）
+### 範例 C：本機離線模型環境（使用 Ollama / vLLM 運行 Gemma 4 (gemma4:e4b)）
 ```bash
 # 產生剪輯 EDL (連線本機端點)
-python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma4:e4b
 
-# 產生 YouTube 字幕 (Whisper + Gemma 4 本機離線校對)
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+# 產生 YouTube 字幕 (Whisper + Gemma 4 (gemma4:e4b) 本機離線校對)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma4:e4b
 ```

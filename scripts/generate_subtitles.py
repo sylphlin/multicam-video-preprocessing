@@ -184,7 +184,7 @@ def load_proofread_template():
 
 def proofread_srt_with_llm(raw_srt, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=50):
     """
-    Call LLM in batches (Gemini, OpenAI / GPT-5.6 Luna, or Local Gemma 4) to proofread SRT line-by-line while preserving timestamps.
+    Call LLM in batches (Gemini, OpenAI / GPT-5.6 Luna, or Local Gemma 4 (gemma4:e4b)) to proofread SRT line-by-line while preserving timestamps.
     """
     print(f"\n[Stage 2/2] 🤖 Running LLM contextual proofreading (Model: {model})...")
     t0 = time.time()
@@ -248,7 +248,7 @@ def proofread_srt_with_llm(raw_srt, api_key=None, base_url=None, model="gemini-3
 
 def main():
     parser = argparse.ArgumentParser(
-        description="YouTube Subtitles Generator: Millisecond-accurate ASR (Whisper) + Contextual LLM Proofreading (Gemini / GPT-5.6 Luna / Gemma 4).",
+        description="YouTube Subtitles Generator: Millisecond-accurate ASR (Whisper) + Contextual LLM Proofreading (Gemini / GPT-5.6 Luna / Gemma 4 (gemma4:e4b)).",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-i", "--input", required=True, help="Path to input video (e.g. final_cut_full.mp4) or audio file")
@@ -256,7 +256,7 @@ def main():
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
                         help="Whisper model size for Stage 1 acoustic transcription (default: base)")
     parser.add_argument("--model", default="gemini-3.7-flash",
-                        help="LLM model for Stage 2 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma-4)")
+                        help="LLM model for Stage 2 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
     parser.add_argument("--base-url", default=None,
                         help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("--language", default="zh", help="Spoken language code for transcription (default: zh, or auto)")
@@ -301,7 +301,7 @@ def main():
         # Save raw whisper backup for reference/debugging
         with open(raw_srt_path, "w", encoding="utf-8") as f:
             f.write(raw_srt)
-        # Stage 2: Contextual LLM Proofreading (Gemini, GPT-5.6 Luna, Gemma 4)
+        # Stage 2: Contextual LLM Proofreading (Gemini, GPT-5.6 Luna, Gemma 4 (gemma4:e4b))
         final_srt = proofread_srt_with_llm(raw_srt, api_key=args.api_key, base_url=args.base_url, model=args.model, chunk_size=args.chunk_size)
 
         # Write Final SRT

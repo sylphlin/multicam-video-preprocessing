@@ -182,7 +182,7 @@ Antigravity 대화창에서 자연어로 요청하면 에이전트가 백엔드 
 
 ## 🌐 다양한 모델 및 로컬 모델 지원 (Multi-Provider & Local Models)
 
-표준 OpenAI-Compatible 어댑터 레이어를 내장하여 기본 **Google Gemini 3.7 Flash** 외에도 **OpenAI / Codex 클라우드 모델(GPT-5.6 Luna 등)** 또는 **완전 오프라인 로컬 모델(Gemma 4 등)**로 전환하여 실행할 수 있습니다:
+표준 OpenAI-Compatible 어댑터 레이어를 내장하여 기본 **Google Gemini 3.7 Flash** 외에도 **OpenAI / Codex 클라우드 모델(GPT-5.6 Luna 등)** 또는 **완전 오프라인 로컬 모델(Gemma 4 (gemma4:e4b) 등)**로 전환하여 실행할 수 있습니다:
 
 ### 예시 A: Google Gemini 클라우드 환경 (기본)
 ```bash
@@ -202,11 +202,11 @@ python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
 ```
 
-### 예시 C: 완전 오프라인 로컬 모델 환경 (Ollama / vLLM 기반 Gemma 4)
+### 예시 C: 완전 오프라인 로컬 모델 환경 (Ollama / vLLM 기반 Gemma 4 (gemma4:e4b))
 ```bash
 # 가편집 EDL 생성 (로컬 엔드포인트 연결)
-python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma4:e4b
 
-# YouTube 자막 생성 (Whisper + Gemma 4 로컬 교정)
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+# YouTube 자막 생성 (Whisper + Gemma 4 (gemma4:e4b) 로컬 교정)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma4:e4b
 ```

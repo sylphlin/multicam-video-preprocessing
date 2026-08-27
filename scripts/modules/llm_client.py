@@ -2,7 +2,7 @@
 """
 Universal Zero-Dependency LLM Client (llm_client.py).
 Supports Google Gemini REST API and OpenAI-Compatible endpoints (/v1/chat/completions)
-for Codex, OpenAI (e.g. GPT-5.6 Luna), and Local Models (e.g. Gemma 4, Ollama, vLLM).
+for Codex, OpenAI (e.g. GPT-5.6 Luna), and Local Models (e.g. Gemma 4 (gemma4:e4b), Ollama, vLLM).
 """
 
 import json
@@ -66,7 +66,7 @@ def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file
 
 def call_openai_chat_completions(prompt, api_key, base_url, model="gpt-5.6-luna", image_base64_list=None, temperature=0.1, max_tokens=8192):
     """
-    Call OpenAI-Compatible /v1/chat/completions endpoint (OpenAI, Codex, Gemma 4 on Ollama/vLLM).
+    Call OpenAI-Compatible /v1/chat/completions endpoint (OpenAI, Codex, Gemma 4 (gemma4:e4b) on Ollama/vLLM).
     """
     clean_base = base_url.rstrip("/")
     if not clean_base.endswith("/v1") and not clean_base.endswith("/chat/completions"):
@@ -118,7 +118,7 @@ def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file
     """
     resolved_key = resolve_api_key(api_key, base_url, model)
 
-    # If base_url is specified or model is explicitly non-gemini (e.g. gpt-5.6-luna, gemma-4)
+    # If base_url is specified or model is explicitly non-gemini (e.g. gpt-5.6-luna, gemma4:e4b)
     is_openai_compatible = bool(base_url) or not ("gemini" in model.lower())
 
     if is_openai_compatible:

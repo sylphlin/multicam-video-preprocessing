@@ -184,7 +184,7 @@ Combines **Whisper (speech recognition and acoustic time alignment)** with **Gem
 
 ## 🌐 Multi-Provider & Local Model Support
 
-This suite incorporates a universal OpenAI-Compatible adapter layer. In addition to default **Google Gemini 3.7 Flash**, you can seamlessly switch to **OpenAI / Codex Cloud Models (e.g. GPT-5.6 Luna)** or **Local Offline Models (e.g. Gemma 4)**:
+This suite incorporates a universal OpenAI-Compatible adapter layer. In addition to default **Google Gemini 3.7 Flash**, you can seamlessly switch to **OpenAI / Codex Cloud Models (e.g. GPT-5.6 Luna)** or **Local Offline Models (e.g. Gemma 4 (gemma4:e4b))**:
 
 ### Example A: Google Gemini Cloud (Default)
 ```bash
@@ -204,11 +204,11 @@ python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
 ```
 
-### Example C: Local Offline Models (Gemma 4 via Ollama / vLLM)
+### Example C: Local Offline Models (Gemma 4 (gemma4:e4b) via Ollama / vLLM)
 ```bash
 # Generate rough-cut EDL on local endpoint
-python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma4:e4b
 
-# Generate YouTube subtitles (Whisper + Gemma 4 local proofreading)
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+# Generate YouTube subtitles (Whisper + Gemma 4 (gemma4:e4b) local proofreading)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma4:e4b
 ```
