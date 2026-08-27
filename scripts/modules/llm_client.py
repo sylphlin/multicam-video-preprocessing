@@ -35,7 +35,7 @@ def resolve_api_key(cli_key=None, base_url=None, model=None):
     return None
 
 
-def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, temperature=0.1, max_tokens=8192):
+def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
     """
     Call Google Gemini generateContent REST API.
     """
@@ -46,9 +46,13 @@ def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file
         parts.append({"file_data": {"mime_type": "video/mp4", "file_uri": file_uri}})
     parts.append({"text": prompt})
 
+    gen_config = {"temperature": temperature, "maxOutputTokens": max_tokens}
+    if thinking_budget is not None and "3.7" in model:
+        gen_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+
     payload = {
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens}
+        "generationConfig": gen_config
     }
 
     req = urllib.request.Request(
@@ -112,7 +116,7 @@ def call_openai_chat_completions(prompt, api_key, base_url, model="gpt-5.6-luna"
         return ""
 
 
-def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file_uri=None, image_base64_list=None, temperature=0.1, max_tokens=8192):
+def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file_uri=None, image_base64_list=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
     """
     Unified LLM router supporting Gemini, OpenAI-compatible, and Local Models.
     """
@@ -141,5 +145,6 @@ def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file
             model=model,
             file_uri=file_uri,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            thinking_budget=thinking_budget
         )
