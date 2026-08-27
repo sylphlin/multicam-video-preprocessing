@@ -111,12 +111,12 @@ In the Antigravity chat interface, describe your requirements in natural languag
    - **Two-Pass Analysis & Filter**:
      - Pass 1: Uses FFmpeg's `ebur128` filter to measure Integrated Loudness (`I`), Loudness Range (`LRA` = 11.0 LU), and True Peak (`TP` = -1.5 dBTP).
      - Pass 2: Feeds measured parameters into the `loudnorm` filter for linear gain adjustment, ensuring uniform loudness across all cameras and parts while preventing digital clipping (True Peak Clipping Prevention).
-3. **30–40 min Natural Pause Chapter Splitting (1M Context Window Optimization & Model Adaptation)**:
+3. **Synchronized Full-Length Masters (`*_synced.mp4`)**:
+   - Trims and exports synchronized, loudness-normalized full-length video masters for NLE timeline linking.
+4. **30–40 min Natural Pause Chapter Splitting (1M Context Window Optimization & Model Adaptation)**:
    - **1M Token Context Balance**: For multimodal models supporting 1M tokens (e.g. Gemini 3.7 Flash), a 30 to 40-minute grid video consumes ~600k–800k tokens, leaving ample space for system prompts, deep thinking chains, and lengthy EDL text generation.
    - **Natural Breath & Silence Detection**: Rather than cutting rigidly at fixed intervals, the pipeline scans audio RMS energy within the 30 to 40-minute sliding window to detect sentence pauses, breath gaps, or silence points, preventing truncated sentences.
    - **Adaptable Across Context Sizes**: If using models with smaller context windows (e.g. 128k or 200k), adjust slice durations via `--split-min-dur` and `--split-max-dur` (e.g. 5 to 10 minutes).
-4. **Synchronized Full-Length Masters (`*_synced.mp4`)**:
-   - Trims and exports synchronized, loudness-normalized full-length video masters for NLE timeline linking.
 5. **2 to 6 Camera Multi-in-One Compact Grid Composition**:
    - Arranges cameras in dynamic grid layouts (Total Canvas $\le 1920 \times 1080$, $\ge 640 \times 480$/CAM), saving **50%–83% multimodal tokens**.
 
