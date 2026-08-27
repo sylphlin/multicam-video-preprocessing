@@ -98,29 +98,43 @@ def upload_video_resumable(video_path, api_key):
     if not upload_url:
         raise RuntimeError("No upload URL returned by Gemini Resumable Upload API.")
 
-    # 2. Upload Binary Chunks
-    print("  ► Uploading bytes...")
+    # 2. Upload in 16MB Binary Chunks (Avoids 500MB single-payload limit)
+    CHUNK_SIZE = 16 * 1024 * 1024  # 16 MB chunks
+    print("  ► Uploading bytes in 16MB chunks...")
     t0 = time.time()
+    offset = 0
+    file_info = {}
+
     with open(video_path, "rb") as f:
-        file_bytes = f.read()
+        while offset < file_size:
+            chunk = f.read(CHUNK_SIZE)
+            chunk_len = len(chunk)
+            is_last = (offset + chunk_len) >= file_size
 
-    upload_headers = {
-        "Content-Length": str(file_size),
-        "X-Goog-Upload-Offset": "0",
-        "X-Goog-Upload-Command": "upload, finalize"
-    }
-    upload_req = urllib.request.Request(upload_url, data=file_bytes, headers=upload_headers, method="POST")
+            command = "upload, finalize" if is_last else "upload"
+            upload_headers = {
+                "Content-Length": str(chunk_len),
+                "X-Goog-Upload-Offset": str(offset),
+                "X-Goog-Upload-Command": command
+            }
+            upload_req = urllib.request.Request(upload_url, data=chunk, headers=upload_headers, method="POST")
 
-    try:
-        with urllib.request.urlopen(upload_req) as resp:
-            resp_data = json.loads(resp.read().decode("utf-8"))
-            file_info = resp_data.get("file", {})
-            file_uri = file_info.get("uri")
-            file_name_id = file_info.get("name")
-    except urllib.error.HTTPError as e:
-        err = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Failed to upload video data: HTTP {e.code} - {err}")
+            try:
+                with urllib.request.urlopen(upload_req) as resp:
+                    if is_last:
+                        resp_data = json.loads(resp.read().decode("utf-8"))
+                        file_info = resp_data.get("file", {})
+            except urllib.error.HTTPError as e:
+                err = e.read().decode("utf-8", errors="ignore")
+                raise RuntimeError(f"Failed to upload video chunk at offset {offset}: HTTP {e.code} - {err}")
 
+            offset += chunk_len
+            pct = min(100.0, (offset / file_size) * 100.0)
+            print(f"\r  ► Uploaded {offset / (1024 * 1024):.1f} / {file_size / (1024 * 1024):.1f} MB ({pct:.1f}%)...", end="", flush=True)
+
+    print()
+    file_uri = file_info.get("uri")
+    file_name_id = file_info.get("name")
     upload_time = time.time() - t0
     print(f"  ✓ Video uploaded in {upload_time:.1f}s (File ID: {file_name_id})")
 

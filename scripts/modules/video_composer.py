@@ -78,7 +78,7 @@ def generate_grid_filter_complex(num_inputs, custom_cw=None, custom_ch=None):
     layout_str = "|".join(layout_parts)
     stack_str = "".join(stack_inputs) + f"xstack=inputs={num_inputs}:layout={layout_str}[out]"
 def compose_multicam_video(video_paths, output_path,
-                           video_bitrate="4000k", audio_bitrate="192k",
+                           video_bitrate="2000k", audio_bitrate="192k",
                            encoder="h264_videotoolbox"):
     """
     Compose 2 to 6 synchronized camera videos into a single multi-in-one grid video directly in Python.
