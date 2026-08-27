@@ -63,7 +63,7 @@ flowchart TD
     C --> G{"出力形式の選択"}
     F --> G
     
-    G -->|"主要：プロ向け NLE 編集 (90%)"| H["手順 3A：FCP7 XML タイムライン出力<br/>(export_fcp7_xml.py)<br/>DaVinci Resolve / Premiere Pro にインポート"]
+    G -->|"主要：プロ向け NLE 編集 (90%)"| H["手順 3A：FCP7 XML 互換タイムライン出力<br/>(export_fcp7_xml.py)<br/>final_cut_full.xml を出力<br/>(Final Cut Pro、DaVinci Resolve、Premiere Pro 等に対応)"]
     G -->|"次要：直接動画出力 (10%)"| I["手順 3B：MP4 完成動画の直接レンダリング＆結合<br/>(edl_to_video.py + concat_videos.py)<br/>final_cut_full.mp4 を出力"]
     
     I --> J["手順 4：YouTube 字幕生成<br/>(generate_subtitles.py)<br/>Whisper 音声認識 ＋ Gemini 意味校正<br/>final_cut_full.srt / .vtt を出力"]
@@ -137,6 +137,8 @@ Antigravity 対話画面で自然言語で指示するだけで、Agent がバ�
 ---
 
 ### 手順 3A（主要）：FCP7 XML タイムライン出力 (`export_fcp7_xml.py`)
+
+業界標準の **Final Cut Pro 7 XML（xmeml version 4）** 互換フォーマットを出力し、**Final Cut Pro**、**DaVinci Resolve**、**Adobe Premiere Pro** などの主要 NLE 編集ソフトにそのまま読み込むことができます：
 1. **複数チャプターのタイムスタンプ積算**：
    - Part 1、Part 2 のタイムスタンプを通算タイムラインに変換。
 2. **1:1 タイムコード完全一致**：

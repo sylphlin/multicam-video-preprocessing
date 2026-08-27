@@ -63,7 +63,7 @@ flowchart TD
     C --> G{"Select Delivery Path"}
     F --> G
     
-    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)<br/>Import into DaVinci Resolve / Premiere Pro"]
+    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)<br/>Outputs final_cut_full.xml<br/>(Compatible with Final Cut Pro, DaVinci Resolve, Premiere Pro, etc.)"]
     G -->|"Secondary: Direct Render (10%)"| I["Step 3B: Render & Concat Full MP4 Video<br/>(edl_to_video.py + concat_videos.py)<br/>Outputs final_cut_full.mp4"]
     
     I --> J["Step 4: YouTube Subtitles Generation<br/>(generate_subtitles.py)<br/>Whisper Acoustic Alignment + Gemini Proofreading<br/>Outputs final_cut_full.srt / .vtt"]
@@ -138,6 +138,8 @@ In the Antigravity chat interface, describe your requirements in natural languag
 ---
 
 ### Step 3A (Primary Path): Export FCP7 XML Timeline (`export_fcp7_xml.py`)
+
+Exports industry-standard **Final Cut Pro 7 XML (xmeml version 4)** compatible format, enabling seamless import into major NLEs including **Final Cut Pro**, **DaVinci Resolve**, and **Adobe Premiere Pro**:
 1. **Cross-Part Timestamp Accumulation**:
    - Offsets and maps part-level timestamps into a continuous timeline.
 2. **1:1 Exact Timecode Matching**:

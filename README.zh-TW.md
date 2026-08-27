@@ -63,7 +63,7 @@ flowchart TD
     C --> G{"選擇交付路徑"}
     F --> G
     
-    G -->|"主路徑：專業剪輯 (90%)"| H["步驟 3A：匯出 FCP7 XML 時間線<br/>(export_fcp7_xml.py)<br/>導入 DaVinci Resolve / Premiere Pro"]
+    G -->|"主路徑：專業剪輯 (90%)"| H["步驟 3A：匯出 FCP7 XML 相容時間線<br/>(export_fcp7_xml.py)<br/>產出 final_cut_full.xml<br/>(支援 Final Cut Pro、DaVinci Resolve、Premiere Pro 等)"]
     G -->|"次路徑：直出成片 (10%)"| I["步驟 3B：直接渲染與拼接 MP4 成片<br/>(edl_to_video.py + concat_videos.py)<br/>產出 final_cut_full.mp4"]
     
     I --> J["步驟 4：YouTube 字幕生成<br/>(generate_subtitles.py)<br/>Whisper 聲學對齊 + Gemini 語意校對<br/>產出 final_cut_full.srt / .vtt"]
@@ -138,6 +138,8 @@ flowchart TD
 ---
 
 ### 步驟 3A（主路徑）：匯出 FCP7 XML 剪輯時間線 (`export_fcp7_xml.py`)
+
+本步驟產出業界通用的 **Final Cut Pro 7 XML（xmeml version 4）** 相容格式，可無縫導入 **Final Cut Pro**、**DaVinci Resolve**、**Adobe Premiere Pro** 等主流專業剪輯軟體（NLE）：
 1. **多 Part 跨章節時間戳累加映射**：
    - 將 Part 1、Part 2 的局部時間戳自動累加為全片連續時間軸。
 2. **1:1 絕對時間碼對應**：

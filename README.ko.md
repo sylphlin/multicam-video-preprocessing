@@ -63,7 +63,7 @@ flowchart TD
     C --> G{"출력 경로 선택"}
     F --> G
     
-    G -->|"주요: 전문가용 NLE 편집 (90%)"| H["3A단계: FCP7 XML 타임라인 내보내기<br/>(export_fcp7_xml.py)<br/>DaVinci Resolve / Premiere Pro 가져오기"]
+    G -->|"주요: 전문가용 NLE 편집 (90%)"| H["3A단계: FCP7 XML 호환 타임라인 내보내기<br/>(export_fcp7_xml.py)<br/>final_cut_full.xml 출력<br/>(Final Cut Pro, DaVinci Resolve, Premiere Pro 등 호환)"]
     G -->|"차선: 직접 영상 렌더링 (10%)"| I["3B단계: MP4 완성본 직접 렌더링 및 결합<br/>(edl_to_video.py + concat_videos.py)<br/>final_cut_full.mp4 출력"]
     
     I --> J["4단계: YouTube 자막 생성<br/>(generate_subtitles.py)<br/>Whisper 음향 정렬 + Gemini 문맥 교정<br/>final_cut_full.srt / .vtt 출력"]
@@ -137,6 +137,8 @@ Antigravity 대화창에서 자연어로 요청하면 에이전트가 백엔드 
 ---
 
 ### 3A단계 (주요): FCP7 XML 타임라인 내보내기 (`export_fcp7_xml.py`)
+
+업계 표준인 **Final Cut Pro 7 XML(xmeml version 4)** 호환 포맷을 출력하여 **Final Cut Pro**, **DaVinci Resolve**, **Adobe Premiere Pro** 등 주요 NLE 영상 편집 프로그램으로 완벽하게 가져올 수 있습니다:
 1. **다중 챕터 타임스탬프 누적 매핑**:
    - Part 1, Part 2의 타임스탬프를 연속 타임라인으로 변환.
 2. **1:1 타임코드 완벽 일치**:
