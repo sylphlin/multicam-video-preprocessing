@@ -23,28 +23,17 @@ import urllib.request
 # Support internal modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from modules.llm_client import call_llm, resolve_api_key
+    from modules.llm_client import call_llm, resolve_api_key, get_ssl_context
 except ImportError:
-    from scripts.modules.llm_client import call_llm, resolve_api_key
+    from scripts.modules.llm_client import call_llm, resolve_api_key, get_ssl_context
 
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "edl_interview_template.md"),
-    os.path.expanduser("~/.gemini/config/skills/multicam-video-preprocessing/assets/edl_interview_template.md"),
-    os.path.expanduser("~/.gemini/config/skills/gemini-edl-generation/assets/edl_interview_template.md"),
+    os.path.expanduser("~/.gemini/config/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing/assets/edl_interview_template.md"),
+    os.path.expanduser("~/.codex/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing/assets/edl_interview_template.md"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "edl_interview_template.md"),
 ]
-
-
-def get_api_key(cli_key=None):
-    """Retrieve Gemini API key from CLI argument or environment variables."""
-    if cli_key:
-        return cli_key
-    for env_var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
-        val = os.environ.get(env_var)
-        if val:
-            return val
-    return None
 
 
 def load_prompt_template(custom_path=None):
@@ -65,8 +54,7 @@ def load_prompt_template(custom_path=None):
 def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     """
     Upload video file using Google Generative Language Resumable File API.
-    Uses chunked upload (default 64MB) with automatic exponential backoff retries.
-    Zero-dependency implementation using Python standard urllib.
+    Uses chunked upload (default 64MB) with automatic exponential backoff retries and robust SSL.
     """
     file_size = os.path.getsize(video_path)
     file_name = os.path.basename(video_path)
@@ -77,6 +65,8 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     print(f"  • File Name  : {file_name} ({file_size / (1024 * 1024):.1f} MB)")
     print(f"  • Chunk Size : {chunk_size_mb} MB")
     print(f"  • MIME Type  : {mime_type}")
+
+    ctx = get_ssl_context()
 
     # 1. Initial Resumable Upload Request
     init_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={api_key}"
@@ -91,7 +81,7 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
 
     req = urllib.request.Request(init_url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
             upload_url = resp.headers.get("X-Goog-Upload-URL")
     except urllib.error.HTTPError as e:
         err = e.read().decode("utf-8", errors="ignore")
@@ -121,12 +111,11 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
                 "X-Goog-Upload-Command": command
             }
 
-            # Retry loop with exponential backoff for network resilience
             chunk_uploaded = False
             for attempt in range(max_retries):
                 upload_req = urllib.request.Request(upload_url, data=chunk, headers=upload_headers, method="POST")
                 try:
-                    with urllib.request.urlopen(upload_req) as resp:
+                    with urllib.request.urlopen(upload_req, context=ctx, timeout=120) as resp:
                         if is_last:
                             resp_data = json.loads(resp.read().decode("utf-8"))
                             file_info = resp_data.get("file", {})
@@ -158,17 +147,17 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
 
     for attempt in range(60):
         try:
-            with urllib.request.urlopen(get_file_url) as resp:
+            with urllib.request.urlopen(get_file_url, context=ctx, timeout=15) as resp:
                 check_data = json.loads(resp.read().decode("utf-8"))
                 state = check_data.get("state", "PROCESSING")
                 if state == "ACTIVE":
                     print(f"  ✓ Video state is ACTIVE and ready for inference.")
                     return file_uri, file_name_id
                 elif state == "FAILED":
-                    raise RuntimeError(f"Gemini file processing failed: {check_data.get(error)}")
+                    raise RuntimeError(f"Gemini file processing failed: {check_data.get('error')}")
                 else:
                     time.sleep(3)
-        except urllib.error.HTTPError as e:
+        except urllib.error.HTTPError:
             time.sleep(3)
 
     return file_uri, file_name_id
@@ -199,118 +188,123 @@ def generate_edl_content(file_uri, prompt_text, api_key, model="gemini-3.7-flash
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST"
+        headers={"Content-Type": "application/json"}
     )
 
+    ctx = get_ssl_context()
     try:
-        with urllib.request.urlopen(req) as resp:
-            resp_data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            elapsed = time.time() - t0
+            print(f"  ✓ Gemini response received in {elapsed:.1f}s")
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                text_parts = [p.get("text", "") for p in parts if "text" in p]
+                return "".join(text_parts).strip()
+            return ""
     except urllib.error.HTTPError as e:
         err = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Gemini API inference failed: HTTP {e.code} - {err}")
-
-    gen_time = time.time() - t0
-    candidates = resp_data.get("candidates", [])
-    if not candidates:
-        raise RuntimeError(f"No candidates returned in Gemini response: {resp_data}")
-
-    text_parts = candidates[0].get("content", {}).get("parts", [])
-    full_text = "".join([p.get("text", "") for p in text_parts])
-    print(f"  ✓ Gemini response generated in {gen_time:.1f}s ({len(full_text)} characters)")
-    return full_text
+        raise RuntimeError(f"Gemini generateContent failed (HTTP {e.code}): {err}")
 
 
-def extract_csv_and_report(raw_text):
-    """
-    Extract the CSV decision block and full Markdown analysis report from Gemini response.
-    """
-    csv_match = re.search(r"```(?:csv)?\s*\n(Start_Time.*?)```", raw_text, re.DOTALL | re.IGNORECASE)
-    if csv_match:
-        csv_text = csv_match.group(1).strip()
-    else:
-        lines = []
-        for line in raw_text.splitlines():
-            line_str = line.strip()
-            if "Start_Time" in line_str or re.match(r"^\d{2}:\d{2}\.\d{3},", line_str):
-                lines.append(line_str)
-        csv_text = "\n".join(lines).strip()
+def delete_remote_file(file_name_id, api_key):
+    """Clean up remote uploaded video file on Gemini."""
+    if not file_name_id:
+        return
+    url = f"https://generativelanguage.googleapis.com/v1beta/{file_name_id}?key={api_key}"
+    req = urllib.request.Request(url, method="DELETE")
+    ctx = get_ssl_context()
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+            print(f"  ✓ Remote video cleaned up: {file_name_id}")
+    except Exception:
+        pass
 
-    return raw_text, csv_text
+
+def extract_csv_from_markdown(text):
+    """Extract CSV content from markdown code fence block."""
+    matches = re.findall(r"```(?:csv)?\s*\n(.*?)\n```", text, re.DOTALL | re.IGNORECASE)
+    for m in matches:
+        if "Start_Time" in m and "Best_Camera" in m:
+            return m.strip()
+    return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AI Multimodal Video to EDL Decision Generator: Analyze multi-camera video and produce EDL CSV & Trimming Report.",
+        description="AI Multimodal Video to EDL Decision Generator (Gemini / Codex / Local Models).",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument("-v", "--video", required=True, help="Path to input video file (e.g. multicam_merged_part1.mp4)")
-    parser.add_argument("-o", "--output", default=None, help="Output CSV path (default: [video_basename].csv)")
-    parser.add_argument("-r", "--report", default=None, help="Output Markdown report path (default: [video_basename]_report.md)")
-    parser.add_argument("-t", "--template", default=None, help="Path to custom prompt template asset markdown file")
-    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
-    parser.add_argument("--base-url", default=None, help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
-    parser.add_argument("-k", "--api-key", default=None, help="API Key (or set via GEMINI_API_KEY / OPENAI_API_KEY environment variables)")
-    parser.add_argument("--upload-chunk-size", type=int, default=64, help="Resumable upload chunk size in MB (default: 64)")
+    parser.add_argument("-v", "--video", required=True, help="Path to input composite grid video (e.g. multicam_merged_part1.mp4)")
+    parser.add_argument("-o", "--output-dir", default=None, help="Output directory for EDL CSV and report (default: same as input video)")
+    parser.add_argument("-t", "--template", default=None, help="Custom prompt template file path")
+    parser.add_argument("--model", default="gemini-3.7-flash", help="Multimodal model name (default: gemini-3.7-flash)")
+    parser.add_argument("--base-url", default=None, help="OpenAI-compatible base URL for Codex or Local model endpoints")
+    parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable or .env file)")
+    parser.add_argument("--upload-chunk-size", type=int, default=64, help="Upload chunk size in MB (default: 64)")
+    parser.add_argument("--keep-remote", action="store_true", help="Keep uploaded video file on Gemini Files API")
 
     args = parser.parse_args()
-
-    api_key = resolve_api_key(args.api_key, args.base_url, args.model)
-    if not api_key:
-        print("[Error] Missing API Key! Please pass --api-key or set GEMINI_API_KEY / OPENAI_API_KEY environment variable.", file=sys.stderr)
-        sys.exit(1)
 
     if not os.path.exists(args.video):
         print(f"[Error] Video file not found: {args.video}", file=sys.stderr)
         sys.exit(1)
 
-    # Resolve output paths (Option A: edl_part1.csv, edl_part1_report.md)
-    base_name, _ = os.path.splitext(os.path.basename(args.video))
-    out_dir = os.path.dirname(os.path.abspath(args.video))
-    part_match = re.search(r"(part\d+)", base_name, re.IGNORECASE)
+    api_key = resolve_api_key(args.api_key, args.base_url, args.model)
+    if not api_key:
+        print("\n[Error] Missing API Key!", file=sys.stderr)
+        print("  Please provide a valid API key via one of the following methods:", file=sys.stderr)
+        print("    1. CLI Argument : python3 scripts/generate_edl.py -v ... --api-key YOUR_KEY", file=sys.stderr)
+        print("    2. Environment  : export GEMINI_API_KEY=\"AIzaSy...\"", file=sys.stderr)
+        print("    3. Local File   : Add GEMINI_API_KEY=YOUR_KEY to .env or ~/.gemini/.env\n", file=sys.stderr)
+        sys.exit(1)
+
+    out_dir = args.output_dir or os.path.dirname(os.path.abspath(args.video)) or "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    video_basename = os.path.splitext(os.path.basename(args.video))[0]
+    part_match = re.search(r"(part\d+)", video_basename, re.IGNORECASE)
     part_tag = f"_{part_match.group(1).lower()}" if part_match else ""
-    csv_out = args.output or os.path.join(out_dir, f"edl{part_tag}.csv")
-    report_out = args.report or os.path.join(out_dir, f"edl{part_tag}_report.md")
+
+    edl_csv_path = os.path.join(out_dir, f"edl{part_tag}.csv")
+    report_path = os.path.join(out_dir, f"edl{part_tag}_report.md")
 
     print("\n" + "=" * 78)
-    print("🎬  AI Multi-Camera EDL Director (generate_edl.py)")
+    print(f"🎬  Multimodal AI Video to EDL Generator (Model: {args.model})")
     print("=" * 78)
-    print(f"  • Video Input   : {args.video}")
-    print(f"  • Model Choice  : {args.model}")
-    if args.base_url:
-        print(f"  • Base URL      : {args.base_url}")
-    print(f"  • Chunk Size    : {args.upload_chunk_size} MB")
-    print(f"  • CSV Output    : {csv_out}")
-    print(f"  • Report Output : {report_out}")
+    print(f"  • Input Video : {args.video}")
+    print(f"  • Model       : {args.model}")
+    print(f"  • Target CSV  : {edl_csv_path}")
+    print(f"  • Target Report: {report_path}")
     print("-" * 78)
 
-    prompt_template = load_prompt_template(args.template)
+    prompt_text = load_prompt_template(args.template)
+
+    file_uri, file_name_id = upload_video_resumable(args.video, api_key, chunk_size_mb=args.upload_chunk_size)
 
     try:
-        if not args.base_url and "gemini" in args.model.lower():
-            file_uri, file_id = upload_video_resumable(args.video, api_key, chunk_size_mb=args.upload_chunk_size)
-            raw_response = call_llm(prompt_template, model=args.model, file_uri=file_uri, api_key=api_key)
+        response_text = generate_edl_content(file_uri, prompt_text, api_key, model=args.model)
+
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(response_text + "\n")
+        print(f"\n[Step 3/3] 📄 Full AI Analysis Report saved to: {report_path}")
+
+        csv_content = extract_csv_from_markdown(response_text)
+        if csv_content:
+            with open(edl_csv_path, "w", encoding="utf-8") as f:
+                f.write(csv_content + "\n")
+            print(f"  ✓ Extracted EDL CSV saved to: {edl_csv_path}")
         else:
-            raw_response = call_llm(prompt_template, model=args.model, base_url=args.base_url, api_key=api_key)
+            print(f"  [Warning] Could not extract CSV block from response. See full report: {report_path}", file=sys.stderr)
 
-        full_report, csv_content = extract_csv_and_report(raw_response)
+    finally:
+        if not args.keep_remote and file_name_id:
+            delete_remote_file(file_name_id, api_key)
 
-        print(f"\n[Step 3/3] 💾 Saving EDL CSV and Analysis Report...")
-        with open(report_out, "w", encoding="utf-8") as f:
-            f.write(full_report.strip() + "\n")
-        print(f"  ✓ Saved Trimming & Role Calibration Report: {report_out}")
-
-        with open(csv_out, "w", encoding="utf-8") as f:
-            f.write(csv_content.strip() + "\n")
-        print(f"  ✓ Saved EDL CSV Decisions: {csv_out}")
-
-        print("\n" + "=" * 78)
-        print("✅  AI EDL Generation Completed Successfully!")
-        print("=" * 78 + "\n")
-
-    except Exception as e:
-        print(f"\n[Error] EDL generation failed: {e}", file=sys.stderr)
-        sys.exit(1)
+    print("\n" + "=" * 78)
+    print("✅  AI EDL Generation Completed Successfully!")
+    print("=" * 78 + "\n")
 
 
 if __name__ == "__main__":
