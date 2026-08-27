@@ -91,6 +91,24 @@ python3 scripts/edl_to_video.py --edl ./output/edl_part1.csv
 python3 scripts/edl_to_video.py --edl ./output/edl_part2.csv
 python3 scripts/concat_videos.py -d ./output/ -o ./output/final_cut_full.mp4
 
-# 4. Generate YouTube Subtitles (Whisper ASR + Gemini Contextual Proofreading)
+# 4. Generate YouTube Subtitles (Whisper ASR + LLM Contextual Proofreading)
 python3 scripts/generate_subtitles.py -i ./output/final_cut_full.mp4
+```
+
+### Recipe 3: Multi-Provider & Local Model Workflow (Codex / GPT-5.6 Luna / Gemma 4)
+
+```bash
+# Example A: OpenAI / Codex Cloud Endpoint (GPT-5.6 Luna)
+python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4 \
+  --base-url https://api.openai.com/v1 --model gpt-5.6-luna --api-key $OPENAI_API_KEY
+
+python3 scripts/generate_subtitles.py -i ./output/final_cut_full.mp4 \
+  --base-url https://api.openai.com/v1 --model gpt-5.6-luna --api-key $OPENAI_API_KEY
+
+# Example B: Local Offline Model Endpoint via Ollama / vLLM (Gemma 4)
+python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4 \
+  --base-url http://localhost:11434/v1 --model gemma-4
+
+python3 scripts/generate_subtitles.py -i ./output/final_cut_full.mp4 \
+  --base-url http://localhost:11434/v1 --model gemma-4
 ```

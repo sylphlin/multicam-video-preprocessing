@@ -31,6 +31,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# Support internal modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from modules.llm_client import call_llm
+except ImportError:
+    from scripts.modules.llm_client import call_llm
+
 
 DEFAULT_PROOFREAD_TEMPLATE_PATHS = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "subtitle_proofread_template.md"),
@@ -175,11 +182,11 @@ def load_proofread_template():
     )
 
 
-def proofread_srt_with_gemini(raw_srt, api_key, model="gemini-3.7-flash", chunk_size=60):
+def proofread_srt_with_llm(raw_srt, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=50):
     """
-    Call Gemini API in batches to proofread the SRT subtitles line-by-line while preserving timestamps.
+    Call LLM in batches (Gemini, OpenAI / GPT-5.6 Luna, or Local Gemma 4) to proofread SRT line-by-line while preserving timestamps.
     """
-    print(f"\n[Stage 2/2] 🤖 Running Gemini LLM contextual proofreading (Model: {model})...")
+    print(f"\n[Stage 2/2] 🤖 Running LLM contextual proofreading (Model: {model})...")
     t0 = time.time()
 
     template = load_proofread_template()
@@ -205,27 +212,17 @@ def proofread_srt_with_gemini(raw_srt, api_key, model="gemini-3.7-flash", chunk_
             f"請輸出校對後的完整 SRT："
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 8192}
-        }
-
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
         try:
-            with urllib.request.urlopen(req) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                text_parts = resp_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                response_text = "".join([p.get("text", "") for p in text_parts])
-        except urllib.error.HTTPError as e:
-            err = e.read().decode("utf-8", errors="ignore")
-            print(f"  [Warning] Gemini proofreading failed on chunk {c_idx+1} (HTTP {e.code}): {err}. Keeping original chunk.", file=sys.stderr)
+            response_text = call_llm(
+                prompt=prompt,
+                model=model,
+                base_url=base_url,
+                api_key=api_key,
+                temperature=0.1,
+                max_tokens=8192
+            )
+        except Exception as e:
+            print(f"  [Warning] LLM proofreading failed on chunk {c_idx+1}: {e}. Keeping original chunk.", file=sys.stderr)
             proofread_blocks.extend(chunk_slice)
             continue
 
@@ -241,7 +238,7 @@ def proofread_srt_with_gemini(raw_srt, api_key, model="gemini-3.7-flash", chunk_
             proofread_blocks.append(clean_chunk)
             print(f"  ✓ Proofread chunk {c_idx + 1}/{num_chunks} ({len(chunk_slice)} items)")
         else:
-            print(f"  [Warning] Missing timestamps in Gemini response for chunk {c_idx + 1}. Keeping original chunk.")
+            print(f"  [Warning] Missing timestamps in LLM response for chunk {c_idx + 1}. Keeping original chunk.")
             proofread_blocks.extend(chunk_slice)
 
     total_time = time.time() - t0
@@ -251,17 +248,19 @@ def proofread_srt_with_gemini(raw_srt, api_key, model="gemini-3.7-flash", chunk_
 
 def main():
     parser = argparse.ArgumentParser(
-        description="YouTube Subtitles Generator: Millisecond-accurate ASR (Whisper) + Contextual LLM Proofreading (Gemini).",
+        description="YouTube Subtitles Generator: Millisecond-accurate ASR (Whisper) + Contextual LLM Proofreading (Gemini / GPT-5.6 Luna / Gemma 4).",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-i", "--input", required=True, help="Path to input video (e.g. final_cut_full.mp4) or audio file")
     parser.add_argument("-o", "--output-dir", default=None, help="Output directory for SRT/VTT subtitles (default: same as input)")
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
                         help="Whisper model size for Stage 1 acoustic transcription (default: base)")
-    parser.add_argument("--gemini-model", default="gemini-3.7-flash",
-                        help="Gemini model for Stage 2 proofreading (default: gemini-3.7-flash)")
+    parser.add_argument("--model", default="gemini-3.7-flash",
+                        help="LLM model for Stage 2 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma-4)")
+    parser.add_argument("--base-url", default=None,
+                        help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("--language", default="zh", help="Spoken language code for transcription (default: zh, or auto)")
-    parser.add_argument("--api-key", default=None, help="Gemini API Key (or set GEMINI_API_KEY / GOOGLE_API_KEY environment variable)")
+    parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable)")
     parser.add_argument("--chunk-size", type=int, default=50, help="Subtitle entries per proofread batch (default: 50)")
 
     args = parser.parse_args()
@@ -278,17 +277,13 @@ def main():
     final_vtt_path = os.path.join(out_dir, f"{input_basename}.vtt")
     raw_srt_path = os.path.join(out_dir, f"{input_basename}_raw_whisper.srt")
 
-    api_key = get_api_key(args.api_key)
-    if not api_key:
-        print("[Error] Missing Gemini API Key for subtitle proofreading! Please pass --api-key or set GEMINI_API_KEY / GOOGLE_API_KEY environment variable.", file=sys.stderr)
-        print("  • To ensure broadcast-grade quality and avoid homophone typos, Whisper + Gemini proofreading is mandatory.", file=sys.stderr)
-        sys.exit(1)
-
     print("\n" + "=" * 78)
-    print("🎬  YouTube Subtitles Generator (Whisper + Gemini Proofreading)")
+    print("🎬  YouTube Subtitles Generator (Whisper ASR + LLM Proofreading)")
     print("=" * 78)
     print(f"  • Input Media   : {args.input}")
-    print(f"  • Pipeline Mode : Whisper ASR + Gemini 3.7 Flash Proofreading (Sole Standard)")
+    print(f"  • LLM Model     : {args.model}")
+    if args.base_url:
+        print(f"  • Base URL      : {args.base_url}")
     print(f"  • Whisper Model : {args.whisper_model} (Language: {args.language})")
     print(f"  • Target SRT    : {final_srt_path}")
     print(f"  • Target VTT    : {final_vtt_path}")
@@ -306,10 +301,8 @@ def main():
         # Save raw whisper backup for reference/debugging
         with open(raw_srt_path, "w", encoding="utf-8") as f:
             f.write(raw_srt)
-        print(f"  • Saved raw acoustic baseline: {raw_srt_path}")
-
-        # Stage 2: Mandatory Gemini Contextual Proofreading
-        final_srt = proofread_srt_with_gemini(raw_srt, api_key, model=args.gemini_model, chunk_size=args.chunk_size)
+        # Stage 2: Contextual LLM Proofreading (Gemini, GPT-5.6 Luna, Gemma 4)
+        final_srt = proofread_srt_with_llm(raw_srt, api_key=args.api_key, base_url=args.base_url, model=args.model, chunk_size=args.chunk_size)
 
         # Write Final SRT
         with open(final_srt_path, "w", encoding="utf-8") as f:

@@ -176,3 +176,37 @@ Antigravity 対話画面で自然言語で指示するだけで、Agent がバ�
    - **`final_cut_full.srt`**：YouTube 標準 SubRip 字幕ファイル。
    - **`final_cut_full.vtt`**：WebVTT 字幕ファイル。
    - **`final_cut_full_raw_whisper.srt`**：比較用 Whisper 原本ファイル。
+
+
+---
+
+## 🌐 複数モデル＆ローカルモデル対応 (Multi-Provider & Local Models)
+
+標準 OpenAI-Compatible アダプタ層を内蔵しており、デフォルトの **Google Gemini 3.7 Flash** に加え、**OpenAI / Codex クラウドモデル（GPT-5.6 Luna など）** や **完全オフラインローカルモデル（Gemma 4 など）** にシームレスに切り替えて実行できます：
+
+### 例 A：Google Gemini クラウド環境（デフォルト）
+```bash
+# 粗編集 EDL 生成 (Gemini 3.7 Flash)
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4
+
+# YouTube 字幕生成 (Whisper + Gemini 3.7 Flash 校正)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+```
+
+### 例 B：Codex / OpenAI クラウド環境（GPT-5.6 Luna 利用）
+```bash
+# 粗編集 EDL 生成
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
+
+# YouTube 字幕生成 (Whisper + GPT-5.6 Luna 校正)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
+```
+
+### 例 C：完全オフラインローカルモデル環境（Ollama / vLLM で Gemma 4 実行）
+```bash
+# 粗編集 EDL 生成 (ローカルエンドポイント接続)
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+
+# YouTube 字幕生成 (Whisper + Gemma 4 ローカル校正)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+```

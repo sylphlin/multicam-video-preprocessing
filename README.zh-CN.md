@@ -171,3 +171,37 @@ flowchart TD
    - **`final_cut_full.srt`**：YouTube 標準 SubRip 字幕檔。
    - **`final_cut_full.vtt`**：WebVTT 字幕檔。
    - **`final_cut_full_raw_whisper.srt`**：保留原始 Whisper 轉錄初稿供對照。
+
+
+---
+
+## 🌐 多模型与跨平台支持 (Multi-Provider & Local Models)
+
+本套件採用通用 OpenAI-Compatible 通訊協議適配層，除了預設的 **Google Gemini 3.7 Flash** 之外，可無縫切換至 **OpenAI / Codex 雲端模型（如 GPT-5.6 Luna）** 或 **本地離線模型（如 Gemma 4）**：
+
+### 範例 A：Google Gemini 雲端環境（預設）
+```bash
+# 產生剪輯 EDL (Gemini 3.7 Flash)
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4
+
+# 產生 YouTube 字幕 (Whisper + Gemini 3.7 Flash 校對)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+```
+
+### 範例 B：Codex / OpenAI 雲端環境（使用 GPT-5.6 Luna）
+```bash
+# 產生剪輯 EDL
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
+
+# 產生 YouTube 字幕 (Whisper + GPT-5.6 Luna 校對)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url https://api.openai.com/v1   --model gpt-5.6-luna   --api-key $OPENAI_API_KEY
+```
+
+### 範例 C：本地離線模型環境（使用 Ollama / vLLM 運行 Gemma 4）
+```bash
+# 產生剪輯 EDL (连接本地端点)
+python3 scripts/generate_edl.py -v output/multicam_merged_part1.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+
+# 產生 YouTube 字幕 (Whisper + Gemma 4 本地離線校對)
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4   --base-url http://localhost:11434/v1   --model gemma-4
+```

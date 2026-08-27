@@ -20,6 +20,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# Support internal modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from modules.llm_client import call_llm, resolve_api_key
+except ImportError:
+    from scripts.modules.llm_client import call_llm, resolve_api_key
+
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "edl_interview_template.md"),
@@ -213,14 +220,15 @@ def main():
     parser.add_argument("-o", "--output", default=None, help="Output CSV path (default: [video_basename].csv)")
     parser.add_argument("-r", "--report", default=None, help="Output Markdown report path (default: [video_basename]_report.md)")
     parser.add_argument("-t", "--template", default=None, help="Path to custom prompt template asset markdown file")
-    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (default: gemini-3.7-flash)")
-    parser.add_argument("-k", "--api-key", default=None, help="API Key (or set via GEMINI_API_KEY / GOOGLE_API_KEY environment variables)")
+    parser.add_argument("-m", "--model", default="gemini-3.7-flash", help="Multimodal model identifier (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma-4)")
+    parser.add_argument("--base-url", default=None, help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
+    parser.add_argument("-k", "--api-key", default=None, help="API Key (or set via GEMINI_API_KEY / OPENAI_API_KEY environment variables)")
 
     args = parser.parse_args()
 
-    api_key = get_api_key(args.api_key)
+    api_key = resolve_api_key(args.api_key, args.base_url, args.model)
     if not api_key:
-        print("[Error] Missing API Key! Please pass --api-key or set GEMINI_API_KEY / GOOGLE_API_KEY environment variable.", file=sys.stderr)
+        print("[Error] Missing API Key! Please pass --api-key or set GEMINI_API_KEY / OPENAI_API_KEY environment variable.", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists(args.video):
@@ -240,6 +248,8 @@ def main():
     print("=" * 78)
     print(f"  • Video Input   : {args.video}")
     print(f"  • Model Choice  : {args.model}")
+    if args.base_url:
+        print(f"  • Base URL      : {args.base_url}")
     print(f"  • CSV Output    : {csv_out}")
     print(f"  • Report Output : {report_out}")
     print("-" * 78)
@@ -247,8 +257,12 @@ def main():
     prompt_template = load_prompt_template(args.template)
 
     try:
-        file_uri, file_id = upload_video_resumable(args.video, api_key)
-        raw_response = generate_edl_content(file_uri, prompt_template, api_key, model=args.model)
+        if not args.base_url and "gemini" in args.model.lower():
+            file_uri, file_id = upload_video_resumable(args.video, api_key)
+            raw_response = call_llm(prompt_template, model=args.model, file_uri=file_uri, api_key=api_key)
+        else:
+            raw_response = call_llm(prompt_template, model=args.model, base_url=args.base_url, api_key=api_key)
+
         full_report, csv_content = extract_csv_and_report(raw_response)
 
         print(f"\n[Step 3/3] 💾 Saving EDL CSV and Analysis Report...")
