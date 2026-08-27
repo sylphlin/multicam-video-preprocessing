@@ -40,8 +40,10 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from modules.llm_client import call_llm, resolve_api_key
+    from modules.progress import LiveTicker
 except ImportError:
     from scripts.modules.llm_client import call_llm, resolve_api_key
+    from scripts.modules.progress import LiveTicker
 
 
 DEFAULT_PROOFREAD_TEMPLATE_PATHS = [
@@ -96,9 +98,10 @@ def extract_audio_16k_mono(input_media, output_wav):
         "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
         output_wav
     ]
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if res.returncode != 0:
-        raise RuntimeError(f"FFmpeg audio extraction failed: {res.stderr}")
+    with LiveTicker(f"Extracting 16kHz mono audio ({os.path.basename(input_media)})"):
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"FFmpeg audio extraction failed: {res.stderr}")
 
 
 def run_whisper_transcription(audio_wav, model_size="base", language="zh", device="auto"):
@@ -149,6 +152,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
         model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=num_threads)
         segments, info = model.transcribe(audio_wav, language=lang_arg, beam_size=5, vad_filter=True)
 
+        total_dur = getattr(info, "duration", 0)
         for idx, seg in enumerate(segments, start=1):
             sub_list.append({
                 "index": idx,
@@ -156,6 +160,12 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
                 "end": seg.end,
                 "text": seg.text.strip()
             })
+            if total_dur > 0:
+                pct = min(100.0, (seg.end / total_dur) * 100.0)
+                print(f"\r  ► [Whisper ASR] {format_timestamp_srt(seg.end)} / {format_timestamp_srt(total_dur)} ({pct:4.1f}%) | Segment #{idx:03d}...", end="", flush=True)
+            else:
+                print(f"\r  ► [Whisper ASR] Segment #{idx:03d} ({format_timestamp_srt(seg.start)} -> {format_timestamp_srt(seg.end)})...", end="", flush=True)
+        print()
 
     except ImportError:
         # Backend 3: openai-whisper (PyTorch MPS / CUDA / CPU)
@@ -243,17 +253,16 @@ def extract_global_glossary(segments, api_key=None, base_url=None, model="gemini
     )
 
     try:
-        glossary_content = call_llm(
-            prompt=prompt,
-            model=model,
-            base_url=base_url,
-            api_key=api_key,
-            temperature=0.1,
-            max_tokens=4096,
-            thinking_budget=0  # Fast response
-        )
-        elapsed = time.time() - t0
-        print(f"  ✓ Global Glossary extracted in {elapsed:.1f}s ({len(glossary_content)} chars)")
+        with LiveTicker("Extracting Global Consistency Glossary via LLM (1M context scan)"):
+            glossary_content = call_llm(
+                prompt=prompt,
+                model=model,
+                base_url=base_url,
+                api_key=api_key,
+                temperature=0.1,
+                max_tokens=4096,
+                thinking_budget=0  # Fast response
+            )
         return glossary_content.strip()
     except Exception as e:
         print(f"  [Warning] Global glossary extraction failed ({e}). Continuing with standard proofreading.", file=sys.stderr)

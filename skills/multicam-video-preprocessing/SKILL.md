@@ -48,6 +48,18 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
    - **CLI / Standalone Terminal Mode**: `scripts/generate_edl.py` is for external scripts or Codex/Local models, resolving `GEMINI_API_KEY`, `OPENAI_API_KEY`, or local endpoints.
    - **NEVER fallback to Whisper**: If an external script encounter an issue, the Agent must NEVER fall back to running Whisper speech-to-text to guess visual cut points. Whisper is strictly for Step 4 subtitle generation.
 
+5. **User Language & Human-Friendly Progress Protocol (自然簡潔的中文進度回報規範)**:
+   - **User Language First**: The Agent MUST communicate with the user in their preferred language (e.g. Traditional Chinese / 繁體中文).
+   - **Concise & Goal-Oriented (白話簡潔、目標導向)**:
+     - 避免堆砌生硬的底層技術細節或演算法術語（例如避免寫「本地 Whisper 聲學轉錄 + Gemini 語意校對」）。
+     - 採用直覺、精簡的目標導向語句：
+       - 步驟 1：「🎬 正在同步多機位音訊與切分章節...」
+       - 步驟 2：「🤖 正在進行 AI 鏡頭剪輯分析...」
+       - 步驟 3A：「📁 正在匯出剪輯時間線 (XML)...」
+       - 步驟 3B：「🎬 正在渲染影片成片...」
+       - 步驟 4：「📝 正在製作字幕...」
+   - **Minimal Script Terminal Output**: Underlying CLI scripts output only clean, real-time numeric progress lines (e.g. `[Whisper ASR] 00:08:14,200 / 00:23:45,000 (34.7%) | Segment #142...`), keeping the terminal uncluttered.
+
 ---
 
 ## 🧭 Workflow Branching Decision Guide (Agent Instructions)

@@ -12,6 +12,11 @@ import os
 import subprocess
 import time
 
+try:
+    from .progress import LiveTicker
+except ImportError:
+    from modules.progress import LiveTicker
+
 
 def compute_grid_spec(num_inputs):
     """
@@ -106,14 +111,15 @@ def compose_multicam_video(video_paths, output_path,
         output_path
     ])
 
-    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    if res.returncode != 0:
-        if encoder != "libx264":
-            cmd[cmd.index(encoder)] = "libx264"
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-
+    with LiveTicker(f"Composing multi-in-one grid ({num_inputs} cameras → {os.path.basename(output_path)})"):
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         if res.returncode != 0:
-            err_msg = res.stderr[-500:]
-            raise RuntimeError(f"FFmpeg multi-in-one composition failed ({num_inputs} cameras): {err_msg}")
+            if encoder != "libx264":
+                cmd[cmd.index(encoder)] = "libx264"
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+            if res.returncode != 0:
+                err_msg = res.stderr[-500:]
+                raise RuntimeError(f"FFmpeg multi-in-one composition failed ({num_inputs} cameras): {err_msg}")
 
     return time.time() - t0

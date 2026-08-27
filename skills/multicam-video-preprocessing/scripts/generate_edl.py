@@ -24,8 +24,10 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from modules.llm_client import call_llm, resolve_api_key, get_ssl_context
+    from modules.progress import LiveTicker
 except ImportError:
     from scripts.modules.llm_client import call_llm, resolve_api_key, get_ssl_context
+    from scripts.modules.progress import LiveTicker
 
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
@@ -142,22 +144,27 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     print(f"  ✓ Video uploaded in {upload_time:.1f}s (File ID: {file_name_id})")
 
     # 3. Wait for File Processing (ACTIVE state)
-    print("  ► Waiting for Gemini video processing (ACTIVE status)...")
+    print("  ► Waiting for Gemini video indexing (ACTIVE status)...")
     get_file_url = f"https://generativelanguage.googleapis.com/v1beta/{file_name_id}?key={api_key}"
+    t_wait_start = time.time()
 
     for attempt in range(60):
         try:
             with urllib.request.urlopen(get_file_url, context=ctx, timeout=15) as resp:
                 check_data = json.loads(resp.read().decode("utf-8"))
                 state = check_data.get("state", "PROCESSING")
+                elapsed_wait = time.time() - t_wait_start
                 if state == "ACTIVE":
-                    print(f"  ✓ Video state is ACTIVE and ready for inference.")
+                    print(f"\r  ✓ Video state is ACTIVE and ready for inference ({elapsed_wait:.1f}s).          \n", flush=True)
                     return file_uri, file_name_id
                 elif state == "FAILED":
                     raise RuntimeError(f"Gemini file processing failed: {check_data.get('error')}")
                 else:
+                    print(f"\r  ► ⏳ Google server video indexing... [Elapsed: {elapsed_wait:.0f}s | Status: {state}]", end="", flush=True)
                     time.sleep(3)
         except urllib.error.HTTPError:
+            elapsed_wait = time.time() - t_wait_start
+            print(f"\r  ► ⏳ Google server video indexing... [Elapsed: {elapsed_wait:.0f}s | Polling...]", end="", flush=True)
             time.sleep(3)
 
     return file_uri, file_name_id
@@ -166,7 +173,6 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
 def generate_edl_content(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
     """Call Gemini generateContent API with video URI and prompt."""
     print(f"\n[Step 2/3] 🤖 Calling Gemini model: {model} ...")
-    t0 = time.time()
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
@@ -192,20 +198,19 @@ def generate_edl_content(file_uri, prompt_text, api_key, model="gemini-3.7-flash
     )
 
     ctx = get_ssl_context()
-    try:
-        with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            elapsed = time.time() - t0
-            print(f"  ✓ Gemini response received in {elapsed:.1f}s")
-            candidates = data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                text_parts = [p.get("text", "") for p in parts if "text" in p]
-                return "".join(text_parts).strip()
-            return ""
-    except urllib.error.HTTPError as e:
-        err = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Gemini generateContent failed (HTTP {e.code}): {err}")
+    with LiveTicker(f"Gemini ({model}) analyzing multimodal video & computing EDL cuts"):
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    text_parts = [p.get("text", "") for p in parts if "text" in p]
+                    return "".join(text_parts).strip()
+                return ""
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"Gemini generateContent failed (HTTP {e.code}): {err}")
 
 
 def delete_remote_file(file_name_id, api_key):

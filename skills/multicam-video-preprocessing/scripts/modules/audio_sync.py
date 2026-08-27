@@ -155,9 +155,11 @@ def sync_all_targets(ref_video, target_videos, sr=8000, sample_dur=None, workers
             "basename": os.path.basename(ref_video),
             "sr": sr
         }
+        print(f"  ✓ Reference audio extracted ({ref_info['basename']})")
 
         # 2. Parallel processing for all target cameras
         results = []
+        print(f"  ► Calculating FFT cross-correlation time offsets for {len(target_videos)} target camera(s)...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(sync_single_target, ref_info, tgt, tmpdir, sr, sample_dur): tgt
@@ -166,6 +168,7 @@ def sync_all_targets(ref_video, target_videos, sr=8000, sample_dur=None, workers
             for fut in concurrent.futures.as_completed(futures):
                 res = fut.result()
                 results.append(res)
+                print(f"    ✓ Aligned {res['target_basename']} (Δt: {res['offset_sec']:+.3f}s | Conf: {res['confidence']:.1f}%) in {res['total_time']:.2f}s")
 
     results.sort(key=lambda r: target_videos.index(r["target_video"]))
     return ref_info, results
