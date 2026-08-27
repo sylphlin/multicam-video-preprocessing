@@ -71,7 +71,7 @@ def main():
     parser.add_argument("--encoder", default="h264_videotoolbox", help="Video encoder for rendering (default: h264_videotoolbox, fallback: libx264)")
 
     # Output & Naming Controls
-    parser.add_argument("--output-dir", default=None, help="Output directory for sub-clips and reports (default: current directory)")
+    parser.add_argument("-o", "--output-dir", dest="output_dir", default=None, help="Output directory for sub-clips and reports (default: current directory)")
     parser.add_argument("--suffix", default="_synced", help="Filename suffix for synchronized full/trimmed export (default: _synced)")
     parser.add_argument("--ref-output", default=None, help="Custom output filename for reference camera (optional)")
     parser.add_argument("--target-outputs", nargs="+", default=None, help="Custom output filenames for target cameras (optional)")

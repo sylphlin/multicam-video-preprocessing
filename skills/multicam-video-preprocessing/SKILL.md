@@ -29,6 +29,24 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | **3B. Concat (🎬 Preview)** | `scripts/concat_videos.py` | `video-concatenation` | Lossless Concat -> Full episode `final_cut_full.mp4` |
 | **4. Subtitles (📝 YouTube)** | `scripts/generate_subtitles.py` | `multicam-video-preprocessing` | Whisper ASR + Gemini Proofreading -> `final_cut_full.srt` / `.vtt` |
 
+## 🛑 Global Strict Constraints & Anti-Patterns (Universal Agent Rules)
+
+1. **Strict Standard Toolset Execution (No Ad-Hoc Scripts)**:
+   - Autonomous AI Agents (Antigravity, Codex, Cursor, Cline, etc.) MUST execute the pipeline via the official modular scripts in `scripts/`.
+   - **STRICTLY FORBIDDEN**: Writing custom temporary scripts, ad-hoc workarounds, or alternative synchronization algorithms.
+
+2. **Pure FFT Physical Alignment (Step 1 ONLY)**:
+   - Multi-camera time synchronization is 100% computed via 8kHz FFT cross-correlation in `scripts/multicam_pipeline.py`.
+   - **NEVER** attempt semantic, textual, Whisper-based, or subtitle-based alignment for camera time sync.
+
+3. **Strict Single-Pass Whisper Restriction (Step 4 ONLY)**:
+   - Whisper ASR transcription is **STRICTLY RESTRICTED to Step 4** (`scripts/generate_subtitles.py`) on the finalized `final_cut_full.mp4`.
+   - **STRICTLY FORBIDDEN**: Running Whisper, speech-to-text, or generating `transcript_part*.json` during Step 1, Step 2, or Step 3. Speech-to-text is NOT used for multi-camera synchronization or EDL cut decisions.
+
+4. **Universal Multi-Modal & API Key Autonomy**:
+   - For Step 2 EDL decisions, the Agent can either analyze the composite video directly in its multimodal context, or execute `scripts/generate_edl.py` (which supports Gemini, Codex GPT-5.6 Luna, or Local Gemma 4).
+   - **Never halt the pipeline or ask the user for an API key**. The script automatically resolves keys from environment variables or local endpoints (`localhost`).
+
 ---
 
 ## 🧭 Workflow Branching Decision Guide (Agent Instructions)
