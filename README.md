@@ -102,12 +102,19 @@ In the Antigravity chat interface, describe your requirements in natural languag
 ## 🔍 Detailed Pipeline Steps
 
 ### Step 1: Multicam Sync & Grid Preprocessing (`multicam_pipeline.py`)
+
 1. **8kHz FFT Audio Time Alignment**:
-   - Downsamples audio tracks to 8kHz mono and applies cross-correlation to calculate exact timecode offsets $\Delta t$ (millisecond precision).
-2. **EBU R128 (-14 LUFS) Full-Length Audio Normalization**:
-   - Two-pass loudness analysis and filter processing, standardizing all camera tracks to -14.0 LUFS, 11.0 LRA, and -1.5 dBTP.
-3. **30–40 min Natural Pause Chapter Splitting (Auto-Split)**:
-   - Identifies voice energy minimums and natural breath pauses within 30 to 40-minute windows for clean lossless chapter slicing.
+   - **Why downsample to 8kHz?**: Human vocal features are concentrated in the 300Hz to 3.4kHz range. An 8kHz sampling rate fully captures voice acoustics while reducing memory usage and accelerating cross-correlation computation by over 10x.
+   - **FFT Cross-Correlation Principle**: The pipeline extracts audio from the reference camera (CAM1) and target cameras (CAM2 to CAMn). Using Fast Fourier Transform (FFT) to convert time-domain signals to the frequency domain, it computes cross-correlation functions. Finding the energy peak yields the exact physical timecode offset $\Delta t$ (millisecond precision), automatically trimming start delays.
+2. **EBU R128 (-14 LUFS) Full-Length Audio Normalization (YouTube Recommended Standard)**:
+   - **YouTube Playback Compliance**: YouTube enforces **-14.0 LUFS** as its standard loudness target. Overly loud audio (> -14 LUFS) triggers YouTube's server-side volume compression, damaging dynamic range; overly quiet audio harms mobile listening experiences.
+   - **Two-Pass Analysis & Filter**:
+     - Pass 1: Uses FFmpeg's `ebur128` filter to measure Integrated Loudness (`I`), Loudness Range (`LRA` = 11.0 LU), and True Peak (`TP` = -1.5 dBTP).
+     - Pass 2: Feeds measured parameters into the `loudnorm` filter for linear gain adjustment, ensuring uniform loudness across all cameras and parts while preventing digital clipping (True Peak Clipping Prevention).
+3. **30–40 min Natural Pause Chapter Splitting (1M Context Window Optimization & Model Adaptation)**:
+   - **1M Token Context Balance**: For multimodal models supporting 1M tokens (e.g. Gemini 3.7 Flash), a 30 to 40-minute grid video consumes ~600k–800k tokens, leaving ample space for system prompts, deep thinking chains, and lengthy EDL text generation.
+   - **Natural Breath & Silence Detection**: Rather than cutting rigidly at fixed intervals, the pipeline scans audio RMS energy within the 30 to 40-minute sliding window to detect sentence pauses, breath gaps, or silence points, preventing truncated sentences.
+   - **Adaptable Across Context Sizes**: If using models with smaller context windows (e.g. 128k or 200k), adjust slice durations via `--split-min-dur` and `--split-max-dur` (e.g. 5 to 10 minutes).
 4. **Synchronized Full-Length Masters (`*_synced.mp4`)**:
    - Trims and exports synchronized, loudness-normalized full-length video masters for NLE timeline linking.
 5. **2 to 6 Camera Multi-in-One Compact Grid Composition**:
