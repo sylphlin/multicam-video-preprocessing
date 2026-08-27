@@ -52,21 +52,30 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["多機位原始素材 (2–6 CAMs)"] --> B["步骤 1：多機同步與 AI 網格前處理<br/>(multicam_pipeline.py)"]
-    
-    B --> C["【全集同步母带】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI 分析專用網格影片】<br/>• multicam_merged_part*.mp4"]
-    
-    D --> E["步骤 2：AI 多模態粗剪決策<br/>(generate_edl.py / Antigravity)"]
-    E --> F["【EDL 剪輯決策列表】<br/>• edl_part*.csv"]
-    
-    C --> G{"選擇交付路徑"}
-    F --> G
-    
-    G -->|"主路徑：專業剪輯 (90%)"| H["步骤 3A：匯出 FCP7 XML 時間線<br/>(export_fcp7_xml.py)<br/>導入 DaVinci Resolve / Premiere Pro"]
-    G -->|"次路徑：直出成片 (10%)"| I["步骤 3B：直接渲染與拼接 MP4 成片<br/>(edl_to_video.py + concat_videos.py)<br/>產出 final_cut_full.mp4"]
-    
-    I --> J["步骤 4：YouTube 字幕生成<br/>(generate_subtitles.py)<br/>Whisper 声学對齊 + Gemini 语义校對<br/>產出 final_cut_full.srt / .vtt"]
+    subgraph S1["步骤 1：多机预处理管线 (multicam_pipeline.py)"]
+        A["多机位原始素材 (CAM1, CAM2...)"] --> S1_1["1.1 8kHz FFT 音频时间线对齐 (计算 Δt)"]
+        S1_1 --> S1_2["1.2 EBU R128 音量标准化 (-14 LUFS)"]
+        S1_2 --> S1_3["1.3 导出全集同步母带 (CAM*_synced.mp4)"]
+        S1_3 --> S1_4["1.4 自然停顿点章节切分 (Part 1, Part 2...)"]
+        S1_4 --> S1_5["1.5 多合一网格画面合成 (multicam_merged_part*.mp4)"]
+    end
+
+    S1_5 --> S2["步骤 2：AI 多模态粗剪决策<br/>(generate_edl.py / 提示词样板)"]
+    S2 --> EDL["EDL 剪辑决策列表<br/>(edl_part*.csv)"]
+
+    subgraph S3A["主路径：专业剪辑 (90%)"]
+        S1_3 --> S3A_ACT["步骤 3A：导出 FCP7 XML 兼容时间线<br/>(export_fcp7_xml.py)"]
+        EDL --> S3A_ACT
+        S3A_ACT --> XML["final_cut_full.xml<br/>(导入 Final Cut Pro / DaVinci Resolve / Premiere Pro)"]
+    end
+
+    subgraph S3B["次路径：直接成片与字幕 (10%)"]
+        S1_3 --> S3B_ACT["步骤 3B：直接渲染与无损拼接<br/>(edl_to_video.py + concat_videos.py)"]
+        EDL --> S3B_ACT
+        S3B_ACT --> MP4["final_cut_full.mp4"]
+        MP4 --> S4["步骤 4：YouTube 字幕生成<br/>(generate_subtitles.py)"]
+        S4 --> SRT["final_cut_full.srt / .vtt"]
+    end
 ```
 
 ---

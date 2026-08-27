@@ -52,21 +52,30 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["Raw Multicam Footage (2–6 CAMs)"] --> B["Step 1: Multicam Sync & Grid Preprocessing<br/>(multicam_pipeline.py)"]
-    
-    B --> C["【Full-Length Synced Masters】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI Token-Optimized Grid Videos】<br/>• multicam_merged_part*.mp4"]
-    
-    D --> E["Step 2: AI Multimodal Rough-Cut Decision<br/>(generate_edl.py / Antigravity)"]
-    E --> F["【EDL Decision Lists】<br/>• edl_part*.csv"]
-    
-    C --> G{"Select Delivery Path"}
-    F --> G
-    
-    G -->|"Primary: Professional NLE (90%)"| H["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)<br/>Outputs final_cut_full.xml<br/>(Compatible with Final Cut Pro, DaVinci Resolve, Premiere Pro, etc.)"]
-    G -->|"Secondary: Direct Render (10%)"| I["Step 3B: Render & Concat Full MP4 Video<br/>(edl_to_video.py + concat_videos.py)<br/>Outputs final_cut_full.mp4"]
-    
-    I --> J["Step 4: YouTube Subtitles Generation<br/>(generate_subtitles.py)<br/>Whisper Acoustic Alignment + Gemini Proofreading<br/>Outputs final_cut_full.srt / .vtt"]
+    subgraph S1["Step 1: Multicam Preprocessing (multicam_pipeline.py)"]
+        A["Raw Multicam Footage (CAM1, CAM2...)"] --> S1_1["1.1 8kHz FFT Audio Time Alignment (Δt)"]
+        S1_1 --> S1_2["1.2 EBU R128 Audio Normalization (-14 LUFS)"]
+        S1_2 --> S1_3["1.3 Export Synced Full Masters (CAM*_synced.mp4)"]
+        S1_3 --> S1_4["1.4 Natural Pause Chapter Splitting (Part 1, Part 2...)"]
+        S1_4 --> S1_5["1.5 Multi-in-One Grid Video Composition (multicam_merged_part*.mp4)"]
+    end
+
+    S1_5 --> S2["Step 2: AI Multimodal Rough-Cut Decision<br/>(generate_edl.py / Prompt Template)"]
+    S2 --> EDL["EDL Decision Lists<br/>(edl_part*.csv)"]
+
+    subgraph S3A["Primary Path: Professional NLE (90%)"]
+        S1_3 --> S3A_ACT["Step 3A: Export FCP7 XML Timeline<br/>(export_fcp7_xml.py)"]
+        EDL --> S3A_ACT
+        S3A_ACT --> XML["final_cut_full.xml<br/>(Import to Final Cut Pro / DaVinci Resolve / Premiere Pro)"]
+    end
+
+    subgraph S3B["Secondary Path: Direct Video & Subtitles (10%)"]
+        S1_3 --> S3B_ACT["Step 3B: Render & Lossless Concat<br/>(edl_to_video.py + concat_videos.py)"]
+        EDL --> S3B_ACT
+        S3B_ACT --> MP4["final_cut_full.mp4"]
+        MP4 --> S4["Step 4: YouTube Subtitles Generation<br/>(generate_subtitles.py)"]
+        S4 --> SRT["final_cut_full.srt / .vtt"]
+    end
 ```
 
 ---

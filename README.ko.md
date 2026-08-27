@@ -52,21 +52,30 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["미처리 멀티카메라 원본 (2–6 CAMs)"] --> B["1단계: 멀티카메라 동기화 및 그리드 전처리<br/>(multicam_pipeline.py)"]
-    
-    B --> C["【전체 동기화 마스터 영상】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI 분석용 그리드 영상】<br/>• multicam_merged_part*.mp4"]
-    
-    D --> E["2단계: AI 멀티모달 가편집 결정<br/>(generate_edl.py / Antigravity)"]
-    E --> F["【EDL 편집 결정 목록】<br/>• edl_part*.csv"]
-    
-    C --> G{"출력 경로 선택"}
-    F --> G
-    
-    G -->|"주요: 전문가용 NLE 편집 (90%)"| H["3A단계: FCP7 XML 호환 타임라인 내보내기<br/>(export_fcp7_xml.py)<br/>final_cut_full.xml 출력<br/>(Final Cut Pro, DaVinci Resolve, Premiere Pro 등 호환)"]
-    G -->|"차선: 직접 영상 렌더링 (10%)"| I["3B단계: MP4 완성본 직접 렌더링 및 결합<br/>(edl_to_video.py + concat_videos.py)<br/>final_cut_full.mp4 출력"]
-    
-    I --> J["4단계: YouTube 자막 생성<br/>(generate_subtitles.py)<br/>Whisper 음향 정렬 + Gemini 문맥 교정<br/>final_cut_full.srt / .vtt 출력"]
+    subgraph S1["1단계: 멀티카메라 전처리 (multicam_pipeline.py)"]
+        A["미처리 멀티카메라 원본 (CAM1, CAM2...)"] --> S1_1["1.1 8kHz FFT 오디오 타임라인 동기화 (Δt 계산)"]
+        S1_1 --> S1_2["1.2 EBU R128 음량 표준화 (-14 LUFS)"]
+        S1_2 --> S1_3["1.3 전체 동기화 마스터 영상 출력 (CAM*_synced.mp4)"]
+        S1_3 --> S1_4["1.4 자연스러운 멈춤 챕터 분할 (Part 1, Part 2...)"]
+        S1_4 --> S1_5["1.5 멀티인원 화면 합성 (multicam_merged_part*.mp4)"]
+    end
+
+    S1_5 --> S2["2단계: AI 멀티모달 가편집 결정<br/>(generate_edl.py / 프롬프트 템플릿)"]
+    S2 --> EDL["EDL 편집 결정 목록<br/>(edl_part*.csv)"]
+
+    subgraph S3A["주요 경로: 전문가용 NLE 편집 (90%)"]
+        S1_3 --> S3A_ACT["3A단계: FCP7 XML 호환 타임라인 내보내기<br/>(export_fcp7_xml.py)"]
+        EDL --> S3A_ACT
+        S3A_ACT --> XML["final_cut_full.xml<br/>(Final Cut Pro / DaVinci Resolve / Premiere Pro 가져오기)"]
+    end
+
+    subgraph S3B["차선 경로: 직접 영상 렌더링 및 자막 (10%)"]
+        S1_3 --> S3B_ACT["3B단계: 직접 렌더링 및 무손실 결합<br/>(edl_to_video.py + concat_videos.py)"]
+        EDL --> S3B_ACT
+        S3B_ACT --> MP4["final_cut_full.mp4"]
+        MP4 --> S4["4단계: YouTube 자막 생성<br/>(generate_subtitles.py)"]
+        S4 --> SRT["final_cut_full.srt / .vtt"]
+    end
 ```
 
 ---

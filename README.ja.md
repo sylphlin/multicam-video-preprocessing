@@ -52,21 +52,30 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    A["未処理マルチカメラ素材 (2–6 CAMs)"] --> B["手順 1：マルチカメラ同期＆グリッド前処理<br/>(multicam_pipeline.py)"]
-    
-    B --> C["【全編同期マスター動画】<br/>• CAM1_synced.mp4<br/>• CAM2_synced.mp4"]
-    B --> D["【AI 分析用グリッド動画】<br/>• multicam_merged_part*.mp4"]
-    
-    D --> E["手順 2：AI マルチモーダル粗編集決定<br/>(generate_edl.py / Antigravity)"]
-    E --> F["【EDL 編集決定リスト】<br/>• edl_part*.csv"]
-    
-    C --> G{"出力形式の選択"}
-    F --> G
-    
-    G -->|"主要：プロ向け NLE 編集 (90%)"| H["手順 3A：FCP7 XML 互換タイムライン出力<br/>(export_fcp7_xml.py)<br/>final_cut_full.xml を出力<br/>(Final Cut Pro、DaVinci Resolve、Premiere Pro 等に対応)"]
-    G -->|"次要：直接動画出力 (10%)"| I["手順 3B：MP4 完成動画の直接レンダリング＆結合<br/>(edl_to_video.py + concat_videos.py)<br/>final_cut_full.mp4 を出力"]
-    
-    I --> J["手順 4：YouTube 字幕生成<br/>(generate_subtitles.py)<br/>Whisper 音声認識 ＋ Gemini 意味校正<br/>final_cut_full.srt / .vtt を出力"]
+    subgraph S1["手順 1：マルチカメラ前処理 (multicam_pipeline.py)"]
+        A["未処理マルチカメラ素材 (CAM1, CAM2...)"] --> S1_1["1.1 8kHz FFT 音声タイムライン同期 (Δt 算出)"]
+        S1_1 --> S1_2["1.2 EBU R128 音量ノーマライズ (-14 LUFS)"]
+        S1_2 --> S1_3["1.3 全編同期マスター動画の出力 (CAM*_synced.mp4)"]
+        S1_3 --> S1_4["1.4 自然なポーズ検出チャプター分割 (Part 1, Part 2...)"]
+        S1_4 --> S1_5["1.5 マルチインワン画面合成 (multicam_merged_part*.mp4)"]
+    end
+
+    S1_5 --> S2["手順 2：AI マルチモーダル粗編集決定<br/>(generate_edl.py / プロンプトテンプレート)"]
+    S2 --> EDL["EDL 編集決定リスト<br/>(edl_part*.csv)"]
+
+    subgraph S3A["主要パス：プロ向け NLE 編集 (90%)"]
+        S1_3 --> S3A_ACT["手順 3A：FCP7 XML 互換タイムライン出力<br/>(export_fcp7_xml.py)"]
+        EDL --> S3A_ACT
+        S3A_ACT --> XML["final_cut_full.xml<br/>(Final Cut Pro / DaVinci Resolve / Premiere Pro にインポート)"]
+    end
+
+    subgraph S3B["次要パス：直接動画出力＆字幕 (10%)"]
+        S1_3 --> S3B_ACT["手順 3B：直接レンダリング＆無損失結合<br/>(edl_to_video.py + concat_videos.py)"]
+        EDL --> S3B_ACT
+        S3B_ACT --> MP4["final_cut_full.mp4"]
+        MP4 --> S4["手順 4：YouTube 字幕生成<br/>(generate_subtitles.py)"]
+        S4 --> SRT["final_cut_full.srt / .vtt"]
+    end
 ```
 
 ---
