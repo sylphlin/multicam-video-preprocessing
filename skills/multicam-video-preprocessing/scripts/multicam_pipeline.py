@@ -204,8 +204,9 @@ def main():
         )
         print(f"\n  ✓ All chapter sub-clips exported successfully! ({n_exp} files in {exp_time:.1f}s)")
 
-        # Export full-length synchronized master camera files (*_synced.mp4)
-        print(f"\n  ► Exporting full-length synchronized camera masters ({total_cams} CAMs) for NLE editing ...")
+        # Export full-length synchronized master camera files (*_synced.mp4) in parallel
+        print(f"\n  ► Exporting full-length synchronized camera masters ({total_cams} CAMs) in parallel for NLE editing ...")
+        t_masters_start = time.time()
         full_sync_tasks = [
             {
                 "video": args.ref,
@@ -229,32 +230,49 @@ def main():
                 "name": r["target_basename"]
             })
 
-        for stask in full_sync_tasks:
-            print(f"    • Slicing {stask['name']} → {os.path.basename(stask['output'])} ...")
+        def _export_single_master(stask):
+            t_m_0 = time.time()
             cut_single_clip(
                 stask["video"], stask["output"], stask["start"], stask["end"],
                 norm_audio_path=stask["audio"], copy_codec=True,
                 video_bitrate=args.video_bitrate, audio_bitrate=args.audio_bitrate
             )
-        print(f"  ✓ Full-length synchronized camera masters exported!")
+            return stask["name"], os.path.basename(stask["output"]), time.time() - t_m_0
 
-        # Step 4: Multi-in-One Composition for 2-6 Cameras in Each Chapter Part
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(full_sync_tasks), args.workers)) as executor:
+            m_futures = [executor.submit(_export_single_master, st) for st in full_sync_tasks]
+            for fut in concurrent.futures.as_completed(m_futures):
+                src_name, dst_name, dur = fut.result()
+                print(f"    ✓ Sliced {src_name} → {dst_name} ({dur:.1f}s)")
+
+        print(f"  ✓ All synchronized camera masters exported in {time.time() - t_masters_start:.1f}s!")
+
+        # Step 4: Multi-in-One Composition for 2-6 Cameras in Each Chapter Part in Parallel
         if args.merge:
             print(f"\n[Step 4/4] 🔲 Rendering Multi-in-One grid videos ({total_cams} CAMs, {cols}x{rows} grid, {cw}x{ch}/cell -> {tot_w}x{tot_h})...")
-            for part in part_segments:
+            t_grid_start = time.time()
+
+            def _compose_part(part):
                 part_video_paths = []
                 for cam in part["cameras"]:
                     base, ext = os.path.splitext(cam["camera_name"])
                     part_video_paths.append(os.path.join(out_dir, f"{base}_{part['part_name']}{ext}"))
 
                 merged_video_path = os.path.join(out_dir, f"multicam_merged_{part['part_name']}.mp4")
-                print(f"  ► Composing Multi-in-One {part['part_name']} ({total_cams} CAMs -> {tot_w}x{tot_h}) → {os.path.basename(merged_video_path)} ...")
                 t_comp = compose_multicam_video(
                     part_video_paths, merged_video_path,
                     video_bitrate=args.video_bitrate, audio_bitrate=args.audio_bitrate,
                     encoder=args.encoder
                 )
-                print(f"    ✓ Composed {os.path.basename(merged_video_path)} in {t_comp:.1f}s")
+                return part["part_name"], os.path.basename(merged_video_path), t_comp
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(part_segments), args.workers)) as executor:
+                comp_futures = [executor.submit(_compose_part, p) for p in part_segments]
+                for fut in concurrent.futures.as_completed(comp_futures):
+                    p_name, out_name, dur = fut.result()
+                    print(f"    ✓ Composed {out_name} ({p_name}) in {dur:.1f}s")
+
+            print(f"  ✓ All Multi-in-One grid videos rendered in {time.time() - t_grid_start:.1f}s!")
         else:
             print(f"\n[Step 4/4] 🔲 Multi-in-One composition: Skipped (flag --merge not specified)")
 

@@ -230,16 +230,16 @@ def cut_single_clip(video_path, output_path, start_sec, end_sec,
     """
     if start_sec < 0:
         start_sec = 0.0
+    dur_sec = max(0.0, end_sec - start_sec)
 
     if norm_audio_path and os.path.exists(norm_audio_path):
         cmd = [
             "ffmpeg", "-y",
             "-ss", format_seconds(start_sec),
-            "-to", format_seconds(end_sec),
             "-i", video_path,
             "-ss", format_seconds(start_sec),
-            "-to", format_seconds(end_sec),
             "-i", norm_audio_path,
+            "-t", format_seconds(dur_sec),
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-c", "copy",
@@ -249,8 +249,8 @@ def cut_single_clip(video_path, output_path, start_sec, end_sec,
         cmd = [
             "ffmpeg", "-y",
             "-ss", format_seconds(start_sec),
-            "-to", format_seconds(end_sec),
             "-i", video_path,
+            "-t", format_seconds(dur_sec),
             "-c", "copy",
             output_path
         ]
@@ -258,8 +258,8 @@ def cut_single_clip(video_path, output_path, start_sec, end_sec,
         cmd = [
             "ffmpeg", "-y",
             "-ss", format_seconds(start_sec),
-            "-to", format_seconds(end_sec),
             "-i", video_path,
+            "-t", format_seconds(dur_sec),
             "-c:v", "h264_videotoolbox", "-b:v", video_bitrate,
             "-c:a", "aac", "-b:a", audio_bitrate,
             output_path
