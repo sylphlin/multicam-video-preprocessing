@@ -101,22 +101,54 @@ def extract_audio_16k_mono(input_media, output_wav):
         raise RuntimeError(f"FFmpeg audio extraction failed: {res.stderr}")
 
 
-def run_whisper_transcription(audio_wav, model_size="base", language="zh"):
+def run_whisper_transcription(audio_wav, model_size="base", language="zh", device="auto"):
     """
-    Run local Whisper transcription using faster-whisper (or fallback to openai-whisper).
+    Run high-speed Whisper acoustic transcription with automatic Apple Silicon / GPU hardware acceleration:
+      1. mlx-whisper (Apple Silicon Metal / Neural Engine - Fastest on Mac)
+      2. openai-whisper with PyTorch MPS (Apple Silicon GPU) or CUDA (NVIDIA GPU)
+      3. faster-whisper with ARM NEON / AVX int8 multi-core vector acceleration
     Returns list of dicts: [{"index": 1, "start": 0.0, "end": 1.28, "text": "..."}]
     """
-    print(f"\n[Stage 1/2] ⚡ Running Whisper acoustic transcription (Model: {model_size})...")
+    print(f"\n[Stage 1/2] ⚡ Running Whisper acoustic transcription (Model: {model_size}, Device: {device})...")
     t0 = time.time()
+    lang_arg = None if str(language).lower() in ("auto", "none") else language
+    sub_list = []
 
+    # Backend 1: Apple Silicon Native MLX (mlx-whisper)
+    if device in ("auto", "mps", "mlx"):
+        try:
+            import mlx_whisper
+            print(f"  ► [Backend: Apple MLX] Utilizing Apple Silicon GPU / Neural Engine acceleration...")
+            repo_name = f"mlx-community/whisper-{model_size}-mlx"
+            result = mlx_whisper.transcribe(
+                audio_wav,
+                path_or_hf_repo=repo_name,
+                language=lang_arg,
+                word_timestamps=False
+            )
+            for idx, seg in enumerate(result.get("segments", []), start=1):
+                sub_list.append({
+                    "index": idx,
+                    "start": float(seg["start"]),
+                    "end": float(seg["end"]),
+                    "text": seg["text"].strip()
+                })
+            duration = time.time() - t0
+            print(f"  ✓ MLX transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated)")
+            return sub_list
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"  [Notice] MLX backend skipped ({e}), switching to next acceleration engine...", file=sys.stderr)
+
+    # Backend 2: faster-whisper (CTranslate2 with int8 & ARM NEON / AVX vectorization)
     try:
         from faster_whisper import WhisperModel
-        # Initialize model with CPU int8 for instant low-memory Mac/PC performance
-        model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=4)
-        lang_arg = None if language.lower() in ("auto", "none") else language
+        num_threads = min(8, os.cpu_count() or 4)
+        print(f"  ► [Backend: faster-whisper] Utilizing multi-core ARM NEON/AVX vector acceleration ({num_threads} CPU threads, int8)...")
+        model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=num_threads)
         segments, info = model.transcribe(audio_wav, language=lang_arg, beam_size=5, vad_filter=True)
 
-        sub_list = []
         for idx, seg in enumerate(segments, start=1):
             sub_list.append({
                 "index": idx,
@@ -126,13 +158,21 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh"):
             })
 
     except ImportError:
+        # Backend 3: openai-whisper (PyTorch MPS / CUDA / CPU)
         try:
             import whisper
-            model = whisper.load_model(model_size)
-            lang_arg = None if language.lower() in ("auto", "none") else language
+            import torch
+            if device in ("auto", "mps") and torch.backends.mps.is_available():
+                target_dev = "mps"
+            elif device in ("auto", "cuda") and torch.cuda.is_available():
+                target_dev = "cuda"
+            else:
+                target_dev = "cpu"
+
+            print(f"  ► [Backend: openai-whisper] Running on PyTorch ({target_dev.upper()})...")
+            model = whisper.load_model(model_size, device=target_dev)
             result = model.transcribe(audio_wav, language=lang_arg)
 
-            sub_list = []
             for idx, seg in enumerate(result.get("segments", []), start=1):
                 sub_list.append({
                     "index": idx,
@@ -141,10 +181,10 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh"):
                     "text": seg["text"].strip()
                 })
         except ImportError:
-            raise RuntimeError("Neither 'faster_whisper' nor 'whisper' is installed! Please install via `pip install faster-whisper`.")
+            raise RuntimeError("No Whisper backend found! Please install via `pip install mlx-whisper` (Apple Silicon GPU) or `pip install faster-whisper`.")
 
     duration = time.time() - t0
-    print(f"  ✓ Whisper transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated)")
+    print(f"  ✓ Whisper acoustic transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated)")
     return sub_list
 
 
@@ -320,6 +360,8 @@ def main():
     parser.add_argument("--base-url", default=None,
                         help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("--language", default="zh", help="Spoken language code for transcription (default: zh, or auto)")
+    parser.add_argument("--device", default="auto", choices=["auto", "mps", "mlx", "cuda", "cpu"],
+                        help="Device acceleration backend for Whisper (default: auto for Apple Silicon GPU / Neural Engine)")
     parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable)")
     parser.add_argument("--chunk-size", type=int, default=250, help="Subtitle entries per proofread batch (default: 250)")
     parser.add_argument("--workers", type=int, default=5, help="Concurrent workers for parallel proofreading (default: 5)")
@@ -346,7 +388,7 @@ def main():
     print(f"  • LLM Model     : {args.model}")
     if args.base_url:
         print(f"  • Base URL      : {args.base_url}")
-    print(f"  • Whisper Model : {args.whisper_model} (Language: {args.language})")
+    print(f"  • Whisper Model : {args.whisper_model} (Language: {args.language}, Device: {args.device})")
     print(f"  • Batch Settings: Chunk {args.chunk_size} lines | {args.workers} Parallel Workers")
     print(f"  • Target SRT    : {final_srt_path}")
     print(f"  • Target VTT    : {final_vtt_path}")
@@ -358,7 +400,7 @@ def main():
         extract_audio_16k_mono(args.input, tmp_wav)
 
         # Stage 1: Whisper Acoustic Transcription
-        segments = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language)
+        segments = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
         raw_srt = build_srt_from_segments(segments)
 
         # Save raw whisper backup for reference/debugging
