@@ -36,6 +36,7 @@ flowchart TD
     --auto-split --split-min-dur 30 --split-max-dur 40 \
     --normalize --merge -o <OUTPUT_DIR>
   ```
+  *(Note: If the user prompt explicitly specifies a different chapter duration, e.g. around 10 or 15 mins, dynamically adapt `--split-min-dur` and `--split-max-dur` accordingly without modifying the workflow file).*
 - **Exit Gate 1 Verification**:
   - [x] `<OUTPUT_DIR>/multicam_sync.json` exists with valid offset data.
   - [x] `<OUTPUT_DIR>/<CAM>_synced.mp4` full-length synchronized masters exist.

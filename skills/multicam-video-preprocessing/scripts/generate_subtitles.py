@@ -295,6 +295,8 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
 
         match = re.search(r"```(?:srt)?\s*\n(.*?)```", response_text, re.DOTALL | re.IGNORECASE)
         clean_chunk = match.group(1).strip() if match else response_text.strip()
+        clean_chunk = re.sub(r"^```(?:srt)?\s*\n?", "", clean_chunk, flags=re.IGNORECASE)
+        clean_chunk = re.sub(r"\n?```\s*$", "", clean_chunk).strip()
 
         if "-->" in clean_chunk:
             return c_idx, clean_chunk, True

@@ -29,6 +29,8 @@ multicam-video-preprocessing/
 │   └── multicam-video-preprocessing/
 │       └── SKILL.md                   # Antigravity スキル機能定義
 ├── assets/                            # プロンプトテンプレート資産
+│   ├── edl_interview_template.md      # Gemini 粗編集プロンプト
+│   └── subtitle_proofread_template.md # YouTube 字幕校正プロンプト
 ├── scripts/                           # コア実行ツールセット
 │   ├── multicam_pipeline.py           # Step 1: 音声同期・音量正規化・チャプター分割・グリッド合成
 │   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash マルチモーダル粗編集決定
@@ -39,6 +41,26 @@ multicam-video-preprocessing/
 │   └── modules/                       # 音響＆映像コアアルゴリズムモジュール
 └── README.ja.md
 ```
+
+---
+
+## 🔍 各ステップの処理詳細 (Detailed Pipeline Steps)
+
+### ステップ 1：マルチカメラ物理前処理 (`multicam_pipeline.py`)
+1. **8kHz FFT 音声時間同期**：音声を8kHzにダウンサンプリングして1D FFT相互相関関数を高速計算し、各カメラの開始録画ズレ $\\Delta t$ をミリ秒単位で正確に補正。
+2. **EBU R128 (-14 LUFS) 音量正規化**：YouTube推奨基準である -14 LUFS（True Peak -1.5 dBTP）に合わせ、2-Pass loudnorm フィルターで音量を均一化。
+3. **同期マスター動画の書き出し (`*_synced.mp4`)**：XMLタイムラインが直接参照する同期済み・音量均一化マスター動画を出力。
+4. **30〜40分 自然な無音ポーズでのチャプター分割**：音声RMSエネルギーを走査し、文の途中で切れないよう自然な呼吸・無音位置で30〜40分ごとに分割（1M Token コンテキストに最適化）。
+5. **2〜6台 マルチカメラコンパクトグリッド合成**：最大1080p以下、各画角480p以上のグリッド動画を合成し、AIトークン消費を50%〜83%削減。
+
+### ステップ 2：Gemini AI マルチモーダル粗編集決定 (`generate_edl.py`)
+- 発言者の音声を主導としてカメラアングルを決定し、適度なリスナーのリアクションカットを挿入、単一カット2.5秒以上のジャンプカット防止を適用して `edl_part*.csv` を出力。
+
+### ステップ 3A：FCP7 XML タイムラインエクスポート (`export_fcp7_xml.py`)
+- 全チャプターの時間軸を統合し、DaVinci Resolve / Premiere Pro / Final Cut Pro に直接読み込める `final_cut_full.xml` を生成。
+
+### ステップ 4：YouTube 字幕生成 (`generate_subtitles.py`)
+- ローカル Whisper のミリ秒単位アライメント ＋ Gemini 1M コンテキストによる固有名詞・同音異義語校正により、高精度な `.srt` / `.vtt` を生成。
 
 ---
 

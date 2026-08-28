@@ -42,6 +42,26 @@ multicam-video-preprocessing/
 
 ---
 
+## 🔍 단계별 처리 상세 설명 (Detailed Pipeline Steps)
+
+### 1단계: 멀티카메라 물리 전처리 (`multicam_pipeline.py`)
+1. **8kHz FFT 오디오 시간 동기화**: 오디오를 8kHz로 다운샘플링하여 1D FFT 상호상관을 고속 계산하고, 각 카메라의 녹화 시작 편차 $\\Delta t$ 를 밀리초 단위로 정확히 보정.
+2. **EBU R128 (-14 LUFS) 음량 표준화**: YouTube 권장 기준인 -14 LUFS(True Peak -1.5 dBTP)에 맞춰 2-Pass loudnorm 필터로 음량을 균일화.
+3. **동기화 마스터 비디오 출력 (`*_synced.mp4`)**: XML 타임라인에서 직접 참조하는 동기화 및 음량 표준화 마스터 비디오 출력.
+4. **30~40분 자연스러운 무음 포즈 기반 챕터 분할**: 오디오 RMS 에너지를 스캔하여 문장이 잘리지 않도록 30~40분 단위로 무손실 분할 (1M Token 컨텍스트에 최적화).
+5. **2~6대 멀티캠 컴팩트 그리드 합성**: 최대 1080p 이하, 각 화각 480p 이상의 그리드 비디오를 합성하여 AI 토큰 소비를 50%~83% 절감.
+
+### 2단계: Gemini AI 멀티모달 가편집 결정 (`generate_edl.py`)
+- 화자의 음성을 주도적으로 추적하여 카메라 앵글을 결정하고 리액션 컷을 적절히 삽입하며, 단일 컷 2.5초 이상 점프컷 방지 규칙을 적용하여 `edl_part*.csv` 생성.
+
+### 3A단계: FCP7 XML 타임라인 내보내기 (`export_fcp7_xml.py`)
+- 모든 챕터의 타임스탬프를 누적 통합하여 DaVinci Resolve / Premiere Pro / Final Cut Pro에 직접 로드 가능한 `final_cut_full.xml` 생성.
+
+### 4단계: YouTube 자막 생성 (`generate_subtitles.py`)
+- 로컬 Whisper의 밀리초 단위 타임스탬프 + Gemini 1M 컨텍스트 기반 고유명사 및 동음이의어 교정을 결합하여 고품질 `.srt` / `.vtt` 생성.
+
+---
+
 ## 🚀 빠른 시작 가이드
 
 ### 플랜 A: 전문 NLE 타임라인 워크플로우 (XML 내보내기 ⭐ 추천)
