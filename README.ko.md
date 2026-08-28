@@ -10,7 +10,11 @@
 
 ---
 
-## 📦 Antigravity 설치 및 구조
+본 프로젝트는 Antigravity 대화창에서 자연어로 요청하기만 하면 터미널 명령어를 입력할 필요 없이 다중 카메라 동기화, 음량 표준화, AI 가편집, XML 타임라인 및 YouTube 자막 생성을 자동으로 수행합니다.
+
+---
+
+## 📦 Antigravity 설치 및 디렉토리 구조
 
 ```bash
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
@@ -29,6 +33,8 @@ multicam-video-preprocessing/
 │   └── multicam-video-preprocessing/
 │       └── SKILL.md                   # Antigravity 스킬 기능 정의서
 ├── assets/                            # 프롬프트 템플릿 자산
+│   ├── edl_interview_template.md      # Gemini 가편집 프롬프트 템플릿
+│   └── subtitle_proofread_template.md # YouTube 자막 교정 템플릿
 ├── scripts/                           # 핵심 실행 도구 라이브러리
 │   ├── multicam_pipeline.py           # 1단계: 멀티캠 동기화, 음량 표준화, 챕터 분할, 그리드 합성
 │   ├── generate_edl.py                # 2단계: Gemini 3.7 Flash 멀티모달 가편집 결정
@@ -39,6 +45,35 @@ multicam-video-preprocessing/
 │   └── modules/                       # 음향 및 영상 핵심 알고리즘 모듈
 └── README.ko.md
 ```
+
+---
+
+## 💬 사용 시나리오 및 프롬프트 예시 (User Scenarios & Prompt Examples)
+
+### 시나리오 1: 편집용 XML 타임라인 내보내기 (DaVinci Resolve / Premiere Pro ⭐ 추천)
+- **프롬프트 예시**:
+  > *"2대의 인터뷰 영상 `CAM1.mp4`와 `CAM2.mp4`가 있습니다. 오디오 동기화와 음량 표준화를 진행하고 DaVinci Resolve에서 열 수 있는 XML 타임라인을 생성해주세요."*
+- **결과물**:
+  1. `final_cut_full.xml` (모든 컷 편집점 및 AI 판정 사유 마커 포함 타임라인)
+  2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (동기화 및 음량 표준화 마스터 영상)
+- **DaVinci Resolve 가져오기**:
+  1. DaVinci Resolve를 열고 새 프로젝트 생성.
+  2. `./output/CAM1_synced.mp4` 및 `./output/CAM2_synced.mp4`를 **미디어 풀**에 드래그.
+  3. **파일 $\\rightarrow$ 가져오기 $\\rightarrow$ 타임라인...** 을 클릭하고 `final_cut_full.xml` 선택.
+
+---
+
+### 시나리오 2: 완성 영상 및 YouTube 자막 직접 출력 (미리보기 🎬)
+- **프롬프트 예시**:
+  > *"멀티카메라 영상을 AI 가편집하여 미리보기용 MP4 영상과 교정된 YouTube 자막을 출력해주세요."*
+
+---
+
+### 시나리오 3: 챕터 분할 시간 지정 (사용자 지정 타이밍 ⏱️)
+- **프롬프트 예시**:
+  > *"챕터를 약 10분 내외의 자연스러운 무음 구간에서 분할하여 처리해주세요."*
+- **Agent 동작**:
+  - 설정 파일 수정 없이 자동으로 분할 파라미터를 조정하여 실행합니다.
 
 ---
 
@@ -62,28 +97,9 @@ multicam-video-preprocessing/
 
 ---
 
-## 🚀 빠른 시작 가이드
+## 🛠️ 필요 환경
 
-### 플랜 A: 전문 NLE 타임라인 워크플로우 (XML 내보내기 ⭐ 추천)
-
-```bash
-# 1. 멀티카메라 전처리 (동기화 + EBU R128 음량 표준화 + 30-40분 챕터 분할 + 마스터 출력 + 그리드 합성)
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 --targets CAM2.mp4 \
-  --auto-split --split-min-dur 30 --split-max-dur 40 \
-  --normalize --merge \
-  -o ./output/
-
-# 2. Gemini 3.7 Flash AI 멀티모달 가편집 결정 (각 Part마다 실행)
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part2.mp4
-
-# 3A. FCP7 XML 타임라인 내보내기
-python3 scripts/export_fcp7_xml.py -d ./output/ -o ./output/final_cut_full.xml
-```
-
-#### 🎬 DaVinci Resolve 타임라인 가져오기:
-1. DaVinci Resolve를 열고 새 프로젝트를 생성합니다.
-2. `./output/CAM1_synced.mp4` 및 `./output/CAM2_synced.mp4`를 **미디어 풀(Media Pool)** 로 드래그합니다.
-3. **파일 $\\rightarrow$ 가져오기 $\\rightarrow$ 타임라인...** 을 클릭하고 `final_cut_full.xml`을 선택합니다.
-4. 모든 컷 편집점, 메인 오디오 트랙 및 컬러 마커가 즉시 로드됩니다!
+- **Google Antigravity IDE / Agent Framework**
+- **FFmpeg** (`h264_videotoolbox` 하드웨어 인코딩 및 `loudnorm` 지원)
+- **Python 3.8+**
+- **NumPy** (`pip install numpy`)

@@ -10,6 +10,10 @@
 
 ---
 
+本プロジェクトは、Antigravity Agent の対話インターフェースを通じて自然言語で指示を出すだけで、マルチカメラ動画の同期、音量正規化、AI粗編集、XMLタイムライン書き出し、YouTube字幕作成までを自動実行します。
+
+---
+
 ## 📦 Antigravity インストール＆ディレクトリ構造
 
 ```bash
@@ -44,6 +48,35 @@ multicam-video-preprocessing/
 
 ---
 
+## 💬 利用シナリオとプロンプト例 (User Scenarios & Prompt Examples)
+
+### シナリオ 1：編集用 XML タイムラインのエクスポート（DaVinci Resolve / Premiere Pro ⭐ 推奨）
+- **プロンプト例**：
+  > 「*2台のインタビュー動画 `CAM1.mp4` と `CAM2.mp4` があります。音声同期と音量正規化を行い、DaVinci Resolve で開ける XML タイムラインを書き出してください。*」
+- **成果物**：
+  1. `final_cut_full.xml`（全カットポイントとAI判定理由Marker付き統合タイムライン）
+  2. `CAM1_synced.mp4`, `CAM2_synced.mp4`（音量正規化済み同期マスター動画）
+- **DaVinci Resolve への読み込み手順**：
+  1. DaVinci Resolveを開き、新規プロジェクトを作成。
+  2. `./output/CAM1_synced.mp4` と `./output/CAM2_synced.mp4` を**メディアプール**にドラッグ＆ドロップ。
+  3. **ファイル $\\rightarrow$ 読み込み $\\rightarrow$ タイムライン...** を選択し、`final_cut_full.xml` を選択。
+
+---
+
+### シナリオ 2：完成動画と YouTube 字幕の直接書き出し（プレビュー 🎬）
+- **プロンプト例**：
+  > 「*マルチカメラ素材を粗編集して、プレビュー用のMP4完成動画と校正済みYouTube字幕を出力してください。*」
+
+---
+
+### シナリオ 3：チャプター分割時間の間隔指定（カスタム分割 ⏱️）
+- **プロンプト例**：
+  > 「*チャプターを約10分前後の自然なポーズで分割して処理してください。*」
+- **Agent の動作**：
+  - 設定ファイルを変更することなく、自動的に分割パラメータを調整して実行します。
+
+---
+
 ## 🔍 各ステップの処理詳細 (Detailed Pipeline Steps)
 
 ### ステップ 1：マルチカメラ物理前処理 (`multicam_pipeline.py`)
@@ -64,28 +97,9 @@ multicam-video-preprocessing/
 
 ---
 
-## 🚀 クイックスタートガイド
+## 🛠️ 必要環境
 
-### プラン A：プロフェッショナルNLE編集ワークフロー（XMLエクスポート ⭐ 推奨）
-
-```bash
-# 1. マルチカメラ前処理（音声同期 + EBU R128音量正規化 + 30-40分チャプター分割 + マスター書き出し + グリッド合成）
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 --targets CAM2.mp4 \
-  --auto-split --split-min-dur 30 --split-max-dur 40 \
-  --normalize --merge \
-  -o ./output/
-
-# 2. Gemini 3.7 Flash AIマルチモーダル粗編集決定（各Partごとに実行）
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part2.mp4
-
-# 3A. FCP7 XMLタイムラインのエクスポート
-python3 scripts/export_fcp7_xml.py -d ./output/ -o ./output/final_cut_full.xml
-```
-
-#### 🎬 DaVinci Resolve へのインポート手順：
-1. DaVinci Resolveを開き、新規プロジェクトを作成します。
-2. `./output/CAM1_synced.mp4` と `./output/CAM2_synced.mp4` を**メディアプール**にドラッグ＆ドロップします。
-3. **ファイル $\\rightarrow$ 読み込み $\\rightarrow$ タイムライン...** を選択し、`final_cut_full.xml` を選択します。
-4. 全カットポイント、メイン音声トラック、カラーMarkerマーカーが一瞬で読み込まれます！
+- **Google Antigravity IDE / Agent Framework**
+- **FFmpeg**（`h264_videotoolbox` ハードウェアエンコードおよび `loudnorm` 対応）
+- **Python 3.8+**
+- **NumPy** (`pip install numpy`)

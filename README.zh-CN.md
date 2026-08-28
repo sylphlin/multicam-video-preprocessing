@@ -10,11 +10,11 @@
 
 ---
 
-本专案为针对长上下文多模态模型（Gemini 3.7 Flash 1M Token Context）与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多机位（2 至 6 机）视频智能处理管线与 AI 粗剪套件。
+本专案为针对长上下文多模态模型（Gemini 3.7 Flash 1M Token Context）与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多机位（2 至 6 机）视频智能处理管线与 AI 粗剪套件。使用者无需手动输入底层终端机指令，只要在 Antigravity 聊天室中使用自然语言发出指示，Agent 就会自动执行完整的标准化处理流程。
 
 ---
 
-## 📦 Antigravity 导入与安装结构 (Installation & Setup)
+## 📦 Antigravity 导入与安装 (Installation & Setup)
 
 本专案完全适配 Antigravity Skill 与 Workflow 标准结构，可直接 Clone 至 Antigravity 技能目录下无缝启用：
 
@@ -82,31 +82,52 @@ flowchart TD
 
 ---
 
-## 💬 使用情境与 Prompt 范例
+## 💬 使用情境与 Prompt 范例 (User Scenarios & Prompt Examples)
 
-使用者在 Antigravity 对话框中，只需以自然语言提出需求，Agent 即会自动调用底层模块完成处理：
+使用者在 Antigravity 对话框中，只需以日常口语提出需求，Agent 即会自动理解并调用完整的处理管线：
 
-### 情境一：导出剪辑 XML（专业剪辑工作流 ⭐ 推荐）
-- **适用场景**：需要将粗剪结果导入 DaVinci Resolve、Adobe Premiere Pro 或 Final Cut Pro 进行后续精修、调色与混音。
+### 情境一：导出专业剪辑 XML 时间线（DaVinci Resolve / Premiere Pro / Final Cut Pro ⭐ 推荐）
+- **适用场景**：需要将 AI 粗剪结果导入剪辑软件，进行后续的精细剪辑、调色、动态图卡与音频混音。
 - **对话 Prompt 范例**：
   > 「*我有两支双机位的访谈录像文件 `CAM1.mp4` 与 `CAM2.mp4`，请帮我进行时间同步与音量标准化，并套用访谈剪辑模板产出可直接进 DaVinci Resolve 的 XML 时间线。*」
 - **交付成果**：
-  1. `final_cut_full.xml`（单一完整时间线，含 98+ 镜头切点与红蓝理由 Marker 标记）
-  2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（音画同步与 -14 LUFS 响度标准化母带）
+  1. `final_cut_full.xml`（单一完整时间线，包含全片所有镜头切点与 AI 决策理由 Marker 标记）
+  2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（音画同步且已完成 -14 LUFS 响度标准化的全集母带）
 - **DaVinci Resolve 导入步骤**：
   1. 打开 DaVinci Resolve 并新建项目。
-  2. 将 `CAM1_synced.mp4` 与 `CAM2_synced.mp4` 拖入 **Media Pool（媒体池）**。
-  3. 点击 **文件 $\\rightarrow$ 导入 $\\rightarrow$ 时间线...** (`Cmd + Shift + I`)，选取 `final_cut_full.xml` 加载全片时间线。
+  2. 将 `./output/CAM1_synced.mp4` 与 `./output/CAM2_synced.mp4` 拖入 **Media Pool（媒体池）**。
+  3. 点击 **文件 $\\rightarrow$ 导入 $\\rightarrow$ 时间线...** (`Cmd + Shift + I`)，选取 `final_cut_full.xml`。
+  4. 全片所有镜头切点、主音频轨与彩色 Marker 标记瞬间加载就绪！
 
 ---
 
-### 情境二：直出视频与 YouTube 字幕（预览与发布工作流 🎬）
-- **适用场景**：不在剪辑工作站前，或需要快速产出 MP4 视频与 YouTube 字幕供审片或直接发布。
+### 情境二：直出成片与 YouTube 字幕（快速预览与发布工作流 🎬）
+- **适用场景**：不需要打开专业剪辑软件，希望快速生成一支完整的 MP4 成品视频供审片，并附带 YouTube 上传用的双语/单语字幕。
 - **对话 Prompt 范例**：
-  > 「*请帮我把这两支多机位素材进行粗剪，直接渲染合并成一支完整的 MP4 预览视频，并产出校对后的 YouTube 字幕。*」
+  > 「*请帮我把这两支多机位素材进行 AI 粗剪，直接渲染合并成一支完整的 MP4 预览视频，并产出校对后的 YouTube 字幕。*」
 - **交付成果**：
   1. `final_cut_full.mp4`（全集渲染与无损拼接成品视频）
   2. `final_cut_full.srt` / `final_cut_full.vtt`（Whisper 声学对齐 + Gemini 语义校对之 YouTube 标准字幕）
+
+---
+
+### 情境三：自订章节长度（自订分段时间 ⏱️）
+- **适用场景**：原始素材时间较短（如 30 分钟节目），希望将章节缩短为每 10 或 15 分钟左右切一段，或依据特定主题划分。
+- **对话 Prompt 范例**：
+  > 「*请帮我处理这组多机位素材，但章节请改在 10 分钟附近找自然停顿点切分，最后产出 XML 时间线。*」
+- **Agent 自动反应**：
+  - Agent 会自动将切分参数调整为 `--split-min-dur 8 --split-max-dur 12`，无需手动修改任何配置或脚本。
+
+---
+
+### 情境四：为既有视频单独制作 YouTube 字幕（语音转录与校对 📝）
+- **适用场景**：手边已有剪辑好的视频成品（`final_cut.mp4`），需要制作毫秒级精准且专有名词经过校对的 YouTube 字幕。
+- **对话 Prompt 范例**：
+  > 「*请帮我为 `output/final_cut_full.mp4` 制作 YouTube 字幕，修复同音错字与英文专有名词。*」
+- **交付成果**：
+  1. `final_cut_full.srt`（YouTube 标准 SubRip 字幕）
+  2. `final_cut_full.vtt`（网页与 HTML5 播放器通用 WebVTT 字幕）
+  3. `final_cut_full_raw_whisper.srt`（原始 Whisper 转录初稿）
 
 ---
 
@@ -184,7 +205,7 @@ flowchart TD
 
 #### 执行流程：
 1. **音频提取**：通过 FFmpeg 提取视频音频，转为 16kHz 单声道 WAV 格式。
-2. **阶段一（Whisper 语音转录）**：使用本地 `faster-whisper` 生成带有毫秒级时间戳（`00:01:23,450 --> 00:01:26,800`）的基准 SRT 字幕。
+2. **阶段一（Whisper 语音转录）**：使用本地 `faster-whisper` 或 `mlx-whisper` 生成带有毫秒级时间戳（`00:01:23,450 --> 00:01:26,800`）的基准 SRT 字幕。
 3. **阶段二（Gemini 语义校对）**：加载 `assets/subtitle_proofread_template.md`，调用 Gemini 3.7 Flash 在保持时间戳与序号不变的前提下，修复同音错字（如“硅谷”、“薪水”、“Buffet”）与英文专有名词（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
 4. **输出文件**：
    - **`final_cut_full.srt`**：YouTube 标准 SubRip 字幕文件。
@@ -199,65 +220,3 @@ flowchart TD
 - **FFmpeg**（支持 `h264_videotoolbox` 硬件编码与 `loudnorm` 滤镜）
 - **Python 3.8+**
 - **NumPy** (`pip install numpy`)
-
----
-
-## 🚀 完整执行指令指南
-
-### 方案 A：专业剪辑工作流（导出 XML 导入 DaVinci / Premiere ⭐ 推荐）
-
-```bash
-# 1. 多机位前处理（同步对齐 + 音量标准化 + 停顿切分 + 导出同步母带 + 网格合成）
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 --targets CAM2.mp4 \
-  --auto-split --split-min-dur 30 --split-max-dur 40 \
-  --normalize --merge \
-  -o ./output/
-
-# 2. Gemini 3.7 Flash AI 多模态粗剪决策（针对每个 Part 执行）
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part2.mp4
-
-# 3A. 导出 FCP7 XML 剪辑时间线
-python3 scripts/export_fcp7_xml.py -d ./output/ -o ./output/final_cut_full.xml
-```
-
----
-
-### 方案 B：命令行直接成片渲染（快速预览 🎬）
-
-```bash
-# 1. 多机位前处理（同方案 A）
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 --targets CAM2.mp4 \
-  --auto-split --normalize --merge -o ./output/
-
-# 2. Gemini AI 粗剪决策（同方案 A）
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part2.mp4
-
-# 3B. 渲染各分段成片并无损合并
-python3 scripts/edl_to_video.py --edl ./output/edl_part1.csv
-python3 scripts/edl_to_video.py --edl ./output/edl_part2.csv
-python3 scripts/concat_videos.py -d ./output/ -o ./output/final_cut_full.mp4
-
-# 4. 生成 YouTube 字幕（Whisper 转录 + Gemini 语义校对）
-python3 scripts/generate_subtitles.py -i ./output/final_cut_full.mp4
-```
-
----
-
-## ⚙️ CLI 参数速查表 (`multicam_pipeline.py`)
-
-| 参数 | 说明 | 默认值 |
-| :--- | :--- | :--- |
-| `--ref` | 基准摄像机视频路径 (CAM1) | *必填* |
-| `--targets` / `--target` | 1~5 支目标摄像机视频路径（支持 2~6 机） | *必填* |
-| `--auto-split` | 启用 30~40 分钟自然停顿章节切分 | `False` |
-| `--split-min-dur` | 切分片段最小时长 (分钟) | `30.0` |
-| `--split-max-dur` | 切分片段最大时长 (分钟) | `40.0` |
-| `--merge` / `--multi-in-one` | 渲染多合一网格视频（节省 50%~83% Token） | `False` |
-| `--encoder` | 视频编码器 (`h264_videotoolbox` / `libx264`) | `h264_videotoolbox` |
-| `--normalize` | 启用 EBU R128 (-14 LUFS) 广播级音量标准化 | `False` |
-| `-o` / `--output-dir` | 同步母带、网格视频与报告输出目录 | `.` (当前目录) |
-| `--suffix` | 同步母带文件名后缀 | `_synced` |

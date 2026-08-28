@@ -10,7 +10,7 @@
 
 ---
 
-An end-to-end modular multi-camera (2 to 6 cameras) video preprocessing pipeline and AI rough-cut suite packaged with **4-Stage Gated Workflows**. Features 8kHz FFT acoustic time alignment, EBU R128 (-14 LUFS) broadcast loudness normalization, 30-40 min natural pause chapter splitting, token-optimized multi-in-one compact grid composition, Gemini 3.7 Flash multimodal AI rough-cut decisions, FCP7 XML timeline export, and millisecond-accurate YouTube subtitles.
+An end-to-end modular multi-camera (2 to 6 cameras) video preprocessing pipeline and AI rough-cut suite packaged with **4-Stage Gated Workflows**. Users do not need to manually enter low-level terminal commands—simply instruct the Antigravity Agent using natural language, and it will automatically execute the standardized pipeline.
 
 ---
 
@@ -82,12 +82,12 @@ flowchart TD
 
 ---
 
-## 💬 Use Cases & Natural Language Prompts
+## 💬 User Scenarios & Prompt Examples
 
-When interacting with the Antigravity Agent, simply ask in natural language:
+Simply prompt the Antigravity Agent in plain conversational language:
 
 ### Scenario 1: Export NLE XML Timeline (Professional Workflow ⭐ Recommended)
-- **Use Case**: Need to import rough cuts into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro for color grading, audio mastering, and fine-tuning.
+- **Use Case**: Need to import AI rough-cut decisions into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro for color grading, audio mastering, and fine-tuning.
 - **Prompt Example**:
   > *"I have two interview videos `CAM1.mp4` and `CAM2.mp4`. Please synchronize their audio, normalize loudness, and apply the interview rough-cut template to export an XML timeline for DaVinci Resolve."*
 - **Deliverables**:
@@ -95,18 +95,39 @@ When interacting with the Antigravity Agent, simply ask in natural language:
   2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (Time-aligned and -14 LUFS loudness normalized masters)
 - **DaVinci Resolve Import Steps**:
   1. Open DaVinci Resolve and create a new project.
-  2. Drag `CAM1_synced.mp4` and `CAM2_synced.mp4` into the **Media Pool**.
+  2. Drag `./output/CAM1_synced.mp4` and `./output/CAM2_synced.mp4` into the **Media Pool**.
   3. Go to **File -> Import -> Timeline...** (`Cmd + Shift + I`), and select `final_cut_full.xml`.
+  4. All camera cuts, master audio track, and color decision markers will load instantly!
 
 ---
 
 ### Scenario 2: Direct Video Rendering & YouTube Subtitles (Fast Preview 🎬)
-- **Use Case**: Quick preview video and YouTube upload-ready subtitles without launching a desktop NLE.
+- **Use Case**: Need a quick preview video and YouTube upload-ready subtitles without launching a desktop NLE.
 - **Prompt Example**:
   > *"Please rough-cut these multicam videos, render a full MP4 preview video, and generate proofread YouTube subtitles."*
 - **Deliverables**:
   1. `final_cut_full.mp4` (Rendered and losslessly concatenated full episode)
   2. `final_cut_full.srt` / `final_cut_full.vtt` (Whisper acoustic timestamps + Gemini proofreading)
+
+---
+
+### Scenario 3: Custom Chapter Duration (Custom Segment Timing ⏱️)
+- **Use Case**: Shorter footage (e.g. 30-minute episode) where you want chapters sliced around 10 or 15 minutes.
+- **Prompt Example**:
+  > *"Please process these multicam videos, but split chapters around 10-minute natural pauses and generate an XML timeline."*
+- **Agent Behavior**:
+  - The Agent automatically adapts the duration window (`--split-min-dur 8 --split-max-dur 12`) without modifying any script or workflow configuration.
+
+---
+
+### Scenario 4: Subtitles for Existing Video (Transcription & Proofreading 📝)
+- **Use Case**: You already have a finished video (`final_cut.mp4`) and need millisecond-accurate, terminology-proofread YouTube subtitles.
+- **Prompt Example**:
+  > *"Please generate YouTube subtitles for `output/final_cut_full.mp4` and fix homophones and technical terms."*
+- **Deliverables**:
+  1. `final_cut_full.srt` (Standard YouTube SubRip subtitles)
+  2. `final_cut_full.vtt` (WebVTT subtitles for web players)
+  3. `final_cut_full_raw_whisper.srt` (Raw baseline subtitles for reference)
 
 ---
 
@@ -199,65 +220,3 @@ Combines **Whisper (Acoustic Alignment)** and **Gemini (Semantic & Glossary Proo
 - **FFmpeg** (with `h264_videotoolbox` hardware encoding and `loudnorm` filter)
 - **Python 3.8+**
 - **NumPy** (`pip install numpy`)
-
----
-
-## 🚀 Execution Recipes
-
-### Option A: Professional NLE Editing Workflow (XML Export ⭐ Recommended)
-
-```bash
-# 1. Multicam Preprocessing (Sync + EBU R128 + Auto Split + Masters + Grid Merge)
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 --targets CAM2.mp4 \
-  --auto-split --split-min-dur 30 --split-max-dur 40 \
-  --normalize --merge \
-  -o ./output/
-
-# 2. Gemini 3.7 Flash AI Rough-Cut (Run for every part)
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part2.mp4
-
-# 3A. Export FCP7 XML Editing Timeline
-python3 scripts/export_fcp7_xml.py -d ./output/ -o ./output/final_cut_full.xml
-```
-
----
-
-### Option B: Direct Video Rendering & YouTube Subtitles (🎬 Fast Preview)
-
-```bash
-# 1. Multicam Preprocessing (Same as Option A)
-python3 scripts/multicam_pipeline.py \
-  --ref CAM1.mp4 --targets CAM2.mp4 \
-  --auto-split --normalize --merge -o ./output/
-
-# 2. Gemini AI Rough-Cut (Same as Option A)
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part1.mp4
-python3 scripts/generate_edl.py -v ./output/multicam_merged_part2.mp4
-
-# 3B. Render Each Chapter Part & Concat
-python3 scripts/edl_to_video.py --edl ./output/edl_part1.csv
-python3 scripts/edl_to_video.py --edl ./output/edl_part2.csv
-python3 scripts/concat_videos.py -d ./output/ -o ./output/final_cut_full.mp4
-
-# 4. Generate YouTube Subtitles (Whisper ASR + Gemini Proofreading)
-python3 scripts/generate_subtitles.py -i ./output/final_cut_full.mp4
-```
-
----
-
-## ⚙️ CLI Parameter Reference (`multicam_pipeline.py`)
-
-| Parameter | Description | Default |
-| :--- | :--- | :--- |
-| `--ref` | Reference anchor camera video path (CAM1) | *Required* |
-| `--targets` / `--target` | 1 to 5 target camera paths (supports 2 to 6 cameras) | *Required* |
-| `--auto-split` | Enable 30-40 min natural pause chapter segmentation | `False` |
-| `--split-min-dur` | Minimum segment duration in minutes | `30.0` |
-| `--split-max-dur` | Maximum segment duration in minutes | `40.0` |
-| `--merge` / `--multi-in-one` | Render compact multi-in-one grid video (saves 50%-83% tokens) | `False` |
-| `--encoder` | Video encoder (`h264_videotoolbox` / `libx264`) | `h264_videotoolbox` |
-| `--normalize` | Enable EBU R128 (-14 LUFS) broadcast audio normalization | `False` |
-| `-o` / `--output-dir` | Output directory for masters, grid videos, and reports | `.` (current) |
-| `--suffix` | Synchronized camera master filename suffix | `_synced` |
