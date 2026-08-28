@@ -93,7 +93,11 @@ multicam-video-preprocessing/
 - 모든 챕터의 타임스탬프를 누적 통합하여 DaVinci Resolve / Premiere Pro / Final Cut Pro에 직접 로드 가능한 `final_cut_full.xml` 생성.
 
 ### 4단계: YouTube 자막 생성 (`generate_subtitles.py`)
-- 로컬 Whisper의 밀리초 단위 타임스탬프 + Gemini 1M 컨텍스트 기반 고유명사 및 동음이의어 교정을 결합하여 고품질 `.srt` / `.vtt` 생성.
+- **3단계 골든 자막 생성 파이프라인 (Three-Stage Pipeline)**:
+  1. **전체 오디오 글로벌 용어집 추출**: Gemini 1M Context로 전체 에피소드 오디오를 청취하여 고유명사, 영문명, 전문 용어집(`final_cut_full_glossary.md`)을 자동 생성.
+  2. **Whisper 음향 물리 밀리초 타임코드**: 로컬 Whisper로 음향 파형을 측정하여 0.000초 오차 없는 기준 타임라인 생성.
+  3. **국소 오디오 멀티모달 정밀 교정**: Gemini가 용어집 및 국소 오디오와 대조하여 타임스탬프를 100% 고정한 상태로 동음이의어 및 고유명사를 정밀 교정.
+- **출력**: `final_cut_full.srt`, `final_cut_full.vtt`, `final_cut_full_glossary.md`.
 
 ---
 

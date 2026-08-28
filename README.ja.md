@@ -93,7 +93,11 @@ multicam-video-preprocessing/
 - 全チャプターの時間軸を統合し、DaVinci Resolve / Premiere Pro / Final Cut Pro に直接読み込める `final_cut_full.xml` を生成。
 
 ### ステップ 4：YouTube 字幕生成 (`generate_subtitles.py`)
-- ローカル Whisper のミリ秒単位アライメント ＋ Gemini 1M コンテキストによる固有名詞・同音異義語校正により、高精度な `.srt` / `.vtt` を生成。
+- **3段階ゴールデン字幕生成パイプライン（Three-Stage Pipeline）**：
+  1. **全編音声グローバル用語集抽出**：Gemini 1M Context で全編音声を聴取し、固有名詞・英語名・専門用語集（`final_cut_full_glossary.md`）を自動生成。
+  2. **Whisper 音響ミリ秒物理タイムコード**：ローカル Whisper で物理音声波形を測定し、ズレ累積 0.000 秒の基準タイムラインを生成。
+  3. **局所音声マルチモーダル高精度校正**：Gemini が用語集と局所音声を照合し、タイムスタンプを100%固定したまま同音異義語・英語固有名詞を高精度に校正。
+- **出力**：`final_cut_full.srt`、`final_cut_full.vtt`、`final_cut_full_glossary.md`。
 
 ---
 

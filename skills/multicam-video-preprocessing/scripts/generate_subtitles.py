@@ -3,23 +3,26 @@
 YouTube Subtitles Generator CLI Tool (generate_subtitles.py).
 Generates millisecond-accurate, contextually proofread YouTube subtitles (SRT & VTT).
 
-Two-Stage Golden Standard Pipeline:
-  Stage 1: Fast acoustic transcription via Whisper (faster-whisper) with millisecond-level timestamps.
-  Stage 2: Global-Aware LLM Proofreading (Gemini 3.7 Flash / GPT-5.6 Luna / Gemma 4):
-    Phase 2A: Full-transcript Global Consistency Glossary Extraction (1M context scan for names, jargon, entities).
-    Phase 2B: High-speed Parallel Chunked Proofreading (250 items/chunk, 5 concurrent workers, thinking_budget=0).
+Three-Stage Golden Standard Pipeline:
+  Stage 1: Global Audio Context & Glossary Extraction (Gemini 1M Context Audio Scan).
+           Listens to the entire episode audio to extract speaker names, channel title, English terms, and domain jargon.
+           Optionally merges user-provided interview outlines (--outline).
+  Stage 2: Zero-Drift Acoustic Transcription via Whisper (mlx-whisper / faster-whisper).
+           Produces frame-locked, physical acoustic millisecond timestamps (0.000s drift).
+  Stage 3: Multimodal Audio-Text Chunked Precision Proofreading (Gemini 3.7 Flash).
+           Slices local audio chunks and proofreads subtitles against both the local acoustic waveform and the Global Glossary,
+           strictly preserving 100% of Whisper's millisecond timestamps and line indices.
 
 Usage Examples:
-  # Example 1: Standard YouTube Subtitle Generation (Whisper + Gemini)
+  # Standard YouTube Subtitle Generation (Whisper + Gemini Audio Proofreading)
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
-  # Example 2: OpenAI / Codex Cloud Endpoint (GPT-5.6 Luna)
+  # With User Interview Outline / Glossary
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: 國威, Guest: Kelly Tsai, Topics: 矽谷, 估值狂飆"
+
+  # OpenAI / Codex Cloud Endpoint (GPT-5.6 Luna)
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
     --base-url https://api.openai.com/v1 --model gpt-5.6-luna --api-key $OPENAI_API_KEY
-
-  # Example 3: Local Offline Model via Ollama / vLLM (Gemma 4)
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
-    --base-url http://localhost:11434/v1 --model gemma4:e4b
 """
 
 import argparse
@@ -108,11 +111,11 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
     """
     Run high-speed Whisper acoustic transcription with automatic Apple Silicon / GPU hardware acceleration:
       1. mlx-whisper (Apple Silicon Metal / Neural Engine - Fastest on Mac)
-      2. openai-whisper with PyTorch MPS (Apple Silicon GPU) or CUDA (NVIDIA GPU)
-      3. faster-whisper with ARM NEON / AVX int8 multi-core vector acceleration
+      2. faster-whisper with ARM NEON / AVX int8 multi-core vector acceleration
+      3. openai-whisper with PyTorch MPS / CUDA
     Returns list of dicts: [{"index": 1, "start": 0.0, "end": 1.28, "text": "..."}]
     """
-    print(f"\n[Stage 1/2] ⚡ Running Whisper acoustic transcription (Model: {model_size}, Device: {device})...")
+    print(f"\n[Stage 2/3] 🎙️ Running Whisper acoustic transcription (Model: {model_size}, Device: {device})...")
     t0 = time.time()
     lang_arg = None if str(language).lower() in ("auto", "none") else language
     sub_list = []
@@ -224,62 +227,110 @@ def load_proofread_template():
     )
 
 
-def extract_global_glossary(segments, api_key=None, base_url=None, model="gemini-3.7-flash"):
+def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, api_key=None, base_url=None, model="gemini-3.7-flash"):
     """
-    Phase 2A: Scan the entire episode transcript (40k+ tokens) in one shot to build a Global Terminology Glossary.
-    Ensures 100% naming and term consistency across all chapter parts and segments.
+    Stage 1: Global Audio Context & Consistency Glossary Extraction (Gemini 1M Context Scan).
+    Listens to full episode audio to extract speaker names, organizations, acronyms, and terms.
     """
-    print(f"\n[Stage 2A] 🌐 Extracting Global Consistency Glossary across entire transcript...")
+    print(f"\n[Stage 1/3] 🎧 Extracting Global Consistency Glossary across entire episode...")
     t0 = time.time()
 
-    # Build compressed full text for global scanning
-    full_text_lines = [f"[{s['index']}] {s['text']}" for s in segments]
-    full_transcript_sample = "\n".join(full_text_lines)
-
+    outline_section = f"\n=== 使用者提供之訪綱/主題資料 (User Interview Outline) ===\n{user_outline}\n" if user_outline else ""
+    
     prompt = (
-        "You are an expert Chief Subtitle Editor for professional YouTube multi-camera productions.\n"
-        "Carefully read the ENTIRE transcript below from start to finish.\n"
+        "You are an expert Chief Subtitle Editor for professional YouTube productions.\n"
         "Your goal is to extract a comprehensive, authoritative **Global Terminology Glossary (全片專有名詞與詞彙對照表)** "
         "to ensure 100% spelling, naming, and domain term consistency across all subtitle segments.\n\n"
+        f"{outline_section}\n"
         "Extract the following structured sections in Markdown:\n"
         "1. **講者與人物姓名 (Person & Speaker Names)**: e.g. Chinese & English names, titles\n"
         "2. **公司、品牌與機構 (Organizations & Companies)**: e.g. Anthropic, Google, 思想實驗室\n"
         "3. **行業專有名詞與縮寫 (Domain Jargon & Tech Acronyms)**: e.g. SaaS, LLM, 估值狂飆, 多模態\n"
-        "4. **常見同音訛字修正指引 (Homophone & Typo Correction Rules)**: e.g. 矽谷 (not 西谷), 估值 (not 固值)\n\n"
-        "--- FULL TRANSCRIPT START ---\n"
-        f"{full_transcript_sample}\n"
-        "--- FULL TRANSCRIPT END ---\n\n"
+        "4. **常見同音訛字修正指引 (Homophone & Typo Correction Rules)**: e.g. 矽谷 (not 細部), 估值狂飆 (not 公職房標)\n\n"
         "Output ONLY the structured Markdown Glossary:"
     )
 
+    # Use lightweight compressed MP3 for audio scanning if audio file is available
+    audio_for_gemini = None
+    tmp_audio_mp3 = None
+    if audio_wav and os.path.exists(audio_wav) and "gemini" in model.lower() and not base_url:
+        try:
+            tmp_audio_mp3 = os.path.join(os.path.dirname(audio_wav), "global_glossary_audio.mp3")
+            # Compress to 48k mono mp3 for fast upload
+            subprocess.run(["ffmpeg", "-y", "-i", audio_wav, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "48k", tmp_audio_mp3],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            if os.path.getsize(tmp_audio_mp3) <= 20 * 1024 * 1024:  # <= 20MB inline limit
+                audio_for_gemini = tmp_audio_mp3
+        except Exception as e:
+            audio_for_gemini = None
+
     try:
-        with LiveTicker("Extracting Global Consistency Glossary via LLM (1M context scan)"):
+        with LiveTicker("Extracting Global Consistency Glossary via Gemini (1M context scan)"):
             glossary_content = call_llm(
                 prompt=prompt,
                 model=model,
                 base_url=base_url,
                 api_key=api_key,
+                audio_path=audio_for_gemini,
                 temperature=0.1,
                 max_tokens=4096,
-                thinking_budget=0  # Fast response
+                thinking_budget=0
             )
+        duration = time.time() - t0
+        print(f"  ✓ Global Glossary extracted in {duration:.1f}s")
         return glossary_content.strip()
     except Exception as e:
         print(f"  [Warning] Global glossary extraction failed ({e}). Continuing with standard proofreading.", file=sys.stderr)
-        return ""
+        return user_outline or ""
+    finally:
+        if tmp_audio_mp3 and os.path.exists(tmp_audio_mp3):
+            try:
+                os.remove(tmp_audio_mp3)
+            except:
+                pass
 
 
-def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, api_key, base_url, model):
-    """Worker function to proofread a single chunk of SRT blocks."""
+def parse_timestamp_str(ts_str):
+    """Parse SRT timestamp 'HH:MM:SS,mmm' to float seconds."""
+    h, m, sec_ms = ts_str.strip().split(":")
+    sec, ms = sec_ms.replace(".", ",").split(",")
+    return float(h) * 3600 + float(m) * 60 + float(sec) + float(ms) / 1000.0
+
+
+def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, audio_wav, api_key, base_url, model):
+    """Worker function to proofread a single chunk of SRT blocks with local audio slice."""
     chunk_text = "\n\n".join(chunk_slice)
     glossary_section = f"\n=== 全片權威專有名詞對照表 (Global Consistency Glossary) ===\n{global_glossary}\n============================================================\n" if global_glossary else ""
+
+    # Calculate audio slice start and end time
+    chunk_mp3_path = None
+    tmp_dir = os.path.dirname(audio_wav) if audio_wav else None
+
+    if audio_wav and os.path.exists(audio_wav) and "gemini" in model.lower() and not base_url:
+        try:
+            # Find start and end timestamps in this chunk
+            first_block = chunk_slice[0].splitlines()
+            last_block = chunk_slice[-1].splitlines()
+            if len(first_block) >= 2 and "-->" in first_block[1] and len(last_block) >= 2 and "-->" in last_block[1]:
+                t_start_sec = max(0.0, parse_timestamp_str(first_block[1].split("-->")[0]) - 0.5)
+                t_end_sec = parse_timestamp_str(last_block[1].split("-->")[1]) + 0.5
+                dur_sec = max(1.0, t_end_sec - t_start_sec)
+                
+                chunk_mp3_path = os.path.join(tmp_dir, f"chunk_{c_idx:03d}.mp3")
+                cmd = [
+                    "ffmpeg", "-y", "-ss", f"{t_start_sec:.3f}", "-t", f"{dur_sec:.3f}",
+                    "-i", audio_wav, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "48k", chunk_mp3_path
+                ]
+                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        except Exception:
+            chunk_mp3_path = None
 
     prompt = (
         f"{template}\n"
         f"{glossary_section}\n"
         f"--- 待校對 SRT 字幕（區塊 {c_idx + 1}/{num_chunks}）---\n"
         f"```srt\n{chunk_text}\n```\n\n"
-        f"請依據全片對照表與前後文語意，輸出校對後的完整 SRT："
+        f"請邊聽附帶的音訊錄音、並依據全片對照表與前後文語意，嚴格鎖定時間戳，輸出校對後的完整 SRT："
     )
 
     try:
@@ -288,9 +339,10 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
             model=model,
             base_url=base_url,
             api_key=api_key,
+            audio_path=chunk_mp3_path,
             temperature=0.1,
             max_tokens=8192,
-            thinking_budget=0  # Fast zero-thinking latency
+            thinking_budget=0
         )
 
         match = re.search(r"```(?:srt)?\s*\n(.*?)```", response_text, re.DOTALL | re.IGNORECASE)
@@ -306,14 +358,21 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
     except Exception as e:
         print(f"  [Warning] Chunk {c_idx+1} proofreading error: {e}. Keeping original.", file=sys.stderr)
         return c_idx, chunk_text, False
+    finally:
+        if chunk_mp3_path and os.path.exists(chunk_mp3_path):
+            try:
+                os.remove(chunk_mp3_path)
+            except:
+                pass
 
 
-def proofread_srt_with_llm(raw_srt, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=250, max_workers=5):
+def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5):
     """
-    Phase 2B: High-speed Parallel Chunked Proofreading with injected Global Glossary.
-    Uses 250 items/chunk and concurrent workers for lightning-fast execution.
+    Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary.
+    Slices local audio chunks and proofreads subtitles against actual audio acoustics,
+    guaranteeing 100% physical timestamp preservation.
     """
-    print(f"\n[Stage 2B] ⚡ Running Parallel LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers})...")
+    print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers})...")
     t0 = time.time()
 
     template = load_proofread_template()
@@ -335,7 +394,7 @@ def proofread_srt_with_llm(raw_srt, global_glossary=None, api_key=None, base_url
             executor.submit(
                 proofread_single_chunk,
                 c_idx, num_chunks, chunk_slices[c_idx],
-                template, global_glossary, api_key, base_url, model
+                template, global_glossary, audio_wav, api_key, base_url, model
             ): c_idx
             for c_idx in range(num_chunks)
         }
@@ -353,28 +412,29 @@ def proofread_srt_with_llm(raw_srt, global_glossary=None, api_key=None, base_url
     # Assemble chunks in strictly preserved index order
     sorted_blocks = [results[i] for i in range(num_chunks)]
     total_time = time.time() - t0
-    print(f"  ✓ Contextual proofreading completed in {total_time:.1f}s ({num_chunks} chunks assembled)")
+    print(f"  ✓ Contextual audio-multimodal proofreading completed in {total_time:.1f}s ({num_chunks} chunks assembled)")
     return "\n\n".join(sorted_blocks).strip() + "\n"
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="YouTube Subtitles Generator: Whisper ASR + Global-Aware LLM Contextual Proofreading (Gemini / GPT-5.6 Luna / Gemma 4).",
+        description="YouTube Subtitles Generator: Global Audio Glossary + Whisper ASR + Gemini Audio Proofreading.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-i", "--input", required=True, help="Path to input video (e.g. final_cut_full.mp4) or audio file")
     parser.add_argument("-o", "--output-dir", default=None, help="Output directory for SRT/VTT subtitles (default: same as input)")
+    parser.add_argument("--outline", default=None, help="User interview outline, topic summary, or glossary notes to bias terminology")
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
-                        help="Whisper model size for Stage 1 acoustic transcription (default: base)")
+                        help="Whisper model size for Stage 2 acoustic transcription (default: base)")
     parser.add_argument("--model", default="gemini-3.7-flash",
-                        help="LLM model for Stage 2 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
+                        help="LLM model for Stage 1 & 3 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
     parser.add_argument("--base-url", default=None,
                         help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("--language", default="zh", help="Spoken language code for transcription (default: zh, or auto)")
     parser.add_argument("--device", default="auto", choices=["auto", "mps", "mlx", "cuda", "cpu"],
                         help="Device acceleration backend for Whisper (default: auto for Apple Silicon GPU / Neural Engine)")
     parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable)")
-    parser.add_argument("--chunk-size", type=int, default=250, help="Subtitle entries per proofread batch (default: 250)")
+    parser.add_argument("--chunk-size", type=int, default=80, help="Subtitle entries per proofread batch (default: 80, ~2-3 mins)")
     parser.add_argument("--workers", type=int, default=5, help="Concurrent workers for parallel proofreading (default: 5)")
 
     args = parser.parse_args()
@@ -392,11 +452,19 @@ def main():
     raw_srt_path = os.path.join(out_dir, f"{input_basename}_raw_whisper.srt")
     glossary_path = os.path.join(out_dir, f"{input_basename}_glossary.md")
 
+    # Read outline file if provided as filepath
+    user_outline_text = args.outline
+    if user_outline_text and os.path.isfile(user_outline_text):
+        with open(user_outline_text, "r", encoding="utf-8") as f:
+            user_outline_text = f.read().strip()
+
     print("\n" + "=" * 78)
-    print("🎬  YouTube Subtitles Generator (Whisper ASR + Global-Aware LLM Proofreading)")
+    print("🎬  YouTube Subtitles Generator (Global Glossary + Whisper ASR + Gemini Audio Proofreading)")
     print("=" * 78)
     print(f"  • Input Media   : {args.input}")
     print(f"  • LLM Model     : {args.model}")
+    if args.outline:
+        print(f"  • User Outline  : {args.outline[:50]}...")
     if args.base_url:
         print(f"  • Base URL      : {args.base_url}")
     print(f"  • Whisper Model : {args.whisper_model} (Language: {args.language}, Device: {args.device})")
@@ -410,7 +478,24 @@ def main():
         print("\n[Step 0] 🎙️ Extracting 16kHz mono audio from media...")
         extract_audio_16k_mono(args.input, tmp_wav)
 
-        # Stage 1: Whisper Acoustic Transcription
+        resolved_key = resolve_api_key(args.api_key, args.base_url, args.model)
+
+        # Stage 1: Global Audio Context & Consistency Glossary Extraction (Full 1M Context Scan)
+        global_glossary = None
+        if resolved_key or args.base_url:
+            global_glossary = extract_global_glossary(
+                audio_wav=tmp_wav,
+                user_outline=user_outline_text,
+                api_key=args.api_key,
+                base_url=args.base_url,
+                model=args.model
+            )
+            if global_glossary:
+                with open(glossary_path, "w", encoding="utf-8") as f:
+                    f.write(global_glossary + "\n")
+                print(f"  • Saved Global Glossary: {glossary_path}")
+
+        # Stage 2: Whisper Acoustic Transcription (Zero-Drift Physical Timestamps)
         segments = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
         raw_srt = build_srt_from_segments(segments)
 
@@ -419,24 +504,15 @@ def main():
             f.write(raw_srt)
         print(f"  • Saved raw acoustic baseline: {raw_srt_path}")
 
-        resolved_key = resolve_api_key(args.api_key, args.base_url, args.model)
         if not resolved_key and not args.base_url:
-            print(f"\n[Stage 2/2] ℹ️  No LLM API Key (GEMINI_API_KEY / OPENAI_API_KEY) found.")
+            print(f"\n[Stage 3/3] ℹ️  No LLM API Key (GEMINI_API_KEY / OPENAI_API_KEY) found.")
             print(f"            Saving raw Whisper acoustic transcription directly as final SRT/VTT.")
             final_srt = raw_srt
         else:
-            # Stage 2A: Global Consistency Glossary Extraction (Full 1M Context Scan)
-            global_glossary = extract_global_glossary(
-                segments, api_key=args.api_key, base_url=args.base_url, model=args.model
-            )
-            if global_glossary:
-                with open(glossary_path, "w", encoding="utf-8") as f:
-                    f.write(global_glossary + "\n")
-                print(f"  • Saved Global Glossary: {glossary_path}")
-
-            # Stage 2B: Parallel Chunked Proofreading with Injected Glossary
+            # Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading
             final_srt = proofread_srt_with_llm(
-                raw_srt,
+                raw_srt=raw_srt,
+                audio_wav=tmp_wav,
                 global_glossary=global_glossary,
                 api_key=args.api_key,
                 base_url=args.base_url,

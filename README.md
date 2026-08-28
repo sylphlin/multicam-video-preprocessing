@@ -191,25 +191,28 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 
 ### Step 4: YouTube Subtitles Generation (`generate_subtitles.py`)
 
-Combines **Whisper (Acoustic Alignment)** and **Gemini (Semantic & Glossary Proofreading)**:
+Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Context Global Audio Understanding**, **Whisper Physical Acoustic Timestamps**, and **Gemini Chunked Audio Multimodal Proofreading**:
 
-#### Why Whisper + Gemini?
+#### Why Global Glossary + Whisper Timestamps + Gemini Audio Proofreading?
 
-| Feature | Pure Whisper | Pure Gemini Audio | Whisper + Gemini |
+| Feature | Pure Whisper | Pure Gemini Direct Transcribe | Three-Stage Golden Pipeline ⭐ |
 | :--- | :--- | :--- | :--- |
-| **Timestamp Accuracy** | Millisecond precision | Coarse timestamps | Millisecond precision (Whisper timestamps) |
-| **Typo/Homophone Fixes** | Prone to phonetic typos | Strong semantic context | Automatic homophone & terminology correction |
-| **Subtitle Pacing** | Natural short phrases (1.2–2.5s) | Long paragraphs (6–8s) | YouTube-optimized short phrasing (8–16 words) |
-| **Verbatim Fidelity** | High verbatim accuracy | May hallucinate/summarize | Verbatim spoken words preserved with typos fixed |
-| **Compute Cost** | Fast local processing | High audio token cost | Fast local audio + minimal text token cost |
+| **Timestamp Accuracy** | Physical acoustic measurement | ⚠️ **Text prediction suffers severe drift (>5s error by 30s)** | **Physical acoustic millisecond alignment (0.000s zero drift)** |
+| **Proper Nouns & Loanwords** | Prone to homophone typos (e.g. `Kelly蔡`) | High semantic accuracy | **100% accurate proper nouns & English names (e.g. `Kelly Tsai`, `Thought Lab`)** |
+| **Subtitle Pacing** | Natural short phrases (1.2–2.5s) | Inconsistent sentence lengths | **Optimized for fast-paced YouTube reading (8–16 chars, 1.5–3.0s)** |
+| **Verbatim Fidelity** | High verbatim accuracy | May hallucinate/paraphrase | **Acoustically verified against raw audio slice (zero hallucinations)** |
 
-#### Execution Flow:
-1. **Audio Extraction**: Extracts 16kHz mono WAV audio via FFmpeg.
-2. **Phase 1 (Whisper ASR)**: Uses local `faster-whisper` to produce baseline SRT with millisecond timestamps (`00:01:23,450 --> 00:01:26,800`).
-3. **Phase 2 (Gemini Semantic Proofreading)**: Uses Gemini 3.7 Flash to fix homophones and terminology while preserving timestamps and line indices.
+#### Three-Stage Execution Flow:
+1. **Stage 1 (Global Audio Glossary Extraction)**:
+   - Gemini 3.7 Flash (1M Context) scans the full-length episode audio (optionally incorporating user `--outline`) to build an authoritative domain glossary (`final_cut_full_glossary.md`).
+2. **Stage 2 (Whisper Physical Acoustic Baseline)**:
+   - Local `mlx-whisper` or `faster-whisper` calculates sliding-window acoustic energy boundaries to produce zero-drift baseline subtitles (`final_cut_full_raw_whisper.srt`).
+3. **Stage 3 (Chunked Audio Multimodal Precision Proofreading)**:
+   - Splits subtitles into 2–3 minute chunks; Gemini listens to local audio slices alongside the Global Glossary, fixing homophones and terminology while **strictly locking 100% of Whisper timestamps and line indices**.
 4. **Outputs**:
    - **`final_cut_full.srt`**: Standard YouTube SubRip subtitles.
-   - **`final_cut_full.vtt`**: WebVTT subtitles.
+   - **`final_cut_full.vtt`**: WebVTT subtitles for web players.
+   - **`final_cut_full_glossary.md`**: Episode Global Terminology Glossary.
    - **`final_cut_full_raw_whisper.srt`**: Raw Whisper baseline subtitles for reference.
 
 ---

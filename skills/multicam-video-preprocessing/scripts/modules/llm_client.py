@@ -98,15 +98,21 @@ def resolve_api_key(cli_key=None, base_url=None, model=None):
     return None
 
 
-def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
+def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, audio_path=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
     """
-    Call Google Gemini generateContent REST API.
+    Call Google Gemini generateContent REST API with optional video file_uri or audio_path.
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
     parts = []
     if file_uri:
         parts.append({"file_data": {"mime_type": "video/mp4", "file_uri": file_uri}})
+    if audio_path and os.path.isfile(audio_path):
+        import base64
+        with open(audio_path, "rb") as f_aud:
+            aud_data = base64.b64encode(f_aud.read()).decode("utf-8")
+        mime = "audio/mp3" if audio_path.endswith(".mp3") else "audio/wav"
+        parts.append({"inline_data": {"mime_type": mime, "data": aud_data}})
     parts.append({"text": prompt})
 
     gen_config = {"temperature": temperature, "maxOutputTokens": max_tokens}
@@ -220,7 +226,7 @@ def call_openai_chat_completions(prompt, api_key, base_url="https://api.openai.c
             raise RuntimeError(f"OpenAI-Compatible connection error to {url}: {e.reason} (Retry: {retry_err})")
 
 
-def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file_uri=None, image_base64_list=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
+def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file_uri=None, audio_path=None, image_base64_list=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
     """
     Unified LLM router supporting Gemini, OpenAI-compatible, and Local Models.
     """
@@ -250,6 +256,7 @@ def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file
             api_key=resolved_key,
             model=model,
             file_uri=file_uri,
+            audio_path=audio_path,
             temperature=temperature,
             max_tokens=max_tokens,
             thinking_budget=thinking_budget
