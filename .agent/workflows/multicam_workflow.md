@@ -89,10 +89,15 @@ flowchart TD
 ---
 
 ### Stage 4: YouTube Subtitles Generation (📝 On-Demand / Subtitle Requests)
-- **Goal**: Local Whisper ASR millisecond acoustic alignment + Gemini 1M Context global glossary extraction & parallel chunked contextual proofreading.
+- **Goal**: Three-Stage Golden Pipeline: Gemini 1M Context Global Audio Glossary Extraction + Local Whisper Zero-Drift Physical Timestamps + Multimodal Audio-Text Precision Proofreading.
 - **Execution Command**:
   ```bash
+  # Standard Execution (Auto-extracts glossary from full episode audio):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4
+
+  # If user provided interview outline / guest notes in prompt (Optional Outline Injection):
+  python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --outline "<OUTLINE_TEXT_OR_FILE>"
   ```
 - **Exit Gate 4 Verification**:
-  - [x] `<OUTPUT_DIR>/final_cut_full.srt` and `<OUTPUT_DIR>/final_cut_full.vtt` exist and contain corrected subtitles.
+  - [x] `<OUTPUT_DIR>/final_cut_full.srt` and `<OUTPUT_DIR>/final_cut_full.vtt` exist and contain millisecond-accurate corrected subtitles.
+  - [x] `<OUTPUT_DIR>/final_cut_full_glossary.md` exists with global terminology rules.
