@@ -47,8 +47,8 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
    - Audio RMS energy scanning detects natural speech breath pauses to slice long footage into 30–40 min chunks, perfectly fitting 1M token context windows while preserving speaker sentence continuity.
 4. **Token-Optimized Compact Grid Composition**:
    - Merges 2 to 6 camera angles into a single multi-view canvas ($\\le 1920 \\times 1080$, each CAM $\\ge 640 \\times 480$), reducing AI multimodal token consumption by **50% to 83%**.
-5. **Two-Stage Golden Standard Subtitles (Whisper + Gemini)**:
-   - Local Whisper ASR provides millisecond-accurate timestamp alignment, while Gemini performs 1M-context global terminology extraction and parallel typo/homophone correction.
+5. **Three-Stage Golden Standard Subtitles (Whisper + Gemini)**:
+   - Combines 1M context global audio glossary extraction, local Whisper physical millisecond timecode alignment, and chunked multimodal audio-text proofreading with Netflix/YouTube pacing and character limit audit compliance.
 
 ---
 
