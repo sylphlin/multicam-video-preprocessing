@@ -265,7 +265,7 @@ def load_proofread_template(language="zh-TW"):
 
     return (
         "You are an expert subtitle proofreader for YouTube.\n"
-        "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 16 chars per line) with acoustic timestamp fusion.\n"
+        "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 15 chars for CJK, 37 chars for English) with acoustic timestamp fusion.\n"
         "Output ONLY the corrected SRT inside ```srt ... ``` code block."
     ), "builtin_fallback"
 
@@ -374,7 +374,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
         f"{glossary_section}\n"
         f"--- 待校對與重整之原始 SRT 碎字幕（區塊 {c_idx + 1}/{num_chunks}）---\n"
         f"```srt\n{chunk_text}\n```\n\n"
-        f"請邊聽附帶的音訊錄音、依據全片對照表與語意段落規範，進行自然斷句重整（每行 <= 16 字）、時間軸物理聲學熔接與同音錯字校正，輸出重整後的完整 SRT："
+        f"請邊聽附帶的音訊錄音、依據全片對照表與語意段落規範，進行自然斷句重整（中文/日文 <= 15 字，英文 <= 37 字元）、時間軸物理聲學熔接與同音錯字校正，輸出重整後的完整 SRT："
     )
 
     try:

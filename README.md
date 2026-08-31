@@ -207,8 +207,8 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
    - Gemini 3.7 Flash (1M Context) scans the full-length episode audio (optionally incorporating user `--outline`) to build an authoritative domain glossary (`final_cut_full_glossary.md`).
 2. **Stage 2 (Whisper Physical Acoustic Baseline)**:
    - Local `mlx-whisper` or `faster-whisper` calculates sliding-window acoustic energy boundaries to produce zero-drift baseline subtitles (`final_cut_full_raw_whisper.srt`).
-3. **Stage 3 (Chunked Multimodal Semantic Clause Segmentation & Proofreading)**:
-   - Supports multi-lingual templates (`zh-TW`, `en`, `ja`, `zh-CN`, `ko`); Gemini re-segments fragmented lines into natural semantic clauses (max 16 chars per line for CJK, 42 chars for English) with acoustic timestamp fusion, repairing typos and standardizing technical terminology.
+3. **Stage 3 (Chunked Multimodal Semantic Clause Segmentation & Rhythm Sanitization)**:
+   - Supports multi-lingual templates (`zh-TW`, `en`, `ja`, `zh-CN`, `ko`); re-segments fragmented lines into natural semantic clauses compliant with international streaming standards (max 15 chars for Chinese/Japanese, 16 chars for Korean, 37 CPL for English), automatically sanitizing pacing ($\ge 1.0\text{s}$ reading hold, $+0.4\text{s}$ pause buffer, anti-flicker gap bridging) with acoustic timestamp fusion.
 4. **Outputs**:
    - **`final_cut_full.srt`**: Standard YouTube SubRip subtitles.
    - **`final_cut_full.vtt`**: WebVTT subtitles for web players.

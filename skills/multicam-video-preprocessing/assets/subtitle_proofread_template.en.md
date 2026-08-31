@@ -19,12 +19,12 @@ Your mission is to take fragmented raw ASR subtitle chunks and re-segment them i
      • `Their culture is extremely exhausting` (Full statement)
      • `Probably with 996 schedules or something` (Summary clause)
 
-2. 📏 **Length & Character Limits**:
-   - **Max Length**: Max **42 characters per line** (or ~7 to 10 words) to prevent multi-line overflow on mobile/desktop screens.
+2. 📏 **Length & Character Limits (International Video & YouTube Standard)**:
+   - **Strict Max Length**: Max **37 characters per line (CPL)** (including spaces and punctuation, approx. 6–9 words) to guarantee zero mobile screen overflow and optimal reading comfort.
    - **No Minimum Length**: Short natural reactions (3–5 words) stand on their own. Never artificially merge across clause boundaries just to fill length.
 
 3. ⏱️ **Acoustic Timestamp Fusion**:
-   - The `Start` timestamp of each reformed line must equal the raw start time of its first word.
+   - The `Start` timestamp of each reformed line must equal the raw start time of its first word (never lead before voice onset).
    - The `End` timestamp of each reformed line must equal the raw end time of its last word.
    - Renumber all lines monotonically (`1`, `2`, `3`...). Ensure acoustic millisecond alignment with zero cumulative drift.
 

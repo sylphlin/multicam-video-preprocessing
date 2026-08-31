@@ -207,8 +207,8 @@ flowchart TD
    - 提取全片音訊，由 Gemini 3.7 Flash（1M Context）一次聽完整集節目（或結合使用者提供的訪綱 `--outline`），自動萃取人物姓名、公司品牌、英文縮寫與專有名詞對照表（`final_cut_full_glossary.md`）。
 2. **階段二（Whisper 聲學物理時間軸骨架）**：
    - 本地 `mlx-whisper` 或 `faster-whisper` 透過滑動窗口能量分析，量測每句話的物理起迄點，產出 100% 零漂移的毫秒時間戳初稿（`final_cut_full_raw_whisper.srt`）。
-3. **階段三（局部音軌 + 全篇名詞庫之多模態語意斷句與精修審稿）**：
-   - 支援多語系範本（`zh-TW`、`en`、`ja`、`zh-CN`、`ko`），依語意子句自然斷句（每行 $\le 16$ 字，轉折短句自然成行），並將各小句時間戳物理熔接，同時修復同音錯字（如「矽谷」、「薪水」、「Buffet」）與英文專有名詞（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
+3. **階段三（局部音軌 + 全篇名詞庫之多模態語意斷句、節奏淨化與精修審稿）**：
+   - 支援多語系範本（`zh-TW`、`en`、`ja`、`zh-CN`、`ko`），依國際影視標準語意斷句（中文/日文每行 $\le 15$ 字、韓文 $\le 16$ 字、英文 $\le 37$ 字元），自動補足閱讀時間（每條 $\ge 1.0\text{s}$、停頓留白 $+0.4\text{s}$、消除 micro-gap 閃爍），並將各小句時間戳物理熔接，同時修復同音錯字與英文專有名詞（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
 4. **輸出檔案**：
    - **`final_cut_full.srt`**：YouTube 標準 SubRip 字幕檔。
    - **`final_cut_full.vtt`**：網頁與 HTML5 播放器通用 WebVTT 字幕檔。
