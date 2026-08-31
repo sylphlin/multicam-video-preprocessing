@@ -328,9 +328,9 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
     prompt = (
         f"{template}\n"
         f"{glossary_section}\n"
-        f"--- 待校對 SRT 字幕（區塊 {c_idx + 1}/{num_chunks}）---\n"
+        f"--- 待校對與重整之原始 SRT 碎字幕（區塊 {c_idx + 1}/{num_chunks}）---\n"
         f"```srt\n{chunk_text}\n```\n\n"
-        f"請邊聽附帶的音訊錄音、並依據全片對照表與前後文語意，嚴格鎖定時間戳，輸出校對後的完整 SRT："
+        f"請邊聽附帶的音訊錄音、依據全片對照表與語意段落規範，進行自然斷句重整（每行 <= 16 字）、時間軸物理聲學熔接與同音錯字校正，輸出重整後的完整 SRT："
     )
 
     try:
@@ -409,11 +409,28 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
             print(f"\r  ► Progress: {completed_count}/{num_chunks} chunks completed ({pct:.0f}%)... {status_tag}", end="", flush=True)
 
     print()
-    # Assemble chunks in strictly preserved index order
+    # Assemble chunks in strictly preserved index order and renumber monotonically
     sorted_blocks = [results[i] for i in range(num_chunks)]
+    raw_combined = "\n\n".join(sorted_blocks).strip()
+    
+    # Parse all blocks and ensure strict sequential numbering (1, 2, 3...)
+    all_blocks = [b.strip() for b in raw_combined.split("\n\n") if b.strip()]
+    renumbered_blocks = []
+    current_idx = 1
+    for b in all_blocks:
+        b_lines = b.splitlines()
+        if len(b_lines) >= 3 and "-->" in b_lines[1]:
+            renumbered_blocks.append(f"{current_idx}\n{b_lines[1]}\n" + "\n".join(b_lines[2:]) + "\n")
+            current_idx += 1
+        elif len(b_lines) == 2 and "-->" in b_lines[0]:
+            renumbered_blocks.append(f"{current_idx}\n{b_lines[0]}\n{b_lines[1]}\n")
+            current_idx += 1
+        else:
+            renumbered_blocks.append(b + "\n")
+
     total_time = time.time() - t0
-    print(f"  ✓ Contextual audio-multimodal proofreading completed in {total_time:.1f}s ({num_chunks} chunks assembled)")
-    return "\n\n".join(sorted_blocks).strip() + "\n"
+    print(f"  ✓ Contextual audio-multimodal proofreading completed in {total_time:.1f}s ({len(renumbered_blocks)} subtitles assembled across {num_chunks} chunks)")
+    return "\n\n".join(renumbered_blocks).strip() + "\n"
 
 
 def main():
