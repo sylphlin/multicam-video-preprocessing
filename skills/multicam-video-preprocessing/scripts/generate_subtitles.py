@@ -49,11 +49,7 @@ except ImportError:
     from scripts.modules.progress import LiveTicker
 
 
-DEFAULT_PROOFREAD_TEMPLATE_PATHS = [
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "subtitle_proofread_template.md"),
-    os.path.expanduser("~/.gemini/config/skills/multicam-video-preprocessing/assets/subtitle_proofread_template.md"),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "subtitle_proofread_template.md"),
-]
+
 
 
 def format_timestamp_srt(seconds):
@@ -248,7 +244,6 @@ def load_proofread_template(language="zh-TW"):
     target_names = [
         f"subtitle_proofread_template.{norm_lang}.md",
         "subtitle_proofread_template.zh-TW.md",
-        "subtitle_proofread_template.md"
     ]
 
     for s_dir in search_dirs:
