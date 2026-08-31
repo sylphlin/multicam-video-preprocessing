@@ -463,7 +463,17 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
             raw_txt = "\n".join(lines[2:]).strip()
             clean_txt = clean_subtitle_text(raw_txt, language=language)
             if clean_txt:
-                items.append({"start": t_start, "end": t_end, "text": clean_txt})
+                q_parts = [p.strip() for p in re.split(r"(?<=[？?])\s+", clean_txt) if p.strip()]
+                if len(q_parts) > 1:
+                    tot_len = max(1, sum(len(p) for p in q_parts))
+                    cur_t = t_start
+                    span = max(1.0, t_end - t_start)
+                    for q_p in q_parts:
+                        p_dur = span * (len(q_p) / tot_len)
+                        items.append({"start": cur_t, "end": cur_t + p_dur, "text": q_p})
+                        cur_t += p_dur
+                else:
+                    items.append({"start": t_start, "end": t_end, "text": clean_txt})
         elif len(lines) == 2 and "-->" in lines[0]:
             t1, t2 = lines[0].split("-->")
             t_start = parse_timestamp_str(t1.strip())
@@ -471,7 +481,17 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
             raw_txt = lines[1].strip()
             clean_txt = clean_subtitle_text(raw_txt, language=language)
             if clean_txt:
-                items.append({"start": t_start, "end": t_end, "text": clean_txt})
+                q_parts = [p.strip() for p in re.split(r"(?<=[？?])\s+", clean_txt) if p.strip()]
+                if len(q_parts) > 1:
+                    tot_len = max(1, sum(len(p) for p in q_parts))
+                    cur_t = t_start
+                    span = max(1.0, t_end - t_start)
+                    for q_p in q_parts:
+                        p_dur = span * (len(q_p) / tot_len)
+                        items.append({"start": cur_t, "end": cur_t + p_dur, "text": q_p})
+                        cur_t += p_dur
+                else:
+                    items.append({"start": t_start, "end": t_end, "text": clean_txt})
 
     if not items:
         return raw_srt
