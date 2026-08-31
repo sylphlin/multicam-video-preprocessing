@@ -207,8 +207,19 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
    - Gemini 3.7 Flash (1M Context) scans the full-length episode audio (optionally incorporating user `--outline`) to build an authoritative domain glossary (`final_cut_full_glossary.md`).
 2. **Stage 2 (Whisper Physical Acoustic Baseline)**:
    - Local `mlx-whisper` or `faster-whisper` calculates sliding-window acoustic energy boundaries to produce zero-drift baseline subtitles (`final_cut_full_raw_whisper.srt`).
-3. **Stage 3 (Chunked Multimodal Semantic Clause Segmentation & Rhythm Sanitization)**:
-   - Supports multi-lingual templates (`zh-TW`, `en`, `ja`, `zh-CN`, `ko`); re-segments fragmented lines into natural semantic clauses compliant with international streaming standards (max 15 chars for Chinese/Japanese, 16 chars for Korean, 37 CPL for English), automatically sanitizing pacing ($\ge 1.0\text{s}$ reading hold, $+0.4\text{s}$ pause buffer, anti-flicker gap bridging) with acoustic timestamp fusion.
+#### 🎯 Streaming Standard Subtitle Quality & Pacing Audit Logic
+
+`generate_subtitles.py` integrates a comprehensive Netflix / YouTube quality audit engine verifying 6 critical dimensions:
+
+| Dimension | Standard Specification | Engineering & Optimization Logic |
+| :--- | :--- | :--- |
+| **Speaker Cohesion & Isolation** | Hard boundary on speaker change | Same-speaker question/statements are aggregated intact; cross-speaker transitions trigger a mandatory new line to prevent confusion. |
+| **Character Length & Width** | CJK $\le 15$ chars / EN $\le 37$ CPL | Enforces strict width limits per language locale. Overlength clauses are smoothly split at natural syntactic pauses. |
+| **Punctuation Normalization** | 100% clean line-endings | Strips trailing `。`, `，`, `；`. In-line Chinese commas convert to natural single spaces; spacing around alphanumeric tokens is normalized. |
+| **Zero-Lead Acoustic Alignment** | 0.000s acoustic lock | Timestamps strictly align with physical speech onset (Whisper waveform), eliminating subtitle spoiler artifacts. |
+| **Reading Duration Protection** | $1.0\text{s} \le \text{Duration} \le 6.0\text{s}$ | Short clauses expand into trailing silences ($\ge 1.0\text{s}$ for cognitive absorption); maximum duration capped $\le 6.0\text{s}$. |
+| **Anti-Flicker Gap Bridging** | Eliminates micro-gaps $< 0.2\text{s}$ | Bridges high-frequency gaps between consecutive speech to 0s; preserves $+0.4\text{s}$ breathing buffers during real pauses. |
+
 4. **Outputs**:
    - **`final_cut_full.srt`**: Standard YouTube SubRip subtitles.
    - **`final_cut_full.vtt`**: WebVTT subtitles for web players.
