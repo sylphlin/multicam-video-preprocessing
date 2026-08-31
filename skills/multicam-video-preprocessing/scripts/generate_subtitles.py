@@ -213,16 +213,55 @@ def build_srt_from_segments(segments):
     return "\n".join(blocks)
 
 
-def load_proofread_template():
-    """Load subtitle proofreading prompt template."""
-    for p in DEFAULT_PROOFREAD_TEMPLATE_PATHS:
-        if p and os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
-                return f.read().strip()
+def normalize_language_tag(lang_str):
+    """Normalize language code to standardized locale code (e.g. zh-TW, en, ja, zh-CN, ko)."""
+    if not lang_str:
+        return "zh-TW"
+    l = str(lang_str).lower().replace("_", "-").strip()
+    if l in ("zh", "zh-tw", "zh-hant", "zh-hk", "zh-mo", "cmn-hant", "cmn-tw"):
+        return "zh-TW"
+    if l in ("zh-cn", "zh-hans", "zh-sg", "cmn-hans", "cmn-cn"):
+        return "zh-CN"
+    if l.startswith("en"):
+        return "en"
+    if l.startswith("ja"):
+        return "ja"
+    if l.startswith("ko"):
+        return "ko"
+    return "zh-TW"
+
+
+def load_proofread_template(language="zh-TW"):
+    """Load subtitle proofreading prompt template based on language locale."""
+    norm_lang = normalize_language_tag(language)
+
+    search_dirs = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets"),
+        os.path.expanduser("~/.gemini/config/skills/multicam-video-preprocessing/assets"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets"),
+    ]
+
+    target_names = [
+        f"subtitle_proofread_template.{norm_lang}.md",
+        "subtitle_proofread_template.zh-TW.md",
+        "subtitle_proofread_template.md"
+    ]
+
+    for s_dir in search_dirs:
+        for t_name in target_names:
+            p = os.path.join(s_dir, t_name)
+            if os.path.exists(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content:
+                            return content
+                except Exception:
+                    pass
+
     return (
         "You are an expert subtitle proofreader for YouTube.\n"
-        "Your task: Correct typos, homophones, domain terms, and names in the provided SRT subtitles.\n"
-        "STRICT RULE: Keep all timestamps (`00:00:00,000 --> 00:00:00,000`) and indices 100% UNCHANGED.\n"
+        "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 16 chars per line) with acoustic timestamp fusion.\n"
         "Output ONLY the corrected SRT inside ```srt ... ``` code block."
     )
 
@@ -367,16 +406,16 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
                 pass
 
 
-def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5):
+def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5, language="zh-TW"):
     """
     Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary.
     Slices local audio chunks and proofreads subtitles against actual audio acoustics,
     guaranteeing 100% physical timestamp preservation.
     """
-    print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers})...")
+    print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers}, Lang: {language})...")
     t0 = time.time()
 
-    template = load_proofread_template()
+    template = load_proofread_template(language=language)
     raw_blocks = [b.strip() for b in raw_srt.strip().split("\n\n") if b.strip()]
     if not raw_blocks:
         return raw_srt
@@ -536,7 +575,8 @@ def main():
                 base_url=args.base_url,
                 model=args.model,
                 chunk_size=args.chunk_size,
-                max_workers=args.workers
+                max_workers=args.workers,
+                language=args.language
             )
 
         # Write Final SRT
