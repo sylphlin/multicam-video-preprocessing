@@ -240,14 +240,15 @@ def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, ap
     prompt = (
         "You are an expert Chief Subtitle Editor for professional YouTube productions.\n"
         "Your goal is to extract a comprehensive, authoritative **Global Terminology Glossary (全片專有名詞與詞彙對照表)** "
-        "to ensure 100% spelling, naming, and domain term consistency across all subtitle segments.\n\n"
+        "directly from this recording to ensure 100% spelling, naming, and domain term consistency across all subtitle segments.\n\n"
         f"{outline_section}\n"
-        "Extract the following structured sections in Markdown:\n"
-        "1. **講者與人物姓名 (Person & Speaker Names)**: e.g. Chinese & English names, titles\n"
-        "2. **公司、品牌與機構 (Organizations & Companies)**: e.g. Anthropic, Google, 思想實驗室\n"
-        "3. **行業專有名詞與縮寫 (Domain Jargon & Tech Acronyms)**: e.g. SaaS, LLM, 估值狂飆, 多模態\n"
-        "4. **常見同音訛字修正指引 (Homophone & Typo Correction Rules)**: e.g. 矽谷 (not 細部), 估值狂飆 (not 公職房標)\n\n"
-        "Output ONLY the structured Markdown Glossary:"
+        "Extract ONLY verified domain terms, entity names, and proper spellings that actually appear in this recording.\n"
+        "Structure the output cleanly in Markdown:\n"
+        "1. **講者與人物姓名 (Person & Speaker Names)**: Official Chinese/English names, titles & roles\n"
+        "2. **公司、品牌、產品與機構 (Organizations, Products & Brands)**: Official brand, company & tool names\n"
+        "3. **行業專有名詞與技術術語 (Domain Jargon & Tech Terms)**: Industry terminology, English acronyms & phrases\n"
+        "4. **核心主題概念 (Core Topic Concepts)**: Key themes discussed in this episode\n\n"
+        "Output ONLY the clean, authoritative Markdown Glossary:"
     )
 
     # Use lightweight compressed MP3 for audio scanning if audio file is available
