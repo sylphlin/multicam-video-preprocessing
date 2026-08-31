@@ -410,7 +410,42 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
                 pass
 
 
-def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2):
+def clean_subtitle_text(text, language="zh-TW"):
+    """
+    Netflix & YouTube Standard Subtitle Text Cleaner & Formatter:
+    1. Strip trailing periods/commas: removes [。，、；:;,.—-] from line end (preserves ？!……).
+    2. Convert in-line Chinese commas to clean single spaces (e.g. '哈囉，歡迎' -> '哈囉 歡迎').
+    3. Normalize Chinese-English & Chinese-Number spacing (e.g. '用AI寫10倍Code' -> '用 AI 寫 10 倍 Code').
+    4. Collapse multiple consecutive whitespace to single space and trim.
+    """
+    norm_lang = normalize_language_tag(language)
+    lines = text.strip().splitlines()
+    cleaned_lines = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        if norm_lang in ["zh-TW", "zh-CN", "ja", "ko"]:
+            # In-line comma to space for clean visual layout
+            line = re.sub(r"[，,]+", " ", line)
+            # Chinese-English / Chinese-Number spacing
+            line = re.sub(r"([\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af])([A-Za-z0-9])", r"\1 \2", line)
+            line = re.sub(r"([A-Za-z0-9])([\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af])", r"\1 \2", line)
+        
+        # Collapse multiple spaces
+        line = re.sub(r"[ \t]+", " ", line)
+
+        # Strip trailing punctuation: periods, commas, colons, semicolons, dashes (preserve ？!……)
+        line = re.sub(r"[\s。，、；:;,.—-]+$", "", line).strip()
+
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
+
+
+def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2, language="zh-TW"):
     """
     Automated Professional Rhythm & Pacing Sanitizer for Subtitles:
     1. Zero-Lead Protection: Subtitles never lead before voice onset (Start >= speech onset).
@@ -419,6 +454,7 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     4. Min Duration Guard: Ensures display duration >= 1.0s where possible (bounded by next speech onset).
     5. Max Duration Guard: Caps maximum single-line display duration <= 6.0s (avoids stuck-subtitle feel).
     6. Gap Management: Bridges micro-gaps (< 0.2s) to prevent high-frequency visual flicker.
+    7. Netflix & YouTube Punctuation & Spacing Normalization.
     """
     blocks = [b.strip() for b in raw_srt.strip().split("\n\n") if b.strip()]
     items = []
@@ -429,14 +465,18 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
             t1, t2 = lines[1].split("-->")
             t_start = parse_timestamp_str(t1.strip())
             t_end = parse_timestamp_str(t2.strip())
-            text = "\n".join(lines[2:]).strip()
-            items.append({"start": t_start, "end": t_end, "text": text})
+            raw_txt = "\n".join(lines[2:]).strip()
+            clean_txt = clean_subtitle_text(raw_txt, language=language)
+            if clean_txt:
+                items.append({"start": t_start, "end": t_end, "text": clean_txt})
         elif len(lines) == 2 and "-->" in lines[0]:
             t1, t2 = lines[0].split("-->")
             t_start = parse_timestamp_str(t1.strip())
             t_end = parse_timestamp_str(t2.strip())
-            text = lines[1].strip()
-            items.append({"start": t_start, "end": t_end, "text": text})
+            raw_txt = lines[1].strip()
+            clean_txt = clean_subtitle_text(raw_txt, language=language)
+            if clean_txt:
+                items.append({"start": t_start, "end": t_end, "text": clean_txt})
 
     if not items:
         return raw_srt
@@ -445,7 +485,7 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     for i in range(len(items)):
         if items[i]["end"] <= items[i]["start"]:
             items[i]["end"] = items[i]["start"] + 1.0
-        
+
         # Enforce max duration constraint (e.g. fix LLM hallucinated minute digits)
         if items[i]["end"] - items[i]["start"] > max_duration:
             if i + 1 < len(items) and items[i+1]["start"] > items[i]["start"]:
@@ -466,10 +506,10 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     for i in range(len(items)):
         cur = items[i]
         nxt_start = items[i+1]["start"] if i + 1 < len(items) else (cur["end"] + 10.0)
-        
+
         dur = cur["end"] - cur["start"]
         raw_gap = nxt_start - cur["end"]
-        
+
         # If gap is tiny (< 0.2s), bridge it to prevent visual flicker
         if 0 < raw_gap < min_gap_threshold:
             cur["end"] = nxt_start
@@ -549,7 +589,7 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
     # Assemble chunks and apply professional rhythm & pacing sanitizer
     sorted_blocks = [results[i] for i in range(num_chunks)]
     raw_combined = "\n\n".join(sorted_blocks).strip()
-    sanitized_srt = sanitize_subtitle_timings(raw_combined)
+    sanitized_srt = sanitize_subtitle_timings(raw_combined, language=language)
 
     total_time = time.time() - t0
     final_count = len([b for b in sanitized_srt.split("\n\n") if b.strip()])
