@@ -255,7 +255,7 @@ def load_proofread_template(language="zh-TW"):
                     with open(p, "r", encoding="utf-8") as f:
                         content = f.read().strip()
                         if content:
-                            return content
+                            return content, os.path.basename(p)
                 except Exception:
                     pass
 
@@ -263,7 +263,7 @@ def load_proofread_template(language="zh-TW"):
         "You are an expert subtitle proofreader for YouTube.\n"
         "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 16 chars per line) with acoustic timestamp fusion.\n"
         "Output ONLY the corrected SRT inside ```srt ... ``` code block."
-    )
+    ), "builtin_fallback"
 
 
 def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, api_key=None, base_url=None, model="gemini-3.7-flash"):
@@ -412,10 +412,10 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
     Slices local audio chunks and proofreads subtitles against actual audio acoustics,
     guaranteeing 100% physical timestamp preservation.
     """
-    print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers}, Lang: {language})...")
+    template, tmpl_file = load_proofread_template(language=language)
+    print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers})...")
+    print(f"  • Template Loaded: {tmpl_file} (Locale: {normalize_language_tag(language)})")
     t0 = time.time()
-
-    template = load_proofread_template(language=language)
     raw_blocks = [b.strip() for b in raw_srt.strip().split("\n\n") if b.strip()]
     if not raw_blocks:
         return raw_srt
