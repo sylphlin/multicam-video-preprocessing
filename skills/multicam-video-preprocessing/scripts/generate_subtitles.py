@@ -119,6 +119,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
     t0 = time.time()
     lang_arg = None if str(language).lower() in ("auto", "none") else language
     sub_list = []
+    detected_lang = language if lang_arg else "zh"
 
     # Backend 1: Apple Silicon Native MLX (mlx-whisper)
     if device in ("auto", "mps", "mlx"):
@@ -132,6 +133,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
                 language=lang_arg,
                 word_timestamps=False
             )
+            detected_lang = result.get("language") or detected_lang
             for idx, seg in enumerate(result.get("segments", []), start=1):
                 sub_list.append({
                     "index": idx,
@@ -140,8 +142,8 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
                     "text": seg["text"].strip()
                 })
             duration = time.time() - t0
-            print(f"  ✓ MLX transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated)")
-            return sub_list
+            print(f"  ✓ MLX transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated, language: '{detected_lang}')")
+            return sub_list, detected_lang
         except ImportError:
             pass
         except Exception as e:
@@ -154,6 +156,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
         print(f"  ► [Backend: faster-whisper] Utilizing multi-core ARM NEON/AVX vector acceleration ({num_threads} CPU threads, int8)...")
         model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=num_threads)
         segments, info = model.transcribe(audio_wav, language=lang_arg, beam_size=5, vad_filter=True)
+        detected_lang = getattr(info, "language", detected_lang)
 
         total_dur = getattr(info, "duration", 0)
         for idx, seg in enumerate(segments, start=1):
@@ -185,6 +188,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
             print(f"  ► [Backend: openai-whisper] Running on PyTorch ({target_dev.upper()})...")
             model = whisper.load_model(model_size, device=target_dev)
             result = model.transcribe(audio_wav, language=lang_arg)
+            detected_lang = result.get("language") or detected_lang
 
             for idx, seg in enumerate(result.get("segments", []), start=1):
                 sub_list.append({
@@ -197,8 +201,8 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
             raise RuntimeError("No Whisper backend found! Please install via `pip install mlx-whisper` (Apple Silicon GPU) or `pip install faster-whisper`.")
 
     duration = time.time() - t0
-    print(f"  ✓ Whisper acoustic transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated)")
-    return sub_list
+    print(f"  ✓ Whisper acoustic transcription complete in {duration:.1f}s ({len(sub_list)} segments, language: '{detected_lang}')")
+    return sub_list, detected_lang
 
 
 def build_srt_from_segments(segments):
@@ -553,8 +557,11 @@ def main():
                 print(f"  • Saved Global Glossary: {glossary_path}")
 
         # Stage 2: Whisper Acoustic Transcription (Zero-Drift Physical Timestamps)
-        segments = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
+        segments, detected_lang = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
         raw_srt = build_srt_from_segments(segments)
+
+        effective_lang = detected_lang if str(args.language).lower() in ("auto", "none") else args.language
+        print(f"  • Effective Language Locale: {normalize_language_tag(effective_lang)} (Input: '{args.language}', Detected: '{detected_lang}')")
 
         # Save raw whisper backup for reference/debugging
         with open(raw_srt_path, "w", encoding="utf-8") as f:
@@ -576,7 +583,7 @@ def main():
                 model=args.model,
                 chunk_size=args.chunk_size,
                 max_workers=args.workers,
-                language=args.language
+                language=effective_lang
             )
 
         # Write Final SRT
