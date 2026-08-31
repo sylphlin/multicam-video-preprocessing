@@ -410,6 +410,99 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
                 pass
 
 
+def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2):
+    """
+    Automated Professional Rhythm & Pacing Sanitizer for Subtitles:
+    1. Zero-Lead Protection: Subtitles never lead before voice onset (Start >= speech onset).
+    2. Monotonic Forward Alignment: Eliminates timestamp backtracking & chunk boundary overlaps.
+    3. Post-tail Reading Buffer: Extends subtitle end time (+0.3~0.5s) into natural pauses for readability.
+    4. Min Duration Guard: Ensures display duration >= 1.0s where possible (bounded by next speech onset).
+    5. Max Duration Guard: Caps maximum single-line display duration <= 6.0s (avoids stuck-subtitle feel).
+    6. Gap Management: Bridges micro-gaps (< 0.2s) to prevent high-frequency visual flicker.
+    """
+    blocks = [b.strip() for b in raw_srt.strip().split("\n\n") if b.strip()]
+    items = []
+
+    for b in blocks:
+        lines = b.splitlines()
+        if len(lines) >= 3 and "-->" in lines[1]:
+            t1, t2 = lines[1].split("-->")
+            t_start = parse_timestamp_str(t1.strip())
+            t_end = parse_timestamp_str(t2.strip())
+            text = "\n".join(lines[2:]).strip()
+            items.append({"start": t_start, "end": t_end, "text": text})
+        elif len(lines) == 2 and "-->" in lines[0]:
+            t1, t2 = lines[0].split("-->")
+            t_start = parse_timestamp_str(t1.strip())
+            t_end = parse_timestamp_str(t2.strip())
+            text = lines[1].strip()
+            items.append({"start": t_start, "end": t_end, "text": text})
+
+    if not items:
+        return raw_srt
+
+    # Pass 1: Monotonic Forward Correction & Sanity bounds
+    for i in range(len(items)):
+        if items[i]["end"] <= items[i]["start"]:
+            items[i]["end"] = items[i]["start"] + 1.0
+        
+        # Enforce max duration constraint (e.g. fix LLM hallucinated minute digits)
+        if items[i]["end"] - items[i]["start"] > max_duration:
+            if i + 1 < len(items) and items[i+1]["start"] > items[i]["start"]:
+                items[i]["end"] = min(items[i]["start"] + max_duration, items[i+1]["start"])
+            else:
+                items[i]["end"] = items[i]["start"] + min(4.0, max_duration)
+
+    # Pass 2: Forward non-overlap monotonicity
+    for i in range(1, len(items)):
+        prev = items[i-1]
+        cur = items[i]
+        if cur["start"] < prev["start"]:
+            cur["start"] = max(prev["start"] + 0.5, cur["start"])
+        if prev["end"] > cur["start"]:
+            prev["end"] = cur["start"]
+
+    # Pass 3: Post-tail Reading Buffer & Min-duration & Gap management
+    for i in range(len(items)):
+        cur = items[i]
+        nxt_start = items[i+1]["start"] if i + 1 < len(items) else (cur["end"] + 10.0)
+        
+        dur = cur["end"] - cur["start"]
+        raw_gap = nxt_start - cur["end"]
+        
+        # If gap is tiny (< 0.2s), bridge it to prevent visual flicker
+        if 0 < raw_gap < min_gap_threshold:
+            cur["end"] = nxt_start
+        elif raw_gap >= min_gap_threshold:
+            # We have natural breathing room -> extend tail buffer (+0.4s)
+            extra_tail = min(post_tail_buffer, raw_gap - 0.05)
+            if extra_tail > 0:
+                cur["end"] = min(cur["end"] + extra_tail, nxt_start)
+
+        # Enforce Min Duration (>= 1.0s) if room permits
+        dur = cur["end"] - cur["start"]
+        if dur < min_duration:
+            needed = min_duration - dur
+            room = nxt_start - cur["end"]
+            if room > 0:
+                cur["end"] = min(cur["end"] + min(needed, room), nxt_start)
+
+        # Final sanity check: max_duration
+        if cur["end"] - cur["start"] > max_duration:
+            cur["end"] = cur["start"] + max_duration
+
+    # Output formatted SRT
+    out_blocks = []
+    for idx, it in enumerate(items, start=1):
+        s_str = format_timestamp_srt(it["start"])
+        e_str = format_timestamp_srt(it["end"])
+        ts_line = f"{s_str} --> {e_str}"
+        txt = it["text"]
+        out_blocks.append(f"{idx}\n{ts_line}\n{txt}\n")
+
+    return "\n\n".join(out_blocks).strip() + "\n"
+
+
 def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5, language="zh-TW"):
     """
     Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary.
@@ -453,28 +546,15 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
             print(f"\r  ► Progress: {completed_count}/{num_chunks} chunks completed ({pct:.0f}%)... {status_tag}", end="", flush=True)
 
     print()
-    # Assemble chunks in strictly preserved index order and renumber monotonically
+    # Assemble chunks and apply professional rhythm & pacing sanitizer
     sorted_blocks = [results[i] for i in range(num_chunks)]
     raw_combined = "\n\n".join(sorted_blocks).strip()
-    
-    # Parse all blocks and ensure strict sequential numbering (1, 2, 3...)
-    all_blocks = [b.strip() for b in raw_combined.split("\n\n") if b.strip()]
-    renumbered_blocks = []
-    current_idx = 1
-    for b in all_blocks:
-        b_lines = b.splitlines()
-        if len(b_lines) >= 3 and "-->" in b_lines[1]:
-            renumbered_blocks.append(f"{current_idx}\n{b_lines[1]}\n" + "\n".join(b_lines[2:]) + "\n")
-            current_idx += 1
-        elif len(b_lines) == 2 and "-->" in b_lines[0]:
-            renumbered_blocks.append(f"{current_idx}\n{b_lines[0]}\n{b_lines[1]}\n")
-            current_idx += 1
-        else:
-            renumbered_blocks.append(b + "\n")
+    sanitized_srt = sanitize_subtitle_timings(raw_combined)
 
     total_time = time.time() - t0
-    print(f"  ✓ Contextual audio-multimodal proofreading completed in {total_time:.1f}s ({len(renumbered_blocks)} subtitles assembled across {num_chunks} chunks)")
-    return "\n\n".join(renumbered_blocks).strip() + "\n"
+    final_count = len([b for b in sanitized_srt.split("\n\n") if b.strip()])
+    print(f"  ✓ Contextual audio-multimodal proofreading completed in {total_time:.1f}s ({final_count} subtitles sanitized across {num_chunks} chunks)")
+    return sanitized_srt
 
 
 def main():
