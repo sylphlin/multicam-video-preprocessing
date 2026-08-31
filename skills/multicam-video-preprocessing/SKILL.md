@@ -33,7 +33,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Multi-part EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere |
 | **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting -> `final_cut_part*.mp4` |
 | **Step 3B** | `scripts/concat_videos.py` | N/A | Lossless concat -> Full episode `final_cut_full.mp4` |
-| **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `progress.py`, `assets/subtitle_proofread_template.md` | Whisper ASR millisecond alignment + Gemini 1M Context proofreading -> `.srt` / `.vtt` |
+| **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `progress.py`, `assets/subtitle_proofread_template.*.md` | Whisper ASR millisecond alignment + Gemini 1M Context proofreading -> `.srt` / `.vtt` |
 
 ---
 

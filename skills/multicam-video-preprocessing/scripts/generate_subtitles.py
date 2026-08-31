@@ -491,7 +491,7 @@ def main():
                         help="LLM model for Stage 1 & 3 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
     parser.add_argument("--base-url", default=None,
                         help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
-    parser.add_argument("--language", default="zh", help="Spoken language code for transcription (default: zh, or auto)")
+    parser.add_argument("--language", default="auto", help="Spoken language code for transcription (default: auto for acoustic auto-detection, or zh-TW, en, ja, ko, zh-CN)")
     parser.add_argument("--device", default="auto", choices=["auto", "mps", "mlx", "cuda", "cpu"],
                         help="Device acceleration backend for Whisper (default: auto for Apple Silicon GPU / Neural Engine)")
     parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable)")
