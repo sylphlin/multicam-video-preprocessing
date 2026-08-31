@@ -207,8 +207,8 @@ flowchart TD
    - 提取全片音频，由 Gemini 3.7 Flash（1M Context）一次听完整集节目（或结合使用者提供的访纲 `--outline`），自动萃取人物姓名、公司品牌、英文缩写与专有名词对照表（`final_cut_full_glossary.md`）。
 2. **阶段二（Whisper 声学物理时间轴骨架）**：
    - 本地 `mlx-whisper` 或 `faster-whisper` 通过滑动窗口能量分析，测量每句话的物理起讫点，产出 100% 零漂移的毫秒时间戳初稿（`final_cut_full_raw_whisper.srt`）。
-3. **阶段三（局部音轨 + 全篇名词库之 Gemini 音频多模态精修审稿）**：
-   - 将全片切为 2–3 分钟区块，Gemini 边听局部真实音频、边参照全篇词汇库，在**严格锁定时间戳与行号**的前提下，修复同音错字（如“硅谷”、“薪水”、“Buffet”）与英文专有名词（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
+3. **阶段三（局部音轨 + 全篇名词库之多模态语义断句与精修审稿）**：
+   - 支持多语系模板（`zh-TW`、`en`、`ja`、`zh-CN`、`ko`），依语义子句自然断句（每行 $\le 16$ 字，转折短句自然成行），并将各小句时间戳物理熔接，同时修复同音错字（如“硅谷”、“薪水”、“Buffet”）与英文专有名词（如 `Kelly Tsai`、`YouTube`、`DaVinci Resolve`）。
 4. **输出文件**：
    - **`final_cut_full.srt`**：YouTube 标准 SubRip 字幕文件。
    - **`final_cut_full.vtt`**：网页与 HTML5 播放器通用 WebVTT 字幕文件。
