@@ -97,7 +97,7 @@ multicam-video-preprocessing/
   1. **전체 오디오 글로벌 용어집 추출**: Gemini 1M Context로 전체 에피소드 오디오를 청취하여 고유명사, 영문명, 전문 용어집(`final_cut_full_glossary.md`)을 자동 생성.
   2. **Whisper 음향 물리 밀리초 타임코드**: 로컬 Whisper로 음향 파형을 측정하여 0.000초 오차 없는 기준 타임라인 생성.
   3. **멀티모달 의미 단위 자연 줄바꿈・리듬 정화・정밀 교정**: 다국어 템플릿(`zh-TW`, `en`, `ja`, `zh-CN`, `ko`)을 지원하며, 국제 표준에 맞춘 자연스러운 줄바꿈(한국어 $\le 16$자, 중국어/일본어 $\le 14\sim 15$자, 영어 $\le 37$자) 및 가독 시간 자동 보정(줄당 $\ge 1.0\text{s}$, 포즈 여백 $+0.4\text{s}$, 플리커 제거)을 수행하여 오탈자 및 전문 용어를 정밀 교정.
-- **출력**: `final_cut_full.srt`, `final_cut_full.vtt`, `final_cut_full_glossary.md`.
+- **출력**: `final_cut_full.srt`, `final_cut_full.vtt`, `final_cut_full_subtitle_report.json`(품질 감사 JSON), `final_cut_full_subtitle_report.md`(시각화 평가 Markdown), `final_cut_full_glossary.md`.
 
 ---
 

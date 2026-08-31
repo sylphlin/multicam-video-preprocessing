@@ -212,6 +212,8 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 4. **Outputs**:
    - **`final_cut_full.srt`**: Standard YouTube SubRip subtitles.
    - **`final_cut_full.vtt`**: WebVTT subtitles for web players.
+   - **`final_cut_full_subtitle_report.json`**: Netflix & YouTube streaming standard quality audit report (JSON).
+   - **`final_cut_full_subtitle_report.md`**: Human-readable visual quality audit card (Markdown).
    - **`final_cut_full_glossary.md`**: Episode Global Terminology Glossary.
    - **`final_cut_full_raw_whisper.srt`**: Raw Whisper baseline subtitles for reference.
 

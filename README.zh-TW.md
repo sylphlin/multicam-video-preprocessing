@@ -212,6 +212,8 @@ flowchart TD
 4. **輸出檔案**：
    - **`final_cut_full.srt`**：YouTube 標準 SubRip 字幕檔。
    - **`final_cut_full.vtt`**：網頁與 HTML5 播放器通用 WebVTT 字幕檔。
+   - **`final_cut_full_subtitle_report.json`**：Netflix / YouTube 影視級字幕品質檢驗量化報告（JSON）。
+   - **`final_cut_full_subtitle_report.md`**：影視級字幕品質檢驗視覺化評分表（Markdown）。
    - **`final_cut_full_glossary.md`**：全集專有名詞與詞彙對照表。
    - **`final_cut_full_raw_whisper.srt`**：保留原始 Whisper 聲學轉錄初稿供對照。
 
