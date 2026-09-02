@@ -33,7 +33,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Multi-part EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere |
 | **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting -> `final_cut_part*.mp4` |
 | **Step 3B** | `scripts/concat_videos.py` | N/A | Lossless concat -> Full episode `final_cut_full.mp4` |
-| **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `progress.py`, `assets/subtitle_proofread_template.*.md` | Whisper ASR millisecond alignment + Gemini 1M Context proofreading -> `.srt` / `.vtt` |
+| **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `progress.py`, `assets/subtitle_proofread_template.*.md` | Whisper Word Timestamps + Chunk-Scoped Acoustic Reprojection + Gemini 1M Proofreading -> `.srt` / `.vtt` |
 
 ---
 
@@ -47,8 +47,8 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
    - Audio RMS energy scanning detects natural speech breath pauses to slice long footage into 30–40 min chunks, perfectly fitting 1M token context windows while preserving speaker sentence continuity.
 4. **Token-Optimized Compact Grid Composition**:
    - Merges 2 to 6 camera angles into a single multi-view canvas ($\\le 1920 \\times 1080$, each CAM $\\ge 640 \\times 480$), reducing AI multimodal token consumption by **50% to 83%**.
-5. **Three-Stage Golden Standard Subtitles (Whisper + Gemini)**:
-   - Combines 1M context global audio glossary extraction, local Whisper physical millisecond timecode alignment, and chunked multimodal audio-text proofreading with Netflix/YouTube pacing and character limit audit compliance.
+5. **Three-Stage Golden Standard Subtitles (Whisper Word Timestamps + Gemini Multimodal)**:
+   - Stage 1 extracts 1M context global domain glossary. Stage 2 extracts Whisper physical word timestamps cached to `_words.json` for instant re-runs. Stage 3 performs chunk-scoped acoustic reprojection (anchoring Gemini syntax/proofread text back to physical word boundaries) and rhythm sanitization (anti-flicker gap bridging $< 0.6\text{s}$, breathing buffer $+0.4\text{s}$, monotonic forward continuity, 0 micro-flickers/overlaps).
 
 ---
 

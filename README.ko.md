@@ -95,16 +95,17 @@ multicam-video-preprocessing/
 ### 4단계: YouTube 자막 생성 (`generate_subtitles.py`)
 - **3단계 골든 자막 생성 파이프라인 (Three-Stage Pipeline)**:
   1. **전체 오디오 글로벌 용어집 추출**: Gemini 1M Context로 전체 에피소드 오디오를 청취하여 고유명사, 영문명, 전문 용어집(`final_cut_full_glossary.md`)을 자동 생성.
-  2. **Whisper 음향 물리 밀리초 타임코드**: 로컬 Whisper로 음향 파형을 측정하여 0.000초 오차 없는 기준 타임라인 생성.
-  3. **멀티모달 의미 단위 자연 줄바꿈・리듬 정화・정밀 교정**: 다국어 템플릿(`zh-TW`, `en`, `ja`, `zh-CN`, `ko`)을 지원하여 오탈자 및 전문 용어를 정밀 교정.
+  2. **Whisper 음향 물리 밀리초 타임코드 및 단어 타임스탬프**: 로컬 Whisper(ARM NEON / AVX int8)로 단어 수준 음향 파형을 측정하여 0.000초 오차 없는 기준 타임라인 및 단어 캐시(`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`)를 생성 (재실행 시 수초 내 로드).
+  3. **청크 단위 물리 음향 앵커 재투영 (Chunk-Scoped Reprojection)**: Gemini는 문맥 줄바꿈과 텍스트 교정에만 전념하고, 백엔드 SequenceMatcher 단조 정렬 알고리즘이 Whisper 단어 수준 물리 시간에 정밀 재투영 (음성과 100% 일치, 스포일러/지연 완전 근절).
 - **🎯 방송 및 스트리밍 표준 자막 품질 감사 엔진 (자동 최적화)**:
   - **화자 의미 완결 및 분리**: 동일 화자의 질문/문장은 한 줄로 결합하고, 화자 전환 시 새로운 자막 줄을 강제 분리하여 혼란 방지.
   - **1줄 글자 수 제한**: 한국어 $\le 16$자, 중국어/일본어 $\le 15$자, 영어 $\le 37$ CPL (긴 문장은 구문 단위로 자동 분할).
   - **문장 끝 불필요 문장부호 100% 제거**: 문장 끝의 `。`, `，`, `；`를 완전 제거하여 깔끔한 화면 구성.
   - **음성 시작 0.000초 물리 동기화**: Whisper 음향 파형 시작점에 엄격 고정하여 스포일러 방지.
   - **가독 시간 보호**: $1.0\text{s} \le \text{Duration} \le 6.0\text{s}$ (짧은 문장은 여백을 활용하여 $\ge 1.0\text{s}$ 확보).
-  - **플리커 방지 미세 간격 결합**: $< 0.2\text{s}$ 간격을 0s로 평활화, 자연 휴지 여백 $+0.4\text{s}$ 제공.
-- **출력**: `final_cut_full.srt`, `final_cut_full.vtt`, `final_cut_full_subtitle_report.json`(품질 감사 JSON), `final_cut_full_subtitle_report.md`(시각화 평가 Markdown), `final_cut_full_glossary.md`.
+  - **플리커 방지 미세 간격 결합**: $< 0.6\text{s}$ 간격을 0s로 평활화, 진정한 휴지 시 $+0.4\text{s}$ 호흡 여백 후 화면을 깔끔히 클리어.
+  - **단조 시간 연속성 보장**: 시간 역행, 블록 중첩, 0/음수 시간 자막 완전 배제.
+- **출력**: `final_cut_full.srt`, `final_cut_full.vtt`, `final_cut_full_subtitle_report.json`(품질 감사 JSON), `final_cut_full_subtitle_report.md`(시각화 평가 Markdown), `final_cut_full_glossary.md`, `final_cut_full_words.json`.
 
 ---
 

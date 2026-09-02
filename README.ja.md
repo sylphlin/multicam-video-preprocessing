@@ -95,16 +95,17 @@ multicam-video-preprocessing/
 ### ステップ 4：YouTube 字幕生成 (`generate_subtitles.py`)
 - **3段階ゴールデン字幕生成パイプライン（Three-Stage Pipeline）**：
   1. **全編音声グローバル用語集抽出**：Gemini 1M Context で全編音声を聴取し、固有名詞・英語名・専門用語集（`final_cut_full_glossary.md`）を自動生成。
-  2. **Whisper 音響ミリ秒物理タイムコード**：ローカル Whisper で物理音声波形を測定し、ズレ累積 0.000 秒の基準タイムラインを生成。
-  3. **マルチモーダル意味段落自然改行・リズム浄化・高精度校正**：多言語テンプレート（`zh-TW`、`en`、`ja`、`zh-CN`、`ko`）に対応し、誤字・専門用語を高精度に校正。
+  2. **Whisper 音響ミリ秒物理タイムコード＆単語タイムスタンプ**：ローカル Whisper（ARM NEON / AVX int8）で各単語の物理音声波形を測定し、ズレ累積 0.000 秒の基準タイムラインと単語キャッシュ（`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`）を生成（再実行時は秒単位でロード可能）。
+  3. **チャンク単位の物理音響アンカー再投影（Chunk-Scoped Reprojection）**：Gemini は意味段落改行とテキスト校正のみに専念し、バックエンドの SequenceMatcher 単調対齊アルゴリズムが Whisper の単語レベル物理時間に再投影吸着（字随声動・0秒ネタバレ・遅延ドミノ倒しを完全根絶）。
 - **🎯 映画・配信標準字幕品質監査エンジン（自動最適化）**：
   - **話者意味の完結と分離**：同一話者の質問文は一行に集約し、話者交代時は強制的に改行して誤解を防止。
   - **1行文字数制限**：日本語/中国語 $\le 15$ 字、韓国語 $\le 16$ 字、英語 $\le 37$ CPL（長文は文節で自動分割）。
   - **行末記号の完全除去**：行末の「。」「、」「；」を 100% 除去し、極めてクリーンなレイアウトを実現。
   - **音声開始 0 秒完全同期**：Whisper 物理音声波形に厳格固定し、ネタバレを完全防止。
   - **閲覧時間保護**：$1.0\text{s} \le \text{Duration} \le 6.0\text{s}$（短いフレーズは空白時間を活用して自動補正）。
-  - **フリッカー防止微小ギャップ結合**：$< 0.2\text{s}$ のギャップを 0s に平滑化、ポーズ余白 $+0.4\text{s}$ を自動付与。
-- **出力**：`final_cut_full.srt`、`final_cut_full.vtt`、`final_cut_full_subtitle_report.json`（品質監査JSON）、`final_cut_full_subtitle_report.md`（評価Markdown）、`final_cut_full_glossary.md`。
+  - **フリッカー防止微小ギャップ結合**：$< 0.6\text{s}$ のギャップを 0s に平滑化、真のポーズ時は $+0.4\text{s}$ の呼吸余白を付与して画面をクリーンにクリア。
+  - **単調時間連続性保証**：時間逆行や重複、ゼロ・負の時長を完全に排除。
+- **出力**：`final_cut_full.srt`、`final_cut_full.vtt`、`final_cut_full_subtitle_report.json`（品質監査JSON）、`final_cut_full_subtitle_report.md`（評価Markdown）、`final_cut_full_glossary.md`、`final_cut_full_words.json`。
 
 ---
 

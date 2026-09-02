@@ -27,6 +27,7 @@ Usage Examples:
 
 import argparse
 import concurrent.futures
+import difflib
 import json
 import os
 import re
@@ -109,37 +110,48 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
       1. mlx-whisper (Apple Silicon Metal / Neural Engine - Fastest on Mac)
       2. faster-whisper with ARM NEON / AVX int8 multi-core vector acceleration
       3. openai-whisper with PyTorch MPS / CUDA
-    Returns list of dicts: [{"index": 1, "start": 0.0, "end": 1.28, "text": "..."}]
+    Returns: (sub_list, detected_lang, all_words)
     """
-    print(f"\n[Stage 2/3] 🎙️ Running Whisper acoustic transcription (Model: {model_size}, Device: {device})...")
+    print(f"\n[Stage 2/3] 🎙️ Running Whisper acoustic transcription (Model: {model_size}, Device: {device}, Word Timestamps: ON)...")
     t0 = time.time()
     lang_arg = None if str(language).lower() in ("auto", "none") else language
+    if lang_arg and "-" in str(lang_arg):
+        lang_arg = str(lang_arg).split("-")[0].lower()
     sub_list = []
+    all_words = []
     detected_lang = language if lang_arg else "zh"
 
     # Backend 1: Apple Silicon Native MLX (mlx-whisper)
     if device in ("auto", "mps", "mlx"):
         try:
             import mlx_whisper
-            print(f"  ► [Backend: Apple MLX] Utilizing Apple Silicon GPU / Neural Engine acceleration...")
+            print(f"  ► [Backend: Apple MLX] Utilizing Apple Silicon GPU / Neural Engine acceleration (word_timestamps=True)...")
             repo_name = f"mlx-community/whisper-{model_size}-mlx"
             result = mlx_whisper.transcribe(
                 audio_wav,
                 path_or_hf_repo=repo_name,
                 language=lang_arg,
-                word_timestamps=False
+                word_timestamps=True
             )
             detected_lang = result.get("language") or detected_lang
             for idx, seg in enumerate(result.get("segments", []), start=1):
+                seg_words = []
+                for w in seg.get("words", []):
+                    w_dict = {"word": w.get("word", ""), "start": float(w.get("start", 0.0)), "end": float(w.get("end", 0.0))}
+                    seg_words.append(w_dict)
+                    all_words.append(w_dict)
+                s_start = seg_words[0]["start"] if seg_words else float(seg["start"])
+                s_end = seg_words[-1]["end"] if seg_words else float(seg["end"])
                 sub_list.append({
                     "index": idx,
-                    "start": float(seg["start"]),
-                    "end": float(seg["end"]),
-                    "text": seg["text"].strip()
+                    "start": s_start,
+                    "end": s_end,
+                    "text": seg["text"].strip(),
+                    "words": seg_words
                 })
             duration = time.time() - t0
-            print(f"  ✓ MLX transcription complete in {duration:.1f}s ({len(sub_list)} subtitle segments generated, language: '{detected_lang}')")
-            return sub_list, detected_lang
+            print(f"  ✓ MLX transcription complete in {duration:.1f}s ({len(sub_list)} segments, {len(all_words)} words, language: '{detected_lang}')")
+            return sub_list, detected_lang, all_words
         except ImportError:
             pass
         except Exception as e:
@@ -149,24 +161,39 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
     try:
         from faster_whisper import WhisperModel
         num_threads = min(8, os.cpu_count() or 4)
-        print(f"  ► [Backend: faster-whisper] Utilizing multi-core ARM NEON/AVX vector acceleration ({num_threads} CPU threads, int8)...")
+        print(f"  ► [Backend: faster-whisper] Utilizing multi-core ARM NEON/AVX vector acceleration ({num_threads} CPU threads, int8, word_timestamps=True)...")
         model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=num_threads)
-        segments, info = model.transcribe(audio_wav, language=lang_arg, beam_size=5, vad_filter=True)
+        segments, info = model.transcribe(
+            audio_wav,
+            language=lang_arg,
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=250),
+            word_timestamps=True
+        )
         detected_lang = getattr(info, "language", detected_lang)
 
         total_dur = getattr(info, "duration", 0)
         for idx, seg in enumerate(segments, start=1):
+            seg_words = []
+            for w in (seg.words or []):
+                w_dict = {"word": w.word, "start": float(w.start), "end": float(w.end)}
+                seg_words.append(w_dict)
+                all_words.append(w_dict)
+            s_start = seg_words[0]["start"] if seg_words else float(seg.start)
+            s_end = seg_words[-1]["end"] if seg_words else float(seg.end)
             sub_list.append({
                 "index": idx,
-                "start": seg.start,
-                "end": seg.end,
-                "text": seg.text.strip()
+                "start": s_start,
+                "end": s_end,
+                "text": seg.text.strip(),
+                "words": seg_words
             })
             if total_dur > 0:
-                pct = min(100.0, (seg.end / total_dur) * 100.0)
-                print(f"\r  ► [Whisper ASR] {format_timestamp_srt(seg.end)} / {format_timestamp_srt(total_dur)} ({pct:4.1f}%) | Segment #{idx:03d}...", end="", flush=True)
+                pct = min(100.0, (s_end / total_dur) * 100.0)
+                print(f"\r  ► [Whisper ASR] {format_timestamp_srt(s_end)} / {format_timestamp_srt(total_dur)} ({pct:4.1f}%) | Segment #{idx:03d}...", end="", flush=True)
             else:
-                print(f"\r  ► [Whisper ASR] Segment #{idx:03d} ({format_timestamp_srt(seg.start)} -> {format_timestamp_srt(seg.end)})...", end="", flush=True)
+                print(f"\r  ► [Whisper ASR] Segment #{idx:03d} ({format_timestamp_srt(s_start)} -> {format_timestamp_srt(s_end)})...", end="", flush=True)
         print()
 
     except ImportError:
@@ -181,24 +208,32 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
             else:
                 target_dev = "cpu"
 
-            print(f"  ► [Backend: openai-whisper] Running on PyTorch ({target_dev.upper()})...")
+            print(f"  ► [Backend: openai-whisper] Running on PyTorch ({target_dev.upper()}, word_timestamps=True)...")
             model = whisper.load_model(model_size, device=target_dev)
-            result = model.transcribe(audio_wav, language=lang_arg)
+            result = model.transcribe(audio_wav, language=lang_arg, word_timestamps=True)
             detected_lang = result.get("language") or detected_lang
 
             for idx, seg in enumerate(result.get("segments", []), start=1):
+                seg_words = []
+                for w in seg.get("words", []):
+                    w_dict = {"word": w.get("word", ""), "start": float(w.get("start", 0.0)), "end": float(w.get("end", 0.0))}
+                    seg_words.append(w_dict)
+                    all_words.append(w_dict)
+                s_start = seg_words[0]["start"] if seg_words else float(seg["start"])
+                s_end = seg_words[-1]["end"] if seg_words else float(seg["end"])
                 sub_list.append({
                     "index": idx,
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "text": seg["text"].strip()
+                    "start": s_start,
+                    "end": s_end,
+                    "text": seg["text"].strip(),
+                    "words": seg_words
                 })
         except ImportError:
             raise RuntimeError("No Whisper backend found! Please install via `pip install mlx-whisper` (Apple Silicon GPU) or `pip install faster-whisper`.")
 
     duration = time.time() - t0
-    print(f"  ✓ Whisper acoustic transcription complete in {duration:.1f}s ({len(sub_list)} segments, language: '{detected_lang}')")
-    return sub_list, detected_lang
+    print(f"  ✓ Whisper acoustic transcription complete in {duration:.1f}s ({len(sub_list)} segments, {len(all_words)} words, language: '{detected_lang}')")
+    return sub_list, detected_lang, all_words
 
 
 def build_srt_from_segments(segments):
@@ -501,6 +536,133 @@ def split_long_clause(text, max_w=15.0, norm_lang="zh-TW"):
     return [clean_subtitle_text(text, language=norm_lang)]
 
 
+def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
+    """
+    Broadcast-Grade Physical Acoustic Timestamp Re-projection Engine:
+    Realigns LLM-proofread and re-segmented subtitle lines to the exact physical
+    sound boundaries recorded in Whisper's word-level timestamps.
+    Completely eliminates LLM hallucinated delays, cascading desync, and swallowed silences.
+    """
+    if not all_words:
+        return proofread_srt
+
+    # 1. Build a continuous character timeline from Whisper word timestamps (excluding punctuation)
+    char_timeline = []
+    for w in all_words:
+        w_raw = w.get("word", "")
+        w_text = re.sub(r"[\s\.,\?!，。？！、：:;；—\-~]+", "", w_raw)
+        if not w_text:
+            continue
+        w_start = float(w.get("start", 0.0))
+        w_end = float(w.get("end", w_start + 0.1))
+        w_dur = max(0.01, w_end - w_start)
+        char_dur = w_dur / max(1, len(w_text))
+        for idx, ch in enumerate(w_text):
+            ch_s = w_start + idx * char_dur
+            ch_e = ch_s + char_dur
+            char_timeline.append({
+                "char": ch,
+                "start": ch_s,
+                "end": ch_e
+            })
+
+    if not char_timeline:
+        return proofread_srt
+
+    whisper_chars = "".join(c["char"] for c in char_timeline)
+    whisper_chars_lower = whisper_chars.lower()
+    total_chars = len(char_timeline)
+
+    # 2. Parse proofread SRT blocks
+    blocks = [b.strip() for b in proofread_srt.strip().split("\n\n") if b.strip()]
+    items = []
+    for b in blocks:
+        lines = b.splitlines()
+        if len(lines) >= 3 and "-->" in lines[1]:
+            t1, t2 = lines[1].split("-->")
+            txt = "\n".join(lines[2:]).strip()
+            items.append({
+                "fallback_start": parse_timestamp_str(t1.strip()),
+                "fallback_end": parse_timestamp_str(t2.strip()),
+                "text": txt
+            })
+        elif len(lines) == 2 and "-->" in lines[0]:
+            t1, t2 = lines[0].split("-->")
+            txt = lines[1].strip()
+            items.append({
+                "fallback_start": parse_timestamp_str(t1.strip()),
+                "fallback_end": parse_timestamp_str(t2.strip()),
+                "text": txt
+            })
+
+    if not items:
+        return proofread_srt
+
+    # 3. Monotonic Forward Alignment via SequenceMatcher
+    cur_char_idx = 0
+    realigned_items = []
+
+    for item in items:
+        raw_text = item["text"]
+        clean_t = re.sub(r"[\s\.,\?!，。？！、：:;；—\-~]+", "", raw_text).lower()
+        if not clean_t:
+            continue
+
+        search_start = cur_char_idx
+        search_len = min(total_chars - search_start, max(len(clean_t) * 3, 200))
+        search_window = whisper_chars_lower[search_start : search_start + search_len]
+
+        sm = difflib.SequenceMatcher(None, search_window, clean_t)
+        match_blocks = sm.get_matching_blocks()
+        valid_blocks = [b for b in match_blocks if b.size > 0]
+
+        tot_matched = sum(b.size for b in valid_blocks)
+        min_req = max(2, int(len(clean_t) * 0.3)) if len(clean_t) <= 4 else max(3, int(len(clean_t) * 0.35))
+
+        if valid_blocks and tot_matched >= min_req:
+            first_b = valid_blocks[0]
+            last_b = valid_blocks[-1]
+
+            # Account for leading typo/rephrasing offset
+            lead_offset = first_b.b
+            match_start_idx = max(0, search_start + first_b.a - lead_offset)
+
+            # Account for trailing typo/rephrasing offset
+            tail_offset = len(clean_t) - (last_b.b + last_b.size)
+            match_end_idx = min(total_chars - 1, search_start + last_b.a + last_b.size - 1 + tail_offset)
+
+            t_start = char_timeline[match_start_idx]["start"]
+            t_end = char_timeline[match_end_idx]["end"]
+
+            cur_char_idx = match_end_idx + 1
+        else:
+            # Fallback: estimate from current character pointer or original LLM timing
+            if cur_char_idx < total_chars:
+                match_start_idx = cur_char_idx
+                match_end_idx = min(total_chars - 1, cur_char_idx + len(clean_t))
+                t_start = char_timeline[match_start_idx]["start"]
+                t_end = char_timeline[match_end_idx]["end"]
+                cur_char_idx = min(total_chars, match_end_idx + 1)
+            else:
+                t_start = item.get("fallback_start", 0.0)
+                t_end = item.get("fallback_end", t_start + 2.0)
+
+        realigned_items.append({
+            "start": t_start,
+            "end": t_end,
+            "text": raw_text
+        })
+
+    # 4. Format to standard SRT string
+    out_blocks = []
+    for idx, it in enumerate(realigned_items, start=1):
+        s_str = format_timestamp_srt(it["start"])
+        e_str = format_timestamp_srt(it["end"])
+        out_blocks.append(f"{idx}\n{s_str} --> {e_str}\n{it['text']}\n")
+
+    return "\n\n".join(out_blocks).strip() + "\n"
+
+
 def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2, language="zh-TW"):
     """
     Automated Professional Rhythm & Pacing Sanitizer for Subtitles:
@@ -585,10 +747,12 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     for i in range(1, len(items)):
         prev = items[i-1]
         cur = items[i]
-        if cur["start"] < prev["start"]:
-            cur["start"] = max(prev["start"] + 0.5, cur["start"])
+        if cur["start"] <= prev["start"]:
+            cur["start"] = prev["start"] + 0.5
         if prev["end"] > cur["start"]:
-            prev["end"] = cur["start"]
+            prev["end"] = max(prev["start"] + 0.5, cur["start"])
+        if cur["end"] <= cur["start"]:
+            cur["end"] = cur["start"] + 1.0
 
     # Pass 3: Post-tail Reading Buffer & Min-duration & Gap management
     for i in range(len(items)):
@@ -598,14 +762,16 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
         dur = cur["end"] - cur["start"]
         raw_gap = nxt_start - cur["end"]
 
-        # If gap is tiny (< 0.2s), bridge it to prevent visual flicker
-        if 0 < raw_gap < min_gap_threshold:
-            cur["end"] = nxt_start
-        elif raw_gap >= min_gap_threshold:
-            # We have natural breathing room -> extend tail buffer (+0.4s)
-            extra_tail = min(post_tail_buffer, raw_gap - 0.05)
-            if extra_tail > 0:
-                cur["end"] = min(cur["end"] + extra_tail, nxt_start)
+        # Gap management and reading breathing buffer:
+        # If speech gap is shorter than (post_tail_buffer + min_gap_threshold) [e.g. < 0.6s],
+        # bridging directly to nxt_start eliminates high-frequency 1-2 frame visual flicker.
+        # If there is a genuine pause (>= 0.6s), extend by post_tail_buffer (+0.4s),
+        # leaving >= 0.2s of clean video silence for natural audience breathing.
+        if raw_gap < (post_tail_buffer + min_gap_threshold):
+            if raw_gap > 0:
+                cur["end"] = nxt_start
+        else:
+            cur["end"] = cur["end"] + post_tail_buffer
 
         # Enforce Min Duration (>= 1.0s) if room permits
         dur = cur["end"] - cur["start"]
@@ -631,7 +797,7 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     return "\n\n".join(out_blocks).strip() + "\n"
 
 
-def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5, language="zh-TW"):
+def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5, language="zh-TW", all_words=None):
     """
     Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary.
     Slices local audio chunks and proofreads subtitles against actual audio acoustics,
@@ -673,11 +839,40 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
             pct = (completed_count / num_chunks) * 100
             print(f"\r  ► Progress: {completed_count}/{num_chunks} chunks completed ({pct:.0f}%)... {status_tag}", end="", flush=True)
 
-    print()
-    # Assemble chunks and apply professional rhythm & pacing sanitizer
-    sorted_blocks = [results[i] for i in range(num_chunks)]
-    raw_combined = "\n\n".join(sorted_blocks).strip()
+    # Realign each chunk locally within its own acoustic window to prevent any cross-chunk drift
+    if all_words:
+        print("  ► [Acoustic Re-projection] Snapping subtitle boundaries to Whisper word-level ground truth (chunk-scoped)...")
+
+    realigned_chunks = []
+    for c_idx in range(num_chunks):
+        c_text = results.get(c_idx, "")
+        if not c_text:
+            continue
+        c_slice = chunk_slices[c_idx]
+
+        # Extract timestamps for this chunk slice
+        try:
+            t_first = parse_timestamp_str(c_slice[0].splitlines()[1].split("-->")[0])
+            t_last = parse_timestamp_str(c_slice[-1].splitlines()[1].split("-->")[1])
+        except Exception:
+            t_first, t_last = 0.0, 999999.0
+
+        if all_words:
+            # Select words within this chunk's time window (+/- 2.0s margin)
+            chunk_words = [
+                w for w in all_words
+                if (float(w.get("end", 0.0)) >= t_first - 2.0 and float(w.get("start", 0.0)) <= t_last + 2.0)
+            ]
+            realigned_chunk = realign_subtitles_to_words(c_text, chunk_words, language=language)
+        else:
+            realigned_chunk = c_text
+        realigned_chunks.append(realigned_chunk)
+
+    raw_combined = "\n\n".join(realigned_chunks).strip()
+    # Step B: Professional rhythm & pacing sanitizer (flicker bridging, +0.4s breathing buffer)
     sanitized_srt = sanitize_subtitle_timings(raw_combined, language=language)
+    return sanitized_srt
+
 
 def audit_subtitles_quality(srt_content, language="zh-TW"):
     """
@@ -941,21 +1136,44 @@ def main():
                 print(f"  • Saved Global Glossary: {glossary_path}")
 
         # Stage 2: Whisper Acoustic Transcription (Zero-Drift Physical Timestamps)
-        segments, detected_lang = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
-        raw_srt = build_srt_from_segments(segments)
+        raw_words_path = os.path.join(out_dir, f"{input_basename}_words.json")
+        if os.path.exists(raw_srt_path) and os.path.exists(raw_words_path):
+            print(f"\n[Stage 2/3] 🎙️ Found cached Whisper acoustic baseline:")
+            print(f"  • SRT: {raw_srt_path}")
+            print(f"  • Words JSON: {raw_words_path}")
+            try:
+                with open(raw_words_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                segments = cached.get("segments", [])
+                all_words = cached.get("words", [])
+                detected_lang = cached.get("language", "zh")
+                with open(raw_srt_path, "r", encoding="utf-8") as f:
+                    raw_srt = f.read()
+                print(f"  ✓ Successfully loaded {len(segments)} segments and {len(all_words)} word timestamps from cache.")
+            except Exception as e:
+                print(f"  [Notice] Failed to load cache ({e}), re-running Whisper transcription...")
+                segments, detected_lang, all_words = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
+                raw_srt = build_srt_from_segments(segments)
+                with open(raw_srt_path, "w", encoding="utf-8") as f:
+                    f.write(raw_srt)
+                with open(raw_words_path, "w", encoding="utf-8") as f:
+                    json.dump({"language": detected_lang, "segments": segments, "words": all_words}, f, ensure_ascii=False)
+        else:
+            segments, detected_lang, all_words = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
+            raw_srt = build_srt_from_segments(segments)
+            with open(raw_srt_path, "w", encoding="utf-8") as f:
+                f.write(raw_srt)
+            with open(raw_words_path, "w", encoding="utf-8") as f:
+                json.dump({"language": detected_lang, "segments": segments, "words": all_words}, f, ensure_ascii=False)
+            print(f"  • Saved raw acoustic baseline: {raw_srt_path}")
 
         effective_lang = detected_lang if str(args.language).lower() in ("auto", "none") else args.language
         print(f"  • Effective Language Locale: {normalize_language_tag(effective_lang)} (Input: '{args.language}', Detected: '{detected_lang}')")
 
-        # Save raw whisper backup for reference/debugging
-        with open(raw_srt_path, "w", encoding="utf-8") as f:
-            f.write(raw_srt)
-        print(f"  • Saved raw acoustic baseline: {raw_srt_path}")
-
         if not resolved_key and not args.base_url:
             print(f"\n[Stage 3/3] ℹ️  No LLM API Key (GEMINI_API_KEY / OPENAI_API_KEY) found.")
             print(f"            Saving raw Whisper acoustic transcription directly as final SRT/VTT.")
-            final_srt = raw_srt
+            final_srt = sanitize_subtitle_timings(raw_srt, language=effective_lang)
         else:
             # Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading
             final_srt = proofread_srt_with_llm(
@@ -967,7 +1185,8 @@ def main():
                 model=args.model,
                 chunk_size=args.chunk_size,
                 max_workers=args.workers,
-                language=effective_lang
+                language=effective_lang,
+                all_words=all_words
             )
 
         # Write Final SRT

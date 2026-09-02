@@ -205,11 +205,16 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 #### Three-Stage Execution Flow:
 1. **Stage 1 (Global Audio Glossary Extraction)**:
    - Gemini 3.7 Flash (1M Context) scans the full-length episode audio (optionally incorporating user `--outline`) to build an authoritative domain glossary (`final_cut_full_glossary.md`).
-2. **Stage 2 (Whisper Physical Acoustic Baseline)**:
-   - Local `mlx-whisper` or `faster-whisper` calculates sliding-window acoustic energy boundaries to produce zero-drift baseline subtitles (`final_cut_full_raw_whisper.srt`).
+2. **Stage 2 (Whisper Physical Acoustic Baseline & Word Timestamps)**:
+   - Local `mlx-whisper` or `faster-whisper` (ARM NEON / AVX int8 vectorization) extracts millisecond-accurate physical onset and offset boundaries for every sentence and word (`word_timestamps=True`), saving both raw subtitles and word cache (`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`) for instant re-runs without 7-minute transcription delays.
+3. **Stage 3 (Chunk-Scoped Acoustic Ground Truth Anchoring & Multimodal Proofreading)**:
+   - **Decoupled Text & Acoustic Timestamps**: Gemini focuses purely on oral syntax re-segmentation, punctuation purification, and homophone error correction.
+   - **Chunk-Scoped Acoustic Reprojection**: SequenceMatcher monotonic forward alignment re-projects proofread clauses back onto physical Whisper word timestamps, eliminating LLM timestamp hallucination and cascading desync.
+   - **Anti-Flicker Bridging & Natural Breathing Buffer**: Speech micro-gaps ($< 0.6\text{s}$) seamlessly bridge to 0s gap to prevent 1-2 frame black flashes, while genuine conversational pauses ($\ge 0.6\text{s}$) preserve $+0.4\text{s}$ reading buffer before cleanly clearing the screen.
+
 #### 🎯 Streaming Standard Subtitle Quality & Pacing Audit Logic
 
-`generate_subtitles.py` integrates a comprehensive Netflix / YouTube quality audit engine verifying 6 critical dimensions:
+`generate_subtitles.py` integrates a comprehensive Netflix / YouTube quality audit engine verifying 7 critical dimensions:
 
 | Dimension | Standard Specification | Engineering & Optimization Logic |
 | :--- | :--- | :--- |
@@ -218,7 +223,8 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 | **Punctuation Normalization** | 100% clean line-endings | Strips trailing `。`, `，`, `；`. In-line Chinese commas convert to natural single spaces; spacing around alphanumeric tokens is normalized. |
 | **Zero-Lead Acoustic Alignment** | 0.000s acoustic lock | Timestamps strictly align with physical speech onset (Whisper waveform), eliminating subtitle spoiler artifacts. |
 | **Reading Duration Protection** | $1.0\text{s} \le \text{Duration} \le 6.0\text{s}$ | Short clauses expand into trailing silences ($\ge 1.0\text{s}$ for cognitive absorption); maximum duration capped $\le 6.0\text{s}$. |
-| **Anti-Flicker Gap Bridging** | Eliminates micro-gaps $< 0.2\text{s}$ | Bridges high-frequency gaps between consecutive speech to 0s; preserves $+0.4\text{s}$ breathing buffers during real pauses. |
+| **Anti-Flicker Gap Bridging** | Eliminates micro-gaps $< 0.6\text{s}$ | Bridges high-frequency gaps between consecutive speech to 0s; preserves $+0.4\text{s}$ breathing buffers during real pauses. |
+| **Monotonic Forward Continuity** | 0 overlaps / 0 negative duration | Enforces strict monotonic forward progression, completely preventing subtitle time backtracking or zero/negative durations. |
 
 4. **Outputs**:
    - **`final_cut_full.srt`**: Standard YouTube SubRip subtitles.
@@ -227,6 +233,7 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
    - **`final_cut_full_subtitle_report.md`**: Human-readable visual quality audit card (Markdown).
    - **`final_cut_full_glossary.md`**: Episode Global Terminology Glossary.
    - **`final_cut_full_raw_whisper.srt`**: Raw Whisper baseline subtitles for reference.
+   - **`final_cut_full_words.json`**: Millisecond-accurate word-level physical timestamps cache.
 
 ---
 

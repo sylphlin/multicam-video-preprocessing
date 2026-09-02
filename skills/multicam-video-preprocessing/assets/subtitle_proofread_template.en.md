@@ -26,10 +26,10 @@ Your mission is to take fragmented raw ASR subtitle chunks and re-segment them i
    - **No Trailing Periods**: Do NOT put periods (`.`) at the end of lines unless needed for abbreviations. The subtitle change itself indicates the end of a thought.
    - **Preserve Expressive Punctuation**: Keep question marks (`?`) and exclamation marks (`!`) where dialogue requires tone clarification.
 
-5. ⏱️ **Acoustic Timestamp Fusion**:
-   - The `Start` timestamp of each reformed line must equal the raw start time of its first word (never lead before voice onset).
-   - The `End` timestamp of each reformed line must equal the raw end time of its last word.
-   - Renumber all lines monotonically (`1`, `2`, `3`...). Ensure acoustic millisecond alignment with zero cumulative drift.
+5. ⏱️ **Timing & Semantic Boundary**:
+   - Maintain sequential timestamp format and continuity. When naturally breaking long clauses into two lines, maintain or reasonably allocate the current timestamp interval.
+   - The backend acoustic engine will automatically re-project and snap physical boundaries onto the word-level acoustic ground truth.
+   - Renumber all lines monotonically (`1`, `2`, `3`...) to ensure valid standard SRT format.
 
 6. 🔍 **Terminology & Typo Correction**:
    - Fix ASR speech recognition mishearings and typos based on audio acoustics and the Global Glossary.
