@@ -1074,6 +1074,8 @@ def main():
     parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable)")
     parser.add_argument("--chunk-size", type=int, default=80, help="Subtitle entries per proofread batch (default: 80, ~2-3 mins)")
     parser.add_argument("--workers", type=int, default=5, help="Concurrent workers for parallel proofreading (default: 5)")
+    parser.add_argument("--force", action="store_true", help="Force re-running Whisper transcription and Gemini proofreading (bypasses acoustic baseline cache)")
+    parser.add_argument("--force-glossary", action="store_true", help="Force re-extracting global glossary from scratch")
 
     args = parser.parse_args()
 
@@ -1123,21 +1125,32 @@ def main():
         # Stage 1: Global Audio Context & Consistency Glossary Extraction (Full 1M Context Scan)
         global_glossary = None
         if resolved_key or args.base_url:
-            global_glossary = extract_global_glossary(
-                audio_wav=tmp_wav,
-                user_outline=user_outline_text,
-                api_key=args.api_key,
-                base_url=args.base_url,
-                model=args.model
-            )
-            if global_glossary:
-                with open(glossary_path, "w", encoding="utf-8") as f:
-                    f.write(global_glossary + "\n")
-                print(f"  • Saved Global Glossary: {glossary_path}")
+            if os.path.exists(glossary_path) and not args.force_glossary:
+                print(f"\n[Stage 1/3] 📚 Found cached Global Glossary: {glossary_path}")
+                try:
+                    with open(glossary_path, "r", encoding="utf-8") as f:
+                        global_glossary = f.read().strip()
+                    print(f"  ✓ Successfully loaded global glossary from cache ({len(global_glossary)} chars).")
+                except Exception as e:
+                    print(f"  [Notice] Failed to read cached glossary ({e}), re-extracting...")
+                    global_glossary = None
+
+            if not global_glossary:
+                global_glossary = extract_global_glossary(
+                    audio_wav=tmp_wav,
+                    user_outline=user_outline_text,
+                    api_key=args.api_key,
+                    base_url=args.base_url,
+                    model=args.model
+                )
+                if global_glossary:
+                    with open(glossary_path, "w", encoding="utf-8") as f:
+                        f.write(global_glossary + "\n")
+                    print(f"  • Saved Global Glossary: {glossary_path}")
 
         # Stage 2: Whisper Acoustic Transcription (Zero-Drift Physical Timestamps)
         raw_words_path = os.path.join(out_dir, f"{input_basename}_words.json")
-        if os.path.exists(raw_srt_path) and os.path.exists(raw_words_path):
+        if os.path.exists(raw_srt_path) and os.path.exists(raw_words_path) and not args.force:
             print(f"\n[Stage 2/3] 🎙️ Found cached Whisper acoustic baseline:")
             print(f"  • SRT: {raw_srt_path}")
             print(f"  • Words JSON: {raw_words_path}")
