@@ -663,9 +663,8 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
 
         # Broadcast lead-in (Netflix/EBU-TT standard: lead speech onset by 100ms / ~3 frames)
         if idx == 0 and is_video_start:
-            if t_start <= 1.2:
-                # Video opening greeting rule: display immediately on play if host speaks in opening 1.2s
-                t_start = 0.100
+            # Video opening: lead acoustic speech onset by 100ms (cleanly clamped to 0.0s)
+            t_start = max(0.0, t_start - 0.100)
         elif len(realigned_items) > 0:
             prev_end = realigned_items[-1]["end"]
             # When speech resumes after a pause (>= 150ms), pre-roll subtitle by 100ms for visual comfort
