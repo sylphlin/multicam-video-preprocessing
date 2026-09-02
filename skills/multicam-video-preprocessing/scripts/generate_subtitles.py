@@ -661,15 +661,28 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
             while cur_char_idx < total_chars and char_timeline[cur_char_idx]["end"] <= t_end:
                 cur_char_idx += 1
 
-        # Broadcast lead-in (Netflix/EBU-TT standard: lead speech onset by 100ms / ~3 frames)
+        # Broadcast lead-in & continuous pre-roll (Netflix/EBU-TT standard: 180ms / ~5-6 frames)
+        lead_sec = 0.180
+        target_start = max(0.0, t_start - lead_sec)
+
         if idx == 0 and is_video_start:
-            # Video opening: lead acoustic speech onset by 100ms (cleanly clamped to 0.0s)
-            t_start = max(0.0, t_start - 0.100)
+            t_start = target_start
         elif len(realigned_items) > 0:
-            prev_end = realigned_items[-1]["end"]
-            # When speech resumes after a pause (>= 150ms), pre-roll subtitle by 100ms for visual comfort
-            if t_start - prev_end >= 0.150:
-                t_start = max(prev_end + 0.02, t_start - 0.100)
+            prev = realigned_items[-1]
+            prev_dur = prev["end"] - prev["start"]
+            if target_start >= prev["end"] + 0.02:
+                # Discontinuous speech (after a pause): lead speech onset by lead_sec
+                t_start = target_start
+            else:
+                # Continuous speech: borrow pre-roll from previous line if it has sufficient screen time (>= 1.0s)
+                prev_room = max(0.0, prev_dur - 1.0)
+                needed_shift = (prev["end"] + 0.02) - target_start
+                shift = min(prev_room, needed_shift)
+                if shift >= 0.04:
+                    prev["end"] -= shift
+                    t_start = prev["end"]
+                else:
+                    t_start = max(prev["end"], target_start)
 
         realigned_items.append({
             "start": t_start,
