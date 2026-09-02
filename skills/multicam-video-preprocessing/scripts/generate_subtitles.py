@@ -598,7 +598,7 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
     if not items:
         return proofread_srt
 
-    # 3. Monotonic Forward Alignment via SequenceMatcher
+    # 3. Monotonic Forward Alignment via Dense Local Substring Matching
     cur_char_idx = 0
     realigned_items = []
 
@@ -608,44 +608,35 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
         if not clean_t:
             continue
 
+        L = len(clean_t)
+        best_match = None
+        best_score = -1.0
+
+        # Look in a reasonable forward window from cur_char_idx
         search_start = cur_char_idx
-        search_len = min(total_chars - search_start, max(len(clean_t) * 3, 200))
-        search_window = whisper_chars_lower[search_start : search_start + search_len]
+        search_extent = min(total_chars, search_start + max(L * 2 + 15, 80))
 
-        sm = difflib.SequenceMatcher(None, search_window, clean_t)
-        match_blocks = sm.get_matching_blocks()
-        valid_blocks = [b for b in match_blocks if b.size > 0]
+        for s_pos in range(search_start, search_extent):
+            # Restrict candidate span length to be close to clean_t length (+/- minor contractions/fillers)
+            for cand_len in range(max(1, L - 4), min(total_chars - s_pos + 1, L + 7)):
+                cand_str = whisper_chars_lower[s_pos : s_pos + cand_len]
+                ratio = difflib.SequenceMatcher(None, cand_str, clean_t).ratio()
+                if ratio > best_score:
+                    best_score = ratio
+                    best_match = (s_pos, s_pos + cand_len - 1)
 
-        tot_matched = sum(b.size for b in valid_blocks)
-        min_req = max(2, int(len(clean_t) * 0.3)) if len(clean_t) <= 4 else max(3, int(len(clean_t) * 0.35))
-
-        if valid_blocks and tot_matched >= min_req:
-            first_b = valid_blocks[0]
-            last_b = valid_blocks[-1]
-
-            # Account for leading typo/rephrasing offset
-            lead_offset = first_b.b
-            match_start_idx = max(0, search_start + first_b.a - lead_offset)
-
-            # Account for trailing typo/rephrasing offset
-            tail_offset = len(clean_t) - (last_b.b + last_b.size)
-            match_end_idx = min(total_chars - 1, search_start + last_b.a + last_b.size - 1 + tail_offset)
-
-            t_start = char_timeline[match_start_idx]["start"]
-            t_end = char_timeline[match_end_idx]["end"]
-
-            cur_char_idx = match_end_idx + 1
+        min_ratio = 0.50 if L >= 4 else 0.65
+        if best_match and best_score >= min_ratio:
+            m_start, m_end = best_match
+            t_start = char_timeline[m_start]["start"]
+            t_end = char_timeline[m_end]["end"]
+            cur_char_idx = m_end + 1
         else:
-            # Fallback: estimate from current character pointer or original LLM timing
-            if cur_char_idx < total_chars:
-                match_start_idx = cur_char_idx
-                match_end_idx = min(total_chars - 1, cur_char_idx + len(clean_t))
-                t_start = char_timeline[match_start_idx]["start"]
-                t_end = char_timeline[match_end_idx]["end"]
-                cur_char_idx = min(total_chars, match_end_idx + 1)
-            else:
-                t_start = item.get("fallback_start", 0.0)
-                t_end = item.get("fallback_end", t_start + 2.0)
+            # Fallback: keep LLM's own timestamps for this line
+            t_start = item.get("fallback_start", 0.0)
+            t_end = item.get("fallback_end", t_start + 2.0)
+            while cur_char_idx < total_chars and char_timeline[cur_char_idx]["end"] <= t_end:
+                cur_char_idx += 1
 
         realigned_items.append({
             "start": t_start,
