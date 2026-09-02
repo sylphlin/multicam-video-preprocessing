@@ -536,7 +536,30 @@ def split_long_clause(text, max_w=15.0, norm_lang="zh-TW"):
     return [clean_subtitle_text(text, language=norm_lang)]
 
 
-def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
+def score_candidate(cand_str, clean_t):
+    """
+    Composite acoustic match score:
+    Balances coverage of clean_t and candidate character density while rewarding
+    exact speech onset (first character) and sentence termination (last character).
+    Crucially prevents skipping sentence onsets due to stutters or repetitions.
+    """
+    matcher = difflib.SequenceMatcher(None, cand_str, clean_t)
+    matched_chars = sum(b.size for b in matcher.get_matching_blocks())
+    if matched_chars == 0:
+        return 0.0
+    coverage = matched_chars / len(clean_t)
+    density = matched_chars / len(cand_str)
+    # Heavy bonus for first character match to guarantee precise speech onset
+    first_bonus = 0.15 if cand_str[0] == clean_t[0] else (
+        0.08 if len(cand_str) > 1 and len(clean_t) > 1 and cand_str[1] == clean_t[1] else 0.0
+    )
+    last_bonus = 0.10 if cand_str[-1] == clean_t[-1] else (
+        0.05 if len(cand_str) > 1 and len(clean_t) > 1 and cand_str[-2] == clean_t[-2] else 0.0
+    )
+    return 0.50 * coverage + 0.25 * density + first_bonus + last_bonus
+
+
+def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_video_start=False):
     """
     Broadcast-Grade Physical Acoustic Timestamp Re-projection Engine:
     Realigns LLM-proofread and re-segmented subtitle lines to the exact physical
@@ -602,7 +625,7 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
     cur_char_idx = 0
     realigned_items = []
 
-    for item in items:
+    for idx, item in enumerate(items):
         raw_text = item["text"]
         clean_t = re.sub(r"[\s\.,\?!，。？！、：:;；—\-~]+", "", raw_text).lower()
         if not clean_t:
@@ -614,15 +637,15 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
 
         # Look in a reasonable forward window from cur_char_idx
         search_start = cur_char_idx
-        search_extent = min(total_chars, search_start + max(L * 2 + 15, 80))
+        search_extent = min(total_chars, search_start + max(L * 2 + 25, 80))
 
         for s_pos in range(search_start, search_extent):
-            # Restrict candidate span length to be close to clean_t length (+/- minor contractions/fillers)
-            for cand_len in range(max(1, L - 4), min(total_chars - s_pos + 1, L + 7)):
+            # Restrict candidate span length to accommodate stutters and repetitions (+10)
+            for cand_len in range(max(1, L - 4), min(total_chars - s_pos + 1, L + 10)):
                 cand_str = whisper_chars_lower[s_pos : s_pos + cand_len]
-                ratio = difflib.SequenceMatcher(None, cand_str, clean_t).ratio()
-                if ratio > best_score:
-                    best_score = ratio
+                sc = score_candidate(cand_str, clean_t)
+                if sc > best_score + 1e-4:
+                    best_score = sc
                     best_match = (s_pos, s_pos + cand_len - 1)
 
         min_ratio = 0.50 if L >= 4 else 0.65
@@ -637,6 +660,17 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW"):
             t_end = item.get("fallback_end", t_start + 2.0)
             while cur_char_idx < total_chars and char_timeline[cur_char_idx]["end"] <= t_end:
                 cur_char_idx += 1
+
+        # Broadcast lead-in (Netflix/EBU-TT standard: lead speech onset by 100ms / ~3 frames)
+        if idx == 0 and is_video_start:
+            if t_start <= 1.2:
+                # Video opening greeting rule: display immediately on play if host speaks in opening 1.2s
+                t_start = 0.100
+        elif len(realigned_items) > 0:
+            prev_end = realigned_items[-1]["end"]
+            # When speech resumes after a pause (>= 150ms), pre-roll subtitle by 100ms for visual comfort
+            if t_start - prev_end >= 0.150:
+                t_start = max(prev_end + 0.02, t_start - 0.100)
 
         realigned_items.append({
             "start": t_start,
@@ -741,7 +775,13 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
         if cur["start"] <= prev["start"]:
             cur["start"] = prev["start"] + 0.5
         if prev["end"] > cur["start"]:
-            prev["end"] = max(prev["start"] + 0.5, cur["start"])
+            # If cur starts after prev had reasonable time (>= 0.6s), trim prev["end"] to cur["start"]
+            if cur["start"] >= prev["start"] + 0.6:
+                prev["end"] = cur["start"]
+            else:
+                prev["end"] = max(prev["start"] + 0.5, cur["start"])
+                if cur["start"] < prev["end"]:
+                    cur["start"] = prev["end"]
         if cur["end"] <= cur["start"]:
             cur["end"] = cur["start"] + 1.0
 
@@ -854,7 +894,7 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
                 w for w in all_words
                 if (float(w.get("end", 0.0)) >= t_first - 2.0 and float(w.get("start", 0.0)) <= t_last + 2.0)
             ]
-            realigned_chunk = realign_subtitles_to_words(c_text, chunk_words, language=language)
+            realigned_chunk = realign_subtitles_to_words(c_text, chunk_words, language=language, is_video_start=(c_idx == 0))
         else:
             realigned_chunk = c_text
         realigned_chunks.append(realigned_chunk)
