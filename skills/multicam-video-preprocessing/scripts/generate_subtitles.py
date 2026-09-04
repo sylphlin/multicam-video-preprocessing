@@ -18,7 +18,7 @@ Usage Examples:
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
   # With User Interview Outline / Glossary
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: 國威, Guest: Kelly Tsai, Topics: 矽谷, 估值狂飆"
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Alex, Guest: Chris, Topics: AI, Tech Trends"
 
   # OpenAI / Codex Cloud Endpoint (GPT-5.6 Luna)
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
@@ -613,7 +613,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
             f"\n=== 錄音講稿/逐字稿原稿 (Source Script Reference) ===\n"
             f"{user_script[:6000]}\n"
             f"============================================================\n"
-            f"【校對核心準則】：以講者實際口白發音為準（保留現場真實口語內容與自然句法），但凡遇到專有名詞、人物名稱、特殊日文漢字或同音字疑義時，嚴格參照【錄音講稿/逐字稿原稿】之標準文字修正。\n"
+            f"【校對核心準則】：以講者實際口白發音為準（保留現場真實口語內容與自然句法），但凡遇到專有名詞、人物名稱、外來語或同音字疑義時，嚴格參照【錄音講稿/逐字稿原稿】之標準文字修正。\n"
         )
 
     # Calculate audio slice start and end time

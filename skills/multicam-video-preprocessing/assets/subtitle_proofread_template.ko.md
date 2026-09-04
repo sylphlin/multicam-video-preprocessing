@@ -33,7 +33,8 @@
    - 순차적으로 번호(`1`, `2`, `3`...)를 다시 부여하여 SRT 표준 규격을 준수합니다.
 
 6. 🔍 **오탈자 교정 및 고유명사 표준화**:
-   - 문맥과 전체 용어집에 기반하여 음성 인식 오류를 수정하고 IT 전문 용어, 브랜드명을 표준화합니다 (예: `DaVinci Resolve`, `Premiere Pro`, `Anthropic`, `Claude`, `OpenAI`, `Windsurf`, `Cursor`, `LeetCode`, `API`, `Python`, `996`).
+   - 문맥과 전체 용어집(Global Consistency Glossary)에 기반하여 음성 인식 오류 및 동음이의어 오탈자를 자동으로 수정합니다.
+   - 고유명사, 브랜드명, 제품명, 영문 약어 및 전문 용어는 공식 표기법 및 대소문자 규격에 맞춰 통일합니다 (예: `YouTube`, `AI`, `Python`, `API`, `DaVinci Resolve` 등 전체 용어집에서 정의된 표준 표기에 준거).
 
 7. 📤 **출력 형식**:
    - 교정 및 재구성된 표준 SRT 형식만을 ```srt ... ``` 코드 블록 안에 출력합니다.

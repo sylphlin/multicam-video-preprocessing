@@ -198,7 +198,7 @@ flowchart TD
 | 比較項目 | 純 Whisper 轉錄 | 純 Gemini 直出轉錄 | 終極三階段字幕生產線 ⭐ |
 | :--- | :--- | :--- | :--- |
 | **時間軸精準度** | 物理聲學量測，毫秒級精準 | ⚠️ **文字預測易累積漂移（播至30秒漂移 > 5秒）** | **物理聲學毫秒級精確對齊（全片 0.000 秒零漂移）** |
-| **專有名詞與中英夾雜** | 容易出現同音錯字（如細部、公職房標、Kelly蔡） | 語意與專有名詞精準 | **全篇名詞庫加持，中英專有名詞 100% 精準（如 `Kelly Tsai`、`思想實驗室`、`矽谷`）** |
+| **專有名詞與中英夾雜** | 容易出現同音錯字或英文大小寫混亂 | 語意與專有名詞精準 | **全篇名詞庫加持，中英專有名詞、品牌名與行業術語 100% 精準統一** |
 | **字幕閱讀節奏** | 符合短句節奏（每句約 1.2–2.5 秒） | 切句粒度不均勻 | **最適合 YouTube 的快節奏短句（每句約 8–16 字、1.5–3 秒）** |
 | **逐字忠實度與防腦補** | 忠實記錄說話內容 | 容易過度潤飾或擅自摘要 | **聽局部真實音訊進行聲學確認，還原真實說話（零幻覺、零過度腦補）** |
 
@@ -239,7 +239,7 @@ flowchart TD
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
 # 提供訪綱或重點筆記偏置專有名詞（可選）：
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "講者: 工頭堅, 主題: 鐵道漢字、改札、切符"
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "講者: 來賓名稱, 主題: 核心議題、專有名詞列表"
 
 # 提供錄音原稿或完整講稿作為專有名詞與詞彙標準（可選）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt

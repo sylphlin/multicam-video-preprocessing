@@ -198,7 +198,7 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 | Feature | Pure Whisper | Pure Gemini Direct Transcribe | Three-Stage Golden Pipeline ⭐ |
 | :--- | :--- | :--- | :--- |
 | **Timestamp Accuracy** | Physical acoustic measurement | ⚠️ **Text prediction suffers severe drift (>5s error by 30s)** | **Physical acoustic millisecond alignment (0.000s zero drift)** |
-| **Proper Nouns & Loanwords** | Prone to homophone typos (e.g. `Kelly蔡`) | High semantic accuracy | **100% accurate proper nouns & English names (e.g. `Kelly Tsai`, `Thought Lab`)** |
+| **Proper Nouns & Acronyms** | Prone to homophone typos and capitalization issues | High semantic accuracy | **100% accurate proper nouns, brand names, and terminology** |
 | **Subtitle Pacing** | Natural short phrases (1.2–2.5s) | Inconsistent sentence lengths | **Optimized for fast-paced YouTube reading (8–16 chars, 1.5–3.0s)** |
 | **Verbatim Fidelity** | High verbatim accuracy | May hallucinate/paraphrase | **Acoustically verified against raw audio slice (zero hallucinations)** |
 
@@ -239,7 +239,7 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
 # Bias proper nouns with interview outline or topic notes (optional):
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Ken, Topic: Japanese Railway Kanji, 改札, 切符"
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Guest Name, Topic: Key Discussion Concepts, Entity Glossary"
 
 # Provide manuscript or verbatim recording draft for exact vocabulary matching (optional):
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
