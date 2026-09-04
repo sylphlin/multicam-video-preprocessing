@@ -191,7 +191,7 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 
 ### Step 4: YouTube Subtitles Generation (`generate_subtitles.py`)
 
-Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Context Global Audio Understanding**, **Whisper Physical Acoustic Timestamps**, and **Gemini Chunked Audio Multimodal Proofreading**:
+Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Context Global Audio Understanding**, **Whisper Physical Acoustic Timestamps with Initial Prompt Biasing**, and **Gemini Chunked Multimodal Audio Proofreading**:
 
 #### Why Global Glossary + Whisper Timestamps + Gemini Audio Proofreading?
 
@@ -203,35 +203,57 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 | **Verbatim Fidelity** | High verbatim accuracy | May hallucinate/paraphrase | **Acoustically verified against raw audio slice (zero hallucinations)** |
 
 #### Three-Stage Execution Flow:
-1. **Stage 1 (Global Audio Glossary Extraction)**:
-   - Gemini 3.7 Flash (1M Context) scans the full-length episode audio (optionally incorporating user `--outline`) to build an authoritative domain glossary (`final_cut_full_glossary.md`).
-2. **Stage 2 (Whisper Physical Acoustic Baseline & Word Timestamps)**:
-   - Local `mlx-whisper` or `faster-whisper` (ARM NEON / AVX int8 vectorization) extracts millisecond-accurate physical onset and offset boundaries for every sentence and word (`word_timestamps=True`), saving both raw subtitles and word cache (`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`) for instant re-runs without 7-minute transcription delays.
-3. **Stage 3 (Chunk-Scoped Acoustic Ground Truth Anchoring & Multimodal Proofreading)**:
-   - **Decoupled Text & Acoustic Timestamps**: Gemini focuses purely on oral syntax re-segmentation, punctuation purification, and homophone error correction.
-   - **Chunk-Scoped Acoustic Reprojection**: SequenceMatcher monotonic forward alignment re-projects proofread clauses back onto physical Whisper word timestamps, eliminating LLM timestamp hallucination and cascading desync.
-   - **Anti-Flicker Bridging & Natural Breathing Buffer**: Speech micro-gaps ($< 0.6\text{s}$) seamlessly bridge to 0s gap to prevent 1-2 frame black flashes, while genuine conversational pauses ($\ge 0.6\text{s}$) preserve $+0.4\text{s}$ reading buffer before cleanly clearing the screen.
+1. **Stage 1 (Global Audio Macro Understanding, Dual-Track Glossary & Whisper Initial Prompt Extraction)**:
+   - Gemini 3.7 Flash (1M Context) scans the full-length episode audio, optionally incorporating user interview outline (`--outline`) or recording draft/manuscript (`--script`).
+   - **Dual-Track Output**: Generates both an extensive Markdown glossary (`final_cut_full_glossary.md`) for Gemini proofreading and an auto-extracted, high-density keyword list (`> **Whisper Initial Prompt**: ...`) constrained within 200 tokens (~100–140 characters) at the top of the file.
+2. **Stage 2 (Whisper Physical Acoustic Baseline & Prompt Biasing)**:
+   - Injects the Stage 1 `initial_prompt` into local `mlx-whisper`, `faster-whisper`, or `openai-whisper`, drastically cutting down first-pass ASR errors on specialized proper nouns.
+   - Vectorized multi-core hardware acceleration extracts millisecond-accurate physical onset and offset boundaries for every sentence and word (`word_timestamps=True`), outputting 100% drift-free initial subtitles and word-level acoustic cache (`final_cut_full_raw_whisper.srt` and `final_cut_full_words.json`). Future prompt tuning or formatting adjustments load this cache in seconds, bypassing redundant transcription waits.
+3. **Stage 3 (Silence-Aware Semantic Chunking, Micro-Acoustic Snapping & Multimodal Audio Proofreading)**:
+   - **Silence-Aware Semantic Chunking**: Replaces rigid line-count cuts by sliding a window to locate speaker **natural breathing pauses** (Gap $\ge 0.4\text{s}$) and terminal punctuation/particles (`?`, `!`, `.`, `來說`, `的話`), never bisecting midway through dependent clauses.
+   - **Decoupled Text Semantics & Acoustic Time**: Gemini focuses purely on oral syntax re-segmentation, punctuation purification, and homophone error correction.
+   - **Micro-Acoustic Sub-clause Snapping**: When long sentences split into sub-clauses, boundaries snap directly to Whisper word-level acoustic physical timestamps (`all_words`), eliminating proportional interpolation errors.
+   - **Japanese Pronunciation & Kanji/Kana Sync Rules**: Explicitly pronounced Japanese words format as "Kanji (Hiragana)" (e.g., `改札（かいさつ）`), while unvoiced/passing references remain pure Kanji (e.g., `出改札`), supported by bracket-stripping fallback matching to prevent acoustic detachment.
+   - **Chunk-Level Persistent Cache**: Generates deterministic hashes combining model, prompt, glossary, and text chunks, writing proofread segments incrementally to `.<basename>_chunk_cache.json`. In case of network interruptions, re-running resumes seamlessly with zero wasted tokens.
+   - **Anti-Flicker Bridging & Natural Breathing Buffer**: Speech micro-gaps ($< 0.6\text{s}$) seamlessly bridge to 0s gap to prevent 1-2 frame black flashes, while genuine conversational pauses preserve $+0.4\text{s}$ reading buffer before cleanly clearing the screen without overlapping subsequent speech.
 
 #### 🎯 Streaming Standard Subtitle Quality & Pacing Audit Logic
 
-`generate_subtitles.py` integrates a comprehensive Netflix / YouTube quality audit engine verifying 7 critical dimensions:
+`generate_subtitles.py` integrates a comprehensive Netflix / YouTube quality audit engine verifying 8 critical dimensions:
 
 | Dimension | Standard Specification | Engineering & Optimization Logic |
 | :--- | :--- | :--- |
-| **Speaker Cohesion & Isolation** | Hard boundary on speaker change | Same-speaker question/statements are aggregated intact; cross-speaker transitions trigger a mandatory new line to prevent confusion. |
-| **Character Length & Width** | CJK $\le 15$ chars / EN $\le 37$ CPL | Enforces strict width limits per language locale. Overlength clauses are smoothly split at natural syntactic pauses. |
-| **Punctuation Normalization** | 100% clean line-endings | Strips trailing `。`, `，`, `；`. In-line Chinese commas convert to natural single spaces; spacing around alphanumeric tokens is normalized. |
+| **Character Length & Display Width** | CJK $\le 15$ chars / EN $\le 37$ CPL | Enforces strict width limits per language locale (CJK $\le 15$, Korean $\le 16$, English $\le 37$). Overlength clauses are smoothly split at natural syntactic pauses. |
+| **Reading Speed Monitoring (CPS)** | CJK $\le 6.0$ CPS / EN $\le 20.0$ CPS | Computes full-video Mean CPS and Peak CPS against Netflix thresholds; rushed segments are flagged for review. |
+| **Line-Ending Punctuation Cleanup** | 100% clean line-endings | Strips trailing `。`, `，`, `；`. In-line Chinese commas convert to natural single spaces; spacing around alphanumeric tokens is normalized. |
+| **Typography & Formatting Hygiene** | Paired brackets / Zero residual Markdown | Verifies full-width `（）`, `【】`, `《》`, `「」` and ASCII `()` pairing; purges leaked LLM tags (`**`, `_`, `` ` ``). |
+| **Prolonged Silence Audit** | Gap $\ge 10.0\text{s}$ alerts | Scans for gaps $\ge 10\text{s}$, recording timestamps and surrounding text to verify B-roll, music beds, or speech drops. |
 | **Zero-Lead Acoustic Alignment** | 0.000s acoustic lock | Timestamps strictly align with physical speech onset (Whisper waveform), eliminating subtitle spoiler artifacts. |
 | **Reading Duration Protection** | $1.0\text{s} \le \text{Duration} \le 6.0\text{s}$ | Short clauses expand into trailing silences ($\ge 1.0\text{s}$ for cognitive absorption); maximum duration capped $\le 6.0\text{s}$. |
-| **Anti-Flicker Gap Bridging** | Eliminates micro-gaps $< 0.6\text{s}$ | Bridges high-frequency gaps between consecutive speech to 0s; preserves $+0.4\text{s}$ breathing buffers during real pauses. |
-| **Monotonic Forward Continuity** | 0 overlaps / 0 negative duration | Enforces strict monotonic forward progression, completely preventing subtitle time backtracking or zero/negative durations. |
+| **Anti-Flicker Gap Bridging** | Eliminates micro-gaps $< 0.2\text{s}$ | Bridges high-frequency gaps between consecutive speech to 0s; preserves $+0.4\text{s}$ breathing buffers during real pauses. |
+
+#### CLI Usage Examples:
+
+```bash
+# Basic execution (fully automated global glossary + Whisper ASR + Gemini audio proofreading):
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+
+# Bias proper nouns with interview outline or topic notes (optional):
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Ken, Topic: Japanese Railway Kanji, 改札, 切符"
+
+# Provide manuscript or verbatim recording draft for exact vocabulary matching (optional):
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
+
+# Specify language and Whisper model size:
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh-TW --whisper-model small
+```
 
 4. **Outputs**:
    - **`final_cut_full.srt`**: Standard YouTube SubRip subtitles.
    - **`final_cut_full.vtt`**: WebVTT subtitles for web players.
-   - **`final_cut_full_subtitle_report.json`**: Netflix & YouTube streaming standard quality audit report (JSON).
-   - **`final_cut_full_subtitle_report.md`**: Human-readable visual quality audit card (Markdown).
-   - **`final_cut_full_glossary.md`**: Episode Global Terminology Glossary.
+   - **`final_cut_full_subtitle_report.json`**: Netflix & YouTube streaming standard quality audit report (JSON with quantitative metrics and actionable review items).
+   - **`final_cut_full_subtitle_report.md`**: Human-readable visual quality audit card (Markdown with compliance grade, silence intervals, and timestamp navigation).
+   - **`final_cut_full_glossary.md`**: Episode Global Terminology Glossary (with Whisper Initial Prompt block).
    - **`final_cut_full_raw_whisper.srt`**: Raw Whisper baseline subtitles for reference.
    - **`final_cut_full_words.json`**: Millisecond-accurate word-level physical timestamps cache.
 

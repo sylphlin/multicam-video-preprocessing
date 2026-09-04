@@ -191,7 +191,7 @@ flowchart TD
 
 ### 步驟 4：生成 YouTube 字幕 (`generate_subtitles.py`)
 
-本工具採用業界頂級的 **三階段黃金字幕生產線（Three-Stage Golden Subtitle Pipeline）**，結合 **Gemini 1M 全篇音訊宏觀理解**、**Whisper 聲學物理時間軸** 與 **Gemini 局部音軌多模態精修**：
+本工具採用業界頂級的 **三階段黃金字幕生產線（Three-Stage Golden Subtitle Pipeline）**，結合 **Gemini 1M 全篇音訊宏觀理解**、**Whisper 聲學物理時間軸與專有名詞偏置** 與 **Gemini 局部音軌多模態精修**：
 
 #### 為什麼採用「全篇詞彙庫 + Whisper 物理時間碼 + Gemini 音訊多模態審稿」？
 
@@ -203,35 +203,57 @@ flowchart TD
 | **逐字忠實度與防腦補** | 忠實記錄說話內容 | 容易過度潤飾或擅自摘要 | **聽局部真實音訊進行聲學確認，還原真實說話（零幻覺、零過度腦補）** |
 
 #### 三階段執行流程：
-1. **階段一（全篇音訊宏觀理解與專有名詞庫萃取）**：
-   - 提取全片音訊，由 Gemini 3.7 Flash（1M Context）一次聽完整集節目（或結合使用者提供的訪綱 `--outline`），自動萃取人物姓名、公司品牌、英文縮寫與專有名詞對照表（`final_cut_full_glossary.md`）。
-2. **階段二（Whisper 聲學物理時間軸與詞級時間戳骨架）**：
-   - 本地 `mlx-whisper` 或 `faster-whisper` 透過多核心向量化加速（ARM NEON / AVX int8），精準提取每個段落與每個詞的真實物理起迄點（`word_timestamps=True`），產出 100% 零漂移的毫秒時間戳初稿與詞級聲學快取（`final_cut_full_raw_whisper.srt` 與 `final_cut_full_words.json`）。日後微調提示詞或排版時自動秒級載入快取，免去重複轉錄的漫長等待。
-3. **階段三（分區塊聲學實體錨定與多模態音訊審稿）**：
-   - **文字語意與聲學時間徹底解耦**：Gemini 僅專注於口語語意自然斷句、排版標點淨化與同音錯字修正。
-   - **分區塊聲學實體錨定（Chunk-Scoped Reprojection）**：後端採用 SequenceMatcher 前向單調對齊演算法，將校對重組後的子句**精確重投影吸附回 Whisper 詞級物理聲學時間軸**，徹底解決大語言模型拆句時憑空猜測時間或延遲推遲的多米諾骨牌效應（字隨聲動、0 劇透、0 滯後）。
+1. **階段一（全篇音訊宏觀理解、雙軌專有名詞庫與 Whisper Initial Prompt 萃取）**：
+   - 提取全片音訊，由 Gemini 3.7 Flash（1M Context）一次聽完整集節目，可選注入訪綱筆記（`--outline`）或錄音完整講稿／逐字稿（`--script`）。
+   - **雙軌解析產出**：不僅產出供 Gemini 審稿的完整 Markdown 詞彙庫（`final_cut_full_glossary.md`），更在文件頂部自動產出高密度、控制在 200 token（約 100～140 字元）內的 `> **Whisper Initial Prompt**: ...` 核心關鍵字列。
+2. **階段二（Whisper 聲學物理時間軸與專有名詞偏置）**：
+   - 自動將 Stage 1 萃取的 `initial_prompt` 注入本地 `mlx-whisper`、`faster-whisper` 或 `openai-whisper`，大幅降低專有名詞首度聲學辨識錯誤率。
+   - 透過硬體加速向量化提取每個段落與每個詞的真實物理起迄點（`word_timestamps=True`），產出 100% 零漂移的毫秒時間戳初稿與詞級聲學快取（`final_cut_full_raw_whisper.srt` 與 `final_cut_full_words.json`）。日後微調提示詞或排版時自動秒級載入快取，免去重複轉錄的漫長等待。
+3. **階段三（靜音感知語意切塊、微聲學錨定與多模態音訊審稿）**：
+   - **靜音感知語意分塊 (Silence-Aware Semantic Chunking)**：淘汰死板的固定行數硬切，改在目標區間滑動窗口內搜尋講者**自然呼吸停頓**（Gap $\ge 0.4\text{s}$）與完整句尾語氣詞／標點（`？`、`！`、`。`、`來說`、`的話`），避開連詞前切斷，確保送交審稿之上下文語意完整。
+   - **文字語意與聲學時間徹底解耦**：Gemini 專注於口語語意自然斷句、排版標點淨化與同音錯字修正。
+   - **子句微聲學錨定 (Micro-Acoustic Sub-clause Snapping)**：長句拆分為分句時，自動結合 Whisper 物理詞級時間戳 `all_words`，精確咬合口形發音的物理起迄點，拒絕均分比例導致的口形微偏差。
+   - **日語發音與漢字音字同步規範**：講者口述唸出日文讀音時呈現「日文漢字（平假名）」（如 `改札（かいさつ）`）；純快速中文帶過未唸發音時呈現純漢字（如 `出改札`），並輔以括號剝離容錯比對演算法，杜絕聲學脫錨。
+   - **區塊級持久化快取 (Chunk-Level Persistent Cache)**：結合模型、提示詞、詞彙庫與切塊文本產生唯一雜湊，校對區塊即時寫入 `.<basename>_chunk_cache.json`。若中途遇網路波動中斷，重新執行 100% 接續進度，零重複 token 消耗。
    - **防閃爍微間隙熔接與自然呼吸留白**：說話微小空隙（$< 0.6\text{s}$）自動平滑熔接為 0s Gap 消除畫面黑閃；講者真實停頓處保留 $+0.4\text{s}$ 閱讀呼吸緩衝後乾淨清空畫面，且單向時間鎖定保證字幕絕不遮蔽下一句話的發音。
 
 #### 🎯 影視級字幕品質檢驗標準與自動優化邏輯
 
-`generate_subtitles.py` 內建完整的 Netflix / YouTube 影視級品質稽核引擎，自動執行以下 6 大優化與合規驗證：
+`generate_subtitles.py` 內建完整的 Netflix / YouTube 影視級品質稽核引擎，自動執行以下 8 大優化與合規驗證：
 
 | 檢驗項目 | 標準規範 | 優化與工程處理邏輯 |
 | :--- | :--- | :--- |
-| **講者語意聚合與隔離** | 嚴禁跨講者問答混行 | 同一講者的完整語意（如提問句）優先聚合為單行；講者交棒處強制開啟新字幕塊，100% 杜絕語意混淆。 |
 | **單行字數寬度限制** | CJK $\le 15$ 字 / EN $\le 37$ CPL | 依各語系設定字寬上限（中文/日文 $\le 15$ 字、韓文 $\le 16$ 字、英文 $\le 37$ 字元）。長句自動在子句邊界平滑拆分，防止小螢幕折行。 |
+| **閱聽速率監控 (CPS)** | CJK $\le 6.0$ CPS / EN $\le 20.0$ CPS | 計算全片平均 CPS 與峰值 CPS，過促語句（如短促高密度字）自動警示並列入待複查清單。 |
 | **行尾標點與版面淨化** | 100% 消除行尾 `。`、`，`、`；` | 清除無視覺意義的行尾符號；行內逗號轉換為自然空格，中英文/數字間距自動標準化，版面極致清爽。 |
+| **字元排版與語法潔淨** | 括號成對閉合 / 嚴禁殘留 Markdown | 檢驗全形 `（）`、`【】`、`《》`、`「」` 及半形括號成對閉合；自動清洗 `**`粗體、`_`斜體、`` ` ``代碼標記等 LLM 洩漏標籤。 |
+| **長時間無對白/靜音檢驗** | 停頓 Gap $\ge 10.0\text{s}$ 警示 | 檢測全片超過 10 秒之空白間隔，記錄前後句與時間碼，供剪輯師快速確認為 B-roll 空景、轉場音樂或 ASR/VAD 語音切除遺漏。 |
 | **聲學起點 0 劇透** | 0.000s 物理對齊 | 字幕出現時間嚴格鎖定 Whisper 物理聲學起點，絕對不比聲音先出，避免劇透觀影體驗。 |
 | **閱聽時長保護** | $1.0\text{s} \le \text{Duration} \le 6.0\text{s}$ | 短句在後方靜音空隙自動補足至 $\ge 1.0\text{s}$（確保讀者反應時間）；單句上限 $\le 6.0\text{s}$（杜絕卡死感）。 |
-| **防閃爍微間隙熔接** | 消除 $< 0.6\text{s}$ 視覺黑閃 | 連續說話之間的微小空隙（$< 0.6\text{s}$）自動平滑熔接為 0s Gap；段落自然停頓處自動保留 $+0.4\text{s}$ 閱讀呼吸緩衝並清空畫面。 |
-| **時間軸連續性保證** | 0 處重疊 / 0 負時長 | 嚴格保證單向單調時間推進，徹底杜絕時間倒退、塊狀重疊與零時長/負時長字幕。 |
+| **防閃爍微間隙熔接** | 消除 $< 0.2\text{s}$ 視覺黑閃 | 連續說話之間的微小空隙（$< 0.6\text{s}$）自動平滑熔接為 0s Gap；段落自然停頓處自動保留 $+0.4\text{s}$ 閱讀呼吸緩衝並清空畫面。 |
+
+#### 執行指令範例：
+
+```bash
+# 基本執行（全自動全片聽音抽取詞彙庫 + Whisper 物理轉錄 + Gemini 多模態音訊審稿）：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+
+# 提供訪綱或重點筆記偏置專有名詞（可選）：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "講者: 工頭堅, 主題: 鐵道漢字、改札、切符"
+
+# 提供錄音原稿或完整講稿作為專有名詞與詞彙標準（可選）：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
+
+# 指定語言與 Whisper 模型大小：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh-TW --whisper-model small
+```
 
 4. **輸出檔案**：
    - **`final_cut_full.srt`**：YouTube 標準 SubRip 字幕檔。
    - **`final_cut_full.vtt`**：網頁與 HTML5 播放器通用 WebVTT 字幕檔。
-   - **`final_cut_full_subtitle_report.json`**：Netflix / YouTube 影視級字幕品質檢驗量化報告（JSON）。
-   - **`final_cut_full_subtitle_report.md`**：影視級字幕品質檢驗視覺化評分表（Markdown）。
-   - **`final_cut_full_glossary.md`**：全集專有名詞與詞彙對照表。
+   - **`final_cut_full_subtitle_report.json`**：Netflix / YouTube 影視級字幕品質檢驗量化報告（JSON，含指標數據與待複查清單）。
+   - **`final_cut_full_subtitle_report.md`**：影視級字幕品質檢驗視覺化評分報告（Markdown，含合規等第、長時間靜音區間表與時間碼定位清單）。
+   - **`final_cut_full_glossary.md`**：全集專有名詞與詞彙對照表（含頂部 Whisper Initial Prompt）。
    - **`final_cut_full_raw_whisper.srt`**：保留原始 Whisper 聲學轉錄初稿供對照。
    - **`final_cut_full_words.json`**：Whisper 毫秒級詞級物理時間戳快取。
 

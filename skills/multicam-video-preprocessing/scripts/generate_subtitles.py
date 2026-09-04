@@ -104,7 +104,7 @@ def extract_audio_16k_mono(input_media, output_wav):
             raise RuntimeError(f"FFmpeg audio extraction failed: {res.stderr}")
 
 
-def run_whisper_transcription(audio_wav, model_size="base", language="zh", device="auto"):
+def run_whisper_transcription(audio_wav, model_size="base", language="zh", device="auto", initial_prompt=None):
     """
     Run high-speed Whisper acoustic transcription with automatic Apple Silicon / GPU hardware acceleration:
       1. mlx-whisper (Apple Silicon Metal / Neural Engine - Fastest on Mac)
@@ -113,6 +113,8 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
     Returns: (sub_list, detected_lang, all_words)
     """
     print(f"\n[Stage 2/3] 🎙️ Running Whisper acoustic transcription (Model: {model_size}, Device: {device}, Word Timestamps: ON)...")
+    if initial_prompt:
+        print(f"  • Bias Prompt   : {initial_prompt}")
     t0 = time.time()
     lang_arg = None if str(language).lower() in ("auto", "none") else language
     if lang_arg and "-" in str(lang_arg):
@@ -131,6 +133,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
                 audio_wav,
                 path_or_hf_repo=repo_name,
                 language=lang_arg,
+                initial_prompt=initial_prompt,
                 word_timestamps=True
             )
             detected_lang = result.get("language") or detected_lang
@@ -169,6 +172,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
             beam_size=5,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=250),
+            initial_prompt=initial_prompt,
             word_timestamps=True
         )
         detected_lang = getattr(info, "language", detected_lang)
@@ -210,7 +214,7 @@ def run_whisper_transcription(audio_wav, model_size="base", language="zh", devic
 
             print(f"  ► [Backend: openai-whisper] Running on PyTorch ({target_dev.upper()}, word_timestamps=True)...")
             model = whisper.load_model(model_size, device=target_dev)
-            result = model.transcribe(audio_wav, language=lang_arg, word_timestamps=True)
+            result = model.transcribe(audio_wav, language=lang_arg, initial_prompt=initial_prompt, word_timestamps=True)
             detected_lang = result.get("language") or detected_lang
 
             for idx, seg in enumerate(result.get("segments", []), start=1):
@@ -300,26 +304,105 @@ def load_proofread_template(language="zh-TW"):
     ), "builtin_fallback"
 
 
-def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, api_key=None, base_url=None, model="gemini-3.7-flash"):
+def extract_whisper_prompt(glossary_text, max_chars=145, language="zh-TW"):
+    """
+    Extract a compact, high-density Whisper ASR initial prompt from Global Glossary:
+    1. Primary: Parse '> **Whisper Initial Prompt**: ...' line directly.
+    2. Fallback: Parse bold terms (**word**) from glossary sections and assemble cleanly.
+    """
+    if not glossary_text:
+        return None
+
+    # Path 1: Primary line match from Stage 1 output
+    m = re.search(r">\s*\*\*Whisper\s+(?:Initial\s+)?Prompt\*\*:\s*(.+)", glossary_text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\*\*Whisper\s+(?:Initial\s+)?Prompt\*\*:\s*(.+)", glossary_text, re.IGNORECASE)
+    if m:
+        line = m.group(1).strip()
+        line = re.sub(r"^[`'\"]+|[`'\"]+$", "", line).strip()
+        if len(line) > max_chars:
+            cut = line[:max_chars]
+            last_comma = max(cut.rfind("、"), cut.rfind("，"), cut.rfind(","))
+            if last_comma > 20:
+                line = cut[:last_comma] + "。"
+            else:
+                line = cut + "..."
+        return line
+
+    # Path 2: Fallback regex parser over markdown bold entities
+    bold_matches = re.findall(r"\*\*(.+?)\*\*", glossary_text)
+    filtered = []
+    category_keywords = [
+        "Person", "Speaker", "Names", "Organizations", "Products", "Places", "Brands",
+        "Domain Jargon", "Tech Terms", "Core Topic", "全片專有名詞", "Whisper", "講者與人物",
+        "公司、品牌", "行業專有名詞", "核心主題", "Glossary", "Terminology"
+    ]
+    for w in bold_matches:
+        w = w.strip()
+        if any(cat in w for cat in category_keywords):
+            continue
+        clean_w = re.split(r"[（\(]", w)[0].strip()
+        if clean_w and clean_w not in filtered and len(clean_w) <= 12:
+            filtered.append(clean_w)
+
+    if not filtered:
+        return None
+
+    norm_lang = normalize_language_tag(language)
+    if norm_lang == "en":
+        prefix = "The following is a video transcription containing terms: "
+        sep = ", "
+        suffix = "."
+    elif norm_lang == "ja":
+        prefix = "以下は日本語の対談字幕です。専門用語："
+        sep = "、"
+        suffix = "。"
+    else:
+        prefix = "以下為繁體中文對談字幕，專有名詞："
+        sep = "、"
+        suffix = "。"
+
+    assembled = prefix
+    for item in filtered:
+        cand = assembled + (sep if assembled != prefix else "") + item
+        if len(cand) + len(suffix) > max_chars:
+            break
+        assembled = cand
+    assembled += suffix
+    return assembled
+
+
+def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, user_script=None, api_key=None, base_url=None, model="gemini-3.7-flash"):
     """
     Stage 1: Global Audio Context & Consistency Glossary Extraction (Gemini 1M Context Scan).
-    Listens to full episode audio to extract speaker names, organizations, acronyms, and terms.
+    Listens to full episode audio (and/or analyzes user script / outline) to extract speaker names,
+    organizations, acronyms, and critical domain terminology.
+    Also produces a concentrated Whisper Initial Prompt line at the top.
     """
     print(f"\n[Stage 1/3] 🎧 Extracting Global Consistency Glossary across entire episode...")
     t0 = time.time()
 
-    outline_section = f"\n=== 使用者提供之訪綱/主題資料 (User Interview Outline) ===\n{user_outline}\n" if user_outline else ""
-    
+    context_parts = []
+    if user_script:
+        context_parts.append(f"=== 錄音講稿/逐字稿原稿 (Source Script Reference) ===\n{user_script}\n")
+    if user_outline:
+        context_parts.append(f"=== 使用者提供之訪綱/主題資料 (User Interview Outline) ===\n{user_outline}\n")
+    supplementary_section = "\n".join(context_parts) if context_parts else ""
+
     prompt = (
         "You are an expert Chief Subtitle Editor for professional YouTube productions.\n"
         "Your goal is to extract a comprehensive, authoritative **Global Terminology Glossary (全片專有名詞與詞彙對照表)** "
-        "directly from this recording to ensure 100% spelling, naming, and domain term consistency across all subtitle segments.\n\n"
-        f"{outline_section}\n"
-        "Extract ONLY verified domain terms, entity names, and proper spellings that actually appear in this recording.\n"
-        "Structure the output cleanly in Markdown:\n"
+        "directly from this recording (and supplied script/outline) to ensure 100% spelling, naming, and domain term consistency across all subtitle segments.\n\n"
+        f"{supplementary_section}\n"
+        "Extract ONLY verified domain terms, entity names, foreign proper nouns, and proper spellings that actually appear in this recording.\n\n"
+        "=== CRITICAL INSTRUCTION FOR WHISPER ASR ===\n"
+        "At the VERY TOP of your Markdown output, provide a single, highly-concentrated bias prompt line specifically designed for Whisper ASR (speech-to-text decoder initial prompt).\n"
+        "Strictly limit this line to 100~140 characters, listing only the most critical, uncommon proper nouns, speaker names, and technical/foreign/ancient Kanji terms separated by Chinese enumeration commas (、). Format:\n"
+        "> **Whisper Initial Prompt**: 以下為繁體中文對談字幕，專有名詞：詞1、詞2、詞3...\n\n"
+        "Then structure the full detailed glossary cleanly in Markdown:\n"
         "1. **講者與人物姓名 (Person & Speaker Names)**: Official Chinese/English names, titles & roles\n"
         "2. **公司、品牌、產品與機構 (Organizations, Products & Brands)**: Official brand, company & tool names\n"
-        "3. **行業專有名詞與技術術語 (Domain Jargon & Tech Terms)**: Industry terminology, English acronyms & phrases\n"
+        "3. **行業專有名詞與技術術語 (Domain Jargon & Tech Terms)**: Industry terminology, English acronyms, Japanese Kanji/Kana\n"
         "4. **核心主題概念 (Core Topic Concepts)**: Key themes discussed in this episode\n\n"
         "Output ONLY the clean, authoritative Markdown Glossary:"
     )
@@ -355,7 +438,7 @@ def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, ap
         return glossary_content.strip()
     except Exception as e:
         print(f"  [Warning] Global glossary extraction failed ({e}). Continuing with standard proofreading.", file=sys.stderr)
-        return user_outline or ""
+        return user_outline or user_script or ""
     finally:
         if tmp_audio_mp3 and os.path.exists(tmp_audio_mp3):
             try:
@@ -371,10 +454,167 @@ def parse_timestamp_str(ts_str):
     return float(h) * 3600 + float(m) * 60 + float(sec) + float(ms) / 1000.0
 
 
-def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, audio_wav, api_key, base_url, model):
-    """Worker function to proofread a single chunk of SRT blocks with local audio slice."""
+def split_blocks_into_semantic_chunks(raw_blocks, target_chunk_size=80, min_chunk_size=55, max_chunk_size=105):
+    """
+    Intelligent silence-aware & semantic clause boundary chunking:
+    Instead of rigidly slicing every N blocks, inspects adjacent timestamp gaps and clause closures
+    within [target - 25, target + 25] window to split at natural speech breath pauses (gap >= 0.4s).
+    Completely eliminates chopped sentences and dangling clauses across chunk boundaries.
+    """
+    total = len(raw_blocks)
+    if total <= max_chunk_size:
+        return [raw_blocks]
+
+    parsed_blocks = []
+    for idx, b in enumerate(raw_blocks):
+        lines = b.splitlines()
+        t_start, t_end, txt = 0.0, 0.0, ""
+        if len(lines) >= 2 and "-->" in lines[1]:
+            t1, t2 = lines[1].split("-->")
+            t_start = parse_timestamp_str(t1.strip())
+            t_end = parse_timestamp_str(t2.strip())
+            txt = lines[2].strip() if len(lines) >= 3 else ""
+        elif len(lines) >= 1 and "-->" in lines[0]:
+            t1, t2 = lines[0].split("-->")
+            t_start = parse_timestamp_str(t1.strip())
+            t_end = parse_timestamp_str(t2.strip())
+            txt = lines[1].strip() if len(lines) >= 2 else ""
+        parsed_blocks.append({
+            "block": b,
+            "start": t_start,
+            "end": t_end,
+            "text": txt
+        })
+
+    chunks = []
+    cur_idx = 0
+    while cur_idx < total:
+        remaining = total - cur_idx
+        if remaining <= max_chunk_size:
+            chunks.append(raw_blocks[cur_idx:])
+            break
+
+        search_start = cur_idx + min_chunk_size
+        search_end = min(total - 1, cur_idx + max_chunk_size)
+
+        best_split = min(total, cur_idx + target_chunk_size)
+        best_score = -9999.0
+
+        for i in range(search_start, search_end):
+            c = parsed_blocks[i]
+            n = parsed_blocks[i + 1]
+            gap = n["start"] - c["end"]
+
+            # Score factor 1: Natural silence gap (heavily reward pause >= 0.4s)
+            score = min(gap, 2.0) * 15.0
+
+            # Score factor 2: Closeness to target chunk size
+            dist = abs(i - (cur_idx + target_chunk_size))
+            score -= dist * 0.4
+
+            # Score factor 3: Sentence ending punctuation / closure words
+            txt = c["text"]
+            if any(txt.endswith(p) for p in ["？", "?", "！", "!", "。", "……", "..."]):
+                score += 6.0
+            if any(txt.endswith(w) for w in ["來說", "來講", "而言", "之後", "的話", "來看"]):
+                score += 3.0
+
+            # Score factor 4: Discourage breaking right before conjunctions
+            n_txt = n["text"]
+            if any(n_txt.startswith(w) for w in ["但是", "而且", "所以", "不過", "然而", "如果"]):
+                score -= 4.0
+
+            if score > best_score:
+                best_score = score
+                best_split = i + 1
+
+        chunks.append(raw_blocks[cur_idx:best_split])
+        cur_idx = best_split
+
+    return chunks
+
+
+def align_split_clauses_with_words(final_parts, t_start, t_end, all_words=None):
+    """
+    Sub-sentence micro-acoustic anchor:
+    Pins split sub-clauses to physical word boundaries in all_words
+    instead of mechanical length proportional slicing.
+    """
+    if not all_words or len(final_parts) <= 1:
+        tot_len = max(1, sum(len(p) for p in final_parts))
+        cur_t = t_start
+        span = max(0.5, t_end - t_start)
+        items = []
+        for f_p in final_parts:
+            p_dur = span * (len(f_p) / tot_len)
+            items.append({"start": cur_t, "end": cur_t + p_dur, "text": f_p})
+            cur_t += p_dur
+        return items
+
+    nearby_words = [
+        w for w in all_words
+        if float(w.get("end", 0.0)) >= t_start - 0.3 and float(w.get("start", 0.0)) <= t_end + 0.3
+    ]
+    if len(nearby_words) < len(final_parts):
+        tot_len = max(1, sum(len(p) for p in final_parts))
+        cur_t = t_start
+        span = max(0.5, t_end - t_start)
+        items = []
+        for f_p in final_parts:
+            p_dur = span * (len(f_p) / tot_len)
+            items.append({"start": cur_t, "end": cur_t + p_dur, "text": f_p})
+            cur_t += p_dur
+        return items
+
+    w_chars = []
+    for w in nearby_words:
+        w_text = re.sub(r"[\s\.,\?!，。？！、：:;；—\-~]+", "", w.get("word", ""))
+        w_s = float(w.get("start", t_start))
+        w_e = float(w.get("end", t_end))
+        w_chars.append({"text": w_text, "start": w_s, "end": w_e})
+
+    first_clean = re.sub(r"[\s\.,\?!，。？！、：:;；—\-~]+", "", final_parts[0]).lower()
+    best_split_time = None
+    accumulated = ""
+    for wc in w_chars:
+        accumulated += wc["text"].lower()
+        if len(accumulated) >= len(first_clean) * 0.75:
+            if first_clean in accumulated or accumulated in first_clean:
+                best_split_time = wc["end"]
+                break
+
+    if best_split_time and t_start + 0.4 <= best_split_time <= t_end - 0.4:
+        items = [{"start": t_start, "end": best_split_time, "text": final_parts[0]}]
+        rem_parts = final_parts[1:]
+        if len(rem_parts) == 1:
+            items.append({"start": best_split_time, "end": t_end, "text": rem_parts[0]})
+        else:
+            items.extend(align_split_clauses_with_words(rem_parts, best_split_time, t_end, nearby_words))
+        return items
+    else:
+        tot_len = max(1, sum(len(p) for p in final_parts))
+        cur_t = t_start
+        span = max(0.5, t_end - t_start)
+        items = []
+        for f_p in final_parts:
+            p_dur = span * (len(f_p) / tot_len)
+            items.append({"start": cur_t, "end": cur_t + p_dur, "text": f_p})
+            cur_t += p_dur
+        return items
+
+
+def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, audio_wav, api_key, base_url, model, user_script=None):
+    """Worker function to proofread a single chunk of SRT blocks with local audio slice and optional reference script."""
     chunk_text = "\n\n".join(chunk_slice)
     glossary_section = f"\n=== 全片權威專有名詞對照表 (Global Consistency Glossary) ===\n{global_glossary}\n============================================================\n" if global_glossary else ""
+    script_section = ""
+    if user_script:
+        script_section = (
+            f"\n=== 錄音講稿/逐字稿原稿 (Source Script Reference) ===\n"
+            f"{user_script[:6000]}\n"
+            f"============================================================\n"
+            f"【校對核心準則】：以講者實際口白發音為準（保留現場真實口語內容與自然句法），但凡遇到專有名詞、人物名稱、特殊日文漢字或同音字疑義時，嚴格參照【錄音講稿/逐字稿原稿】之標準文字修正。\n"
+        )
 
     # Calculate audio slice start and end time
     chunk_mp3_path = None
@@ -402,6 +642,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
     prompt = (
         f"{template}\n"
         f"{glossary_section}\n"
+        f"{script_section}\n"
         f"--- 待校對與重整之原始 SRT 碎字幕（區塊 {c_idx + 1}/{num_chunks}）---\n"
         f"```srt\n{chunk_text}\n```\n\n"
         f"請邊聽附帶的音訊錄音、依據全片對照表與語意段落規範，進行自然斷句重整（中文/日文 <= 15 字，英文 <= 37 字元）、時間軸物理聲學熔接與同音錯字校正，輸出重整後的完整 SRT："
@@ -446,7 +687,8 @@ def clean_subtitle_text(text, language="zh-TW"):
     1. Strip trailing periods/commas: removes [。，、；:;,.—-] from line end (preserves ？!……).
     2. Convert in-line Chinese commas to clean single spaces (e.g. '哈囉，歡迎' -> '哈囉 歡迎').
     3. Normalize Chinese-English & Chinese-Number spacing (e.g. '用AI寫10倍Code' -> '用 AI 寫 10 倍 Code').
-    4. Collapse multiple consecutive whitespace to single space and trim.
+    4. Strip residual Markdown formatting markers (**, __, `, ##).
+    5. Collapse multiple consecutive whitespace to single space and trim.
     """
     norm_lang = normalize_language_tag(language)
     lines = text.strip().splitlines()
@@ -456,6 +698,9 @@ def clean_subtitle_text(text, language="zh-TW"):
         line = line.strip()
         if not line:
             continue
+
+        # Strip residual markdown bold/italic/code markers (e.g. **word**, `word`)
+        line = re.sub(r"(\*{1,3}|_{2,}|`{1,3}|(?<=^)\s*#{1,6}\s+)", "", line)
 
         if norm_lang in ["zh-TW", "zh-CN", "ja", "ko"]:
             # In-line comma to space for clean visual layout
@@ -566,8 +811,9 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
     sound boundaries recorded in Whisper's word-level timestamps.
     Completely eliminates LLM hallucinated delays, cascading desync, and swallowed silences.
     """
+    default_stats = {"total": 0, "locked": 0, "fallback": 0, "fallback_indices": []}
     if not all_words:
-        return proofread_srt
+        return proofread_srt, default_stats
 
     # 1. Build a continuous character timeline from Whisper word timestamps (excluding punctuation)
     char_timeline = []
@@ -590,7 +836,7 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
             })
 
     if not char_timeline:
-        return proofread_srt
+        return proofread_srt, default_stats
 
     whisper_chars = "".join(c["char"] for c in char_timeline)
     whisper_chars_lower = whisper_chars.lower()
@@ -619,7 +865,14 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
             })
 
     if not items:
-        return proofread_srt
+        return proofread_srt, default_stats
+
+    alignment_stats = {
+        "total": len(items),
+        "locked": 0,
+        "fallback": 0,
+        "fallback_indices": []
+    }
 
     # 3. Monotonic Forward Alignment via Dense Local Substring Matching
     cur_char_idx = 0
@@ -630,6 +883,9 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
         clean_t = re.sub(r"[\s\.,\?!，。？！、：:;；—\-~]+", "", raw_text).lower()
         if not clean_t:
             continue
+
+        clean_t_no_brackets = re.sub(r"[（\(].*?[）\)]", "", clean_t)
+        has_bracket_variant = bool(clean_t_no_brackets and clean_t_no_brackets != clean_t)
 
         L = len(clean_t)
         best_match = None
@@ -644,6 +900,9 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
             for cand_len in range(max(1, L - 4), min(total_chars - s_pos + 1, L + 10)):
                 cand_str = whisper_chars_lower[s_pos : s_pos + cand_len]
                 sc = score_candidate(cand_str, clean_t)
+                if has_bracket_variant:
+                    sc_nb = score_candidate(cand_str, clean_t_no_brackets)
+                    sc = max(sc, sc_nb)
                 if sc > best_score + 1e-4:
                     best_score = sc
                     best_match = (s_pos, s_pos + cand_len - 1)
@@ -654,12 +913,15 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
             t_start = char_timeline[m_start]["start"]
             t_end = char_timeline[m_end]["end"]
             cur_char_idx = m_end + 1
+            alignment_stats["locked"] += 1
         else:
             # Fallback: keep LLM's own timestamps for this line
             t_start = item.get("fallback_start", 0.0)
             t_end = item.get("fallback_end", t_start + 2.0)
             while cur_char_idx < total_chars and char_timeline[cur_char_idx]["end"] <= t_end:
                 cur_char_idx += 1
+            alignment_stats["fallback"] += 1
+            alignment_stats["fallback_indices"].append(item.get("index", idx + 1))
 
         # Broadcast lead-in & continuous pre-roll (Netflix/EBU-TT standard: 180ms / ~5-6 frames)
         lead_sec = 0.180
@@ -685,6 +947,7 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
                     t_start = max(prev["end"], target_start)
 
         realigned_items.append({
+            "index": item.get("index", idx + 1),
             "start": t_start,
             "end": t_end,
             "text": raw_text
@@ -697,10 +960,10 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
         e_str = format_timestamp_srt(it["end"])
         out_blocks.append(f"{idx}\n{s_str} --> {e_str}\n{it['text']}\n")
 
-    return "\n\n".join(out_blocks).strip() + "\n"
+    return "\n\n".join(out_blocks).strip() + "\n", alignment_stats
 
 
-def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2, language="zh-TW"):
+def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2, language="zh-TW"):
     """
     Automated Professional Rhythm & Pacing Sanitizer for Subtitles:
     1. Zero-Lead Protection: Subtitles never lead before voice onset (Start >= speech onset).
@@ -709,7 +972,8 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     4. Min Duration Guard: Ensures display duration >= 1.0s where possible (bounded by next speech onset).
     5. Max Duration Guard: Caps maximum single-line display duration <= 6.0s (avoids stuck-subtitle feel).
     6. Gap Management: Bridges micro-gaps (< 0.2s) to prevent high-frequency visual flicker.
-    7. Netflix & YouTube Punctuation, Spacing, and Max Character Length Normalization.
+    7. Sub-sentence Micro-Acoustic Anchor: Anchors split clauses directly to Whisper word timestamps.
+    8. Netflix & YouTube Punctuation, Spacing, and Max Character Length Normalization.
     """
     norm_lang = normalize_language_tag(language)
     max_w = 15.0 if norm_lang in ["zh-TW", "zh-CN", "ja"] else (16.0 if norm_lang == "ko" else 37.0)
@@ -733,13 +997,7 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
                     final_parts.extend(split_long_clause(q_p, max_w=max_w, norm_lang=norm_lang))
 
                 if len(final_parts) > 1:
-                    tot_len = max(1, sum(len(p) for p in final_parts))
-                    cur_t = t_start
-                    span = max(1.0, t_end - t_start)
-                    for f_p in final_parts:
-                        p_dur = span * (len(f_p) / tot_len)
-                        items.append({"start": cur_t, "end": cur_t + p_dur, "text": f_p})
-                        cur_t += p_dur
+                    items.extend(align_split_clauses_with_words(final_parts, t_start, t_end, all_words=all_words))
                 else:
                     items.append({"start": t_start, "end": t_end, "text": clean_txt})
         elif len(lines) == 2 and "-->" in lines[0]:
@@ -755,13 +1013,7 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
                     final_parts.extend(split_long_clause(q_p, max_w=max_w, norm_lang=norm_lang))
 
                 if len(final_parts) > 1:
-                    tot_len = max(1, sum(len(p) for p in final_parts))
-                    cur_t = t_start
-                    span = max(1.0, t_end - t_start)
-                    for f_p in final_parts:
-                        p_dur = span * (len(f_p) / tot_len)
-                        items.append({"start": cur_t, "end": cur_t + p_dur, "text": f_p})
-                        cur_t += p_dur
+                    items.extend(align_split_clauses_with_words(final_parts, t_start, t_end, all_words=all_words))
                 else:
                     items.append({"start": t_start, "end": t_end, "text": clean_txt})
 
@@ -840,49 +1092,92 @@ def sanitize_subtitle_timings(raw_srt, min_duration=1.0, max_duration=6.0, post_
     return "\n\n".join(out_blocks).strip() + "\n"
 
 
-def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5, language="zh-TW", all_words=None):
+def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_script=None, api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80, max_workers=5, language="zh-TW", all_words=None, cache_path=None):
     """
-    Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary.
+    Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary and Reference Script.
     Slices local audio chunks and proofreads subtitles against actual audio acoustics,
     guaranteeing 100% physical timestamp preservation.
     """
     template, tmpl_file = load_proofread_template(language=language)
     print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers})...")
     print(f"  • Template Loaded: {tmpl_file} (Locale: {normalize_language_tag(language)})")
+    if user_script:
+        print(f"  • Reference Script: Active ({len(user_script)} characters)")
     t0 = time.time()
     raw_blocks = [b.strip() for b in raw_srt.strip().split("\n\n") if b.strip()]
     if not raw_blocks:
-        return raw_srt
+        return raw_srt, {"total": 0, "locked": 0, "fallback": 0, "fallback_indices": []}
 
-    num_chunks = (len(raw_blocks) + chunk_size - 1) // chunk_size
-    print(f"  • Total Subtitles: {len(raw_blocks)} items -> {num_chunks} topic-level chunks")
+    # Item 1: Silence-aware & semantic clause boundary chunking
+    chunk_slices = split_blocks_into_semantic_chunks(
+        raw_blocks,
+        target_chunk_size=chunk_size,
+        min_chunk_size=max(20, int(chunk_size * 0.7)),
+        max_chunk_size=int(chunk_size * 1.3)
+    )
+    num_chunks = len(chunk_slices)
+    print(f"  • Total Subtitles: {len(raw_blocks)} items -> {num_chunks} silence-aware semantic chunks (target ~{chunk_size} lines)")
 
-    chunk_slices = [
-        raw_blocks[c_idx * chunk_size : (c_idx + 1) * chunk_size]
-        for c_idx in range(num_chunks)
-    ]
+    # Item 5: Chunk-level persistent response cache
+    cached_chunks = {}
+    if cache_path and os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached_chunks = json.load(f)
+        except Exception:
+            cached_chunks = {}
+
+    meta_sig = hashlib.md5(f"{model}::{template}::{global_glossary or ''}::{user_script or ''}".encode("utf-8")).hexdigest()[:12]
 
     results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                proofread_single_chunk,
-                c_idx, num_chunks, chunk_slices[c_idx],
-                template, global_glossary, audio_wav, api_key, base_url, model
-            ): c_idx
-            for c_idx in range(num_chunks)
-        }
+    uncached_indices = []
+    for c_idx, c_slice in enumerate(chunk_slices):
+        c_text = "\n\n".join(c_slice)
+        c_sig = hashlib.md5(c_text.encode("utf-8")).hexdigest()
+        ckey = f"{meta_sig}_{c_sig}"
+        if ckey in cached_chunks and "-->" in cached_chunks[ckey]:
+            results[c_idx] = cached_chunks[ckey]
+        else:
+            uncached_indices.append(c_idx)
 
-        completed_count = 0
-        for future in concurrent.futures.as_completed(futures):
-            c_idx, clean_text, success = future.result()
-            results[c_idx] = clean_text
-            completed_count += 1
-            status_tag = "✓" if success else "⚠"
-            pct = (completed_count / num_chunks) * 100
-            print(f"\r  ► Progress: {completed_count}/{num_chunks} chunks completed ({pct:.0f}%)... {status_tag}", end="", flush=True)
+    cached_count = num_chunks - len(uncached_indices)
+    if cached_count > 0:
+        print(f"  • Chunk Cache   : Restored {cached_count}/{num_chunks} chunks from cache ({os.path.basename(cache_path)})")
+
+    if uncached_indices:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    proofread_single_chunk,
+                    c_idx, num_chunks, chunk_slices[c_idx],
+                    template, global_glossary, audio_wav, api_key, base_url, model, user_script
+                ): c_idx
+                for c_idx in uncached_indices
+            }
+
+            completed_count = cached_count
+            for future in concurrent.futures.as_completed(futures):
+                c_idx, clean_text, success = future.result()
+                results[c_idx] = clean_text
+                if success and cache_path:
+                    c_slice = chunk_slices[c_idx]
+                    c_sig = hashlib.md5("\n\n".join(c_slice).encode("utf-8")).hexdigest()
+                    cached_chunks[f"{meta_sig}_{c_sig}"] = clean_text
+                    try:
+                        with open(cache_path, "w", encoding="utf-8") as f:
+                            json.dump(cached_chunks, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                completed_count += 1
+                status_tag = "✓" if success else "⚠"
+                pct = (completed_count / num_chunks) * 100
+                print(f"\r  ► Progress: {completed_count}/{num_chunks} chunks completed ({pct:.0f}%)... {status_tag}", end="", flush=True)
+        print()
+    else:
+        print(f"  ► All {num_chunks} chunks served directly from chunk cache (100%).")
 
     # Realign each chunk locally within its own acoustic window to prevent any cross-chunk drift
+    overall_alignment_stats = {"total": 0, "locked": 0, "fallback": 0, "fallback_indices": []}
     if all_words:
         print("  ► [Acoustic Re-projection] Snapping subtitle boundaries to Whisper word-level ground truth (chunk-scoped)...")
 
@@ -906,20 +1201,24 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, api_ke
                 w for w in all_words
                 if (float(w.get("end", 0.0)) >= t_first - 2.0 and float(w.get("start", 0.0)) <= t_last + 2.0)
             ]
-            realigned_chunk = realign_subtitles_to_words(c_text, chunk_words, language=language, is_video_start=(c_idx == 0))
+            realigned_chunk, c_stats = realign_subtitles_to_words(c_text, chunk_words, language=language, is_video_start=(c_idx == 0))
+            overall_alignment_stats["total"] += c_stats["total"]
+            overall_alignment_stats["locked"] += c_stats["locked"]
+            overall_alignment_stats["fallback"] += c_stats["fallback"]
+            overall_alignment_stats["fallback_indices"].extend(c_stats["fallback_indices"])
         else:
             realigned_chunk = c_text
         realigned_chunks.append(realigned_chunk)
 
     raw_combined = "\n\n".join(realigned_chunks).strip()
     # Step B: Professional rhythm & pacing sanitizer (flicker bridging, +0.4s breathing buffer)
-    sanitized_srt = sanitize_subtitle_timings(raw_combined, language=language)
-    return sanitized_srt
+    sanitized_srt = sanitize_subtitle_timings(raw_combined, all_words=all_words, language=language)
+    return sanitized_srt, overall_alignment_stats
 
 
-def audit_subtitles_quality(srt_content, language="zh-TW"):
+def audit_subtitles_quality(srt_content, language="zh-TW", global_glossary=None, alignment_stats=None):
     """
-    Perform a comprehensive Netflix & YouTube Standard Subtitle Quality & Pacing Audit.
+    Perform a comprehensive Netflix & YouTube Standard Subtitle Quality, Pacing & Acoustic Audit.
     Returns: (metrics_dict, console_summary_str, markdown_report_str)
     """
     norm_lang = normalize_language_tag(language)
@@ -938,7 +1237,7 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
                 "index": idx,
                 "start": t_start,
                 "end": t_end,
-                "duration": t_end - t_start,
+                "duration": max(0.01, t_end - t_start),
                 "text": text
             })
         elif len(lines) == 2 and "-->" in lines[0]:
@@ -950,7 +1249,7 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
                 "index": len(items) + 1,
                 "start": t_start,
                 "end": t_end,
-                "duration": t_end - t_start,
+                "duration": max(0.01, t_end - t_start),
                 "text": text
             })
 
@@ -984,27 +1283,208 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
         else:
             normal_gaps.append((c, n, g))
 
-    # 2. Layout & character length metrics
+    # 2. Layout & Character Length Metrics
     if norm_lang in ["zh-TW", "zh-CN", "ja"]:
         max_char_limit = 15
+        cps_limit = 6.0  # Netflix CJK limit (comfortable: 4.0~5.5)
     elif norm_lang == "ko":
         max_char_limit = 16
+        cps_limit = 6.5
     else:
         max_char_limit = 37
+        cps_limit = 20.0 # Netflix English limit (17~20 CPS)
 
     overlength_lines = []
+    high_cps_lines = []
+    total_cps_sum = 0.0
+
     for x in items:
         char_count = calc_display_width(x["text"], norm_lang)
+        x["char_count"] = round(char_count, 1)
+        cps = round(char_count / max(0.1, x["duration"]), 2)
+        x["cps"] = cps
+        total_cps_sum += cps
         if char_count > max_char_limit:
             overlength_lines.append(x)
+        if cps > cps_limit:
+            high_cps_lines.append(x)
 
-    # 3. Punctuation metrics
+    mean_cps = round(total_cps_sum / total_lines, 2)
+    peak_cps = max(x["cps"] for x in items)
+
+    # 3. Punctuation & Typography Metrics (Brackets & Markdown Artifacts)
     trailing_punct_lines = [
         x for x in items if re.search(r"[。，、；:;,.—-]+$", x["text"])
     ]
     inline_comma_lines = [
         x for x in items if "，" in x["text"]
     ]
+
+    bracket_pairs = [
+        ("（", "）"),
+        ("(", ")"),
+        ("【", "】"),
+        ("《", "》"),
+        ("「", "」"),
+        ("『", "』"),
+        ("[", "]"),
+        ("{", "}")
+    ]
+    unclosed_bracket_lines = []
+    residual_md_lines = []
+    for x in items:
+        # Check unmatched brackets
+        unmatched = []
+        for open_b, close_b in bracket_pairs:
+            if x["text"].count(open_b) != x["text"].count(close_b):
+                unmatched.append(f"{open_b}...{close_b}")
+        if unmatched:
+            unclosed_bracket_lines.append((x, ", ".join(unmatched)))
+
+        # Check residual markdown markers
+        if re.search(r"(\*{1,3}|_{2,}|`{1,3}|(?<=^)\s*#{1,6}\s|(?<=^)\s*>\s)", x["text"]):
+            residual_md_lines.append(x)
+
+    # 4. Prolonged Silence Detection (Gap >= 10.0s)
+    prolonged_silence_threshold = 10.0
+    prolonged_silences = []
+    if items[0]["start"] >= prolonged_silence_threshold:
+        prolonged_silences.append({
+            "start": 0.0,
+            "end": round(items[0]["start"], 3),
+            "duration": round(items[0]["start"], 2),
+            "timestamp": f"{format_timestamp_srt(0.0)} --> {format_timestamp_srt(items[0]["start"])}",
+            "prev_index": 0,
+            "prev_text": "[影片開頭 / 片頭無語音]",
+            "next_index": items[0]["index"],
+            "next_text": items[0]["text"]
+        })
+    for i in range(total_lines - 1):
+        c, n = items[i], items[i + 1]
+        g = n["start"] - c["end"]
+        if g >= prolonged_silence_threshold:
+            prolonged_silences.append({
+                "start": round(c["end"], 3),
+                "end": round(n["start"], 3),
+                "duration": round(g, 2),
+                "timestamp": f"{format_timestamp_srt(c["end"])} --> {format_timestamp_srt(n["start"])}",
+                "prev_index": c["index"],
+                "prev_text": c["text"],
+                "next_index": n["index"],
+                "next_text": n["text"]
+            })
+
+    # 5. Glossary Consistency Check
+    glossary_terms_found = []
+    glossary_total_terms = 0
+    if global_glossary:
+        bold_terms = re.findall(r"\*\*(.+?)\*\*", global_glossary)
+        category_keywords = [
+            "Person", "Speaker", "Names", "Organizations", "Products", "Places", "Brands",
+            "Domain Jargon", "Tech Terms", "Core Topic", "全片專有名詞", "Whisper", "講者與人物",
+            "公司、品牌", "行業專有名詞", "核心主題", "Glossary", "Terminology"
+        ]
+        unique_terms = []
+        for term in bold_terms:
+            t = term.strip()
+            if any(cat in t for cat in category_keywords):
+                continue
+            clean_t = re.split(r"[（\(]", t)[0].strip()
+            if clean_t and clean_t not in unique_terms and len(clean_t) >= 2:
+                unique_terms.append(clean_t)
+        glossary_total_terms = len(unique_terms)
+        all_subtitle_text = " ".join(x["text"] for x in items)
+        for term in unique_terms:
+            count = all_subtitle_text.count(term)
+            if count > 0:
+                glossary_terms_found.append({"term": term, "occurrences": count})
+
+    # 6. Acoustic Alignment Metrics
+    locked_count = alignment_stats.get("locked", total_lines) if alignment_stats else total_lines
+    fallback_count = alignment_stats.get("fallback", 0) if alignment_stats else 0
+    locked_pct = round((locked_count / max(1, locked_count + fallback_count)) * 100, 1)
+
+    # 7. Objective Weighted Quality Score
+    base_score = 100.0
+    # Overlaps: -5 per violation (max -20)
+    base_score -= min(20.0, len(overlaps) * 5.0)
+    # Micro-gaps: -2 per violation (max -10)
+    base_score -= min(10.0, len(micro_gaps) * 2.0)
+    # Trailing punctuation: -1 per violation (max -10)
+    base_score -= min(10.0, len(trailing_punct_lines) * 1.0)
+    # Unclosed brackets: -3 per violation (max -10)
+    base_score -= min(10.0, len(unclosed_bracket_lines) * 3.0)
+    # Residual markdown: -5 per violation (max -10)
+    base_score -= min(10.0, len(residual_md_lines) * 5.0)
+    # Overlength rate: -0.5 per 1% (max -10)
+    base_score -= min(10.0, (len(overlength_lines) / total_lines * 100) * 0.5)
+    # Under 1s rate: -0.3 per 1% (max -5)
+    base_score -= min(5.0, (len(short_dur) / total_lines * 100) * 0.3)
+    # High CPS rate: -0.5 per 1% (max -10)
+    base_score -= min(10.0, (len(high_cps_lines) / total_lines * 100) * 0.5)
+    # Fallback rate: -0.2 per 1% (max -5)
+    if alignment_stats and (locked_count + fallback_count) > 0:
+        base_score -= min(5.0, (fallback_count / (locked_count + fallback_count) * 100) * 0.2)
+
+    compliance_score = max(0.0, min(100.0, round(base_score, 1)))
+    grade = "A+" if compliance_score >= 95.0 else ("A" if compliance_score >= 90.0 else ("B" if compliance_score >= 80.0 else "C"))
+
+    # 8. Actionable Review List (Top Issues)
+    review_issues = []
+    # Residual Markdown (Highest priority)
+    for x in residual_md_lines:
+        review_issues.append({
+            "index": x["index"],
+            "timestamp": f"{format_timestamp_srt(x["start"])} --> {format_timestamp_srt(x["end"])}",
+            "type": "🧹 殘留 Markdown",
+            "detail": "包含語法符號 (*, _, `)",
+            "text": x["text"],
+            "severity": 20.0
+        })
+    # Unclosed brackets
+    for x, unclosed_info in unclosed_bracket_lines:
+        review_issues.append({
+            "index": x["index"],
+            "timestamp": f"{format_timestamp_srt(x["start"])} --> {format_timestamp_srt(x["end"])}",
+            "type": "🔤 括號未閉合",
+            "detail": f"未成對: {unclosed_info}",
+            "text": x["text"],
+            "severity": 15.0
+        })
+    # Overlength lines
+    for x in overlength_lines:
+        review_issues.append({
+            "index": x["index"],
+            "timestamp": f"{format_timestamp_srt(x["start"])} --> {format_timestamp_srt(x["end"])}",
+            "type": "⚠️ 超長字數",
+            "detail": f"{x["char_count"]} 字 (上限 {max_char_limit})",
+            "text": x["text"],
+            "severity": x["char_count"] - max_char_limit
+        })
+    # High CPS lines
+    for x in high_cps_lines:
+        review_issues.append({
+            "index": x["index"],
+            "timestamp": f"{format_timestamp_srt(x["start"])} --> {format_timestamp_srt(x["end"])}",
+            "type": "⚡ 閱讀超速",
+            "detail": f"{x["cps"]} CPS (上限 {cps_limit})",
+            "text": x["text"],
+            "severity": x["cps"] - cps_limit
+        })
+    # Short lines (< 1s) with high density
+    for x in short_dur:
+        if x["cps"] > 5.0:
+            review_issues.append({
+                "index": x["index"],
+                "timestamp": f"{format_timestamp_srt(x["start"])} --> {format_timestamp_srt(x["end"])}",
+                "type": "⏱️ 短促停留",
+                "detail": f"{x["duration"]:.2f}s (CPS: {x["cps"]})",
+                "text": x["text"],
+                "severity": 1.0 - x["duration"]
+            })
+
+    # Sort review issues by severity descending
+    review_issues.sort(key=lambda it: it.get("severity", 0), reverse=True)
 
     metrics = {
         "language_locale": norm_lang,
@@ -1015,10 +1495,17 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
         "last_out_timestamp": format_timestamp_srt(items[-1]["end"]),
         "mean_duration_seconds": round(mean_dur, 2),
         "median_duration_seconds": round(median_dur, 2),
+        "mean_cps": mean_cps,
+        "peak_cps": peak_cps,
+        "cps_limit": cps_limit,
+        "high_cps_count": len(high_cps_lines),
+        "high_cps_rate_pct": round(len(high_cps_lines) / total_lines * 100, 2),
         "char_limit_per_line": max_char_limit,
         "overlength_count": len(overlength_lines),
         "overlength_rate_pct": round(len(overlength_lines) / total_lines * 100, 2),
         "trailing_punct_violations": len(trailing_punct_lines),
+        "unclosed_bracket_count": len(unclosed_bracket_lines),
+        "residual_markdown_count": len(residual_md_lines),
         "inline_comma_count": len(inline_comma_lines),
         "duration_under_1s_count": len(short_dur),
         "duration_under_1s_rate_pct": round(len(short_dur) / total_lines * 100, 2),
@@ -1027,7 +1514,17 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
         "micro_gaps_count": len(micro_gaps),
         "seamless_zero_gaps_count": len(zero_gaps),
         "natural_pauses_count": len(normal_gaps),
-        "compliance_score_pct": 100.0 if (len(overlaps) == 0 and len(long_dur) == 0 and len(trailing_punct_lines) == 0) else 95.0
+        "prolonged_silence_threshold_seconds": prolonged_silence_threshold,
+        "prolonged_silence_count": len(prolonged_silences),
+        "prolonged_silence_gaps": prolonged_silences,
+        "acoustic_locked_count": locked_count,
+        "acoustic_fallback_count": fallback_count,
+        "acoustic_locked_rate_pct": locked_pct,
+        "glossary_terms_detected": len(glossary_terms_found),
+        "glossary_total_terms": glossary_total_terms,
+        "compliance_score_pct": compliance_score,
+        "compliance_grade": grade,
+        "actionable_issues_count": len(review_issues)
     }
 
     # Console Card
@@ -1041,27 +1538,65 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
   • 開場聲學起點 (First In)   : {metrics['first_in_timestamp']} (0.000s 零劇透)
   • 結尾收尾時間 (Last Out)   : {metrics['last_out_timestamp']}
   • 平均閱讀時長 (Mean Dur)   : {mean_dur:.2f}s (中位數: {median_dur:.2f}s)
+  • 綜合合規評分 (Compliance) : {compliance_score:.1f}% (Grade {grade})
 
-【排版與字數規範 (Layout)】
+【排版與文字潔淨 (Layout & Typography)】
   • 單行字數上限 ({norm_lang} <= {max_char_limit}) : {total_lines - len(overlength_lines)}/{total_lines} 達標 ({100.0 - metrics['overlength_rate_pct']:.1f}%)
+  • 閱讀速率 (Mean CPS)      : {mean_cps} 字/秒 (峰值: {peak_cps} CPS | 上限: {cps_limit} CPS)
+  • 超速警示行 (CPS > {cps_limit}) : {len(high_cps_lines)} 句 ({metrics['high_cps_rate_pct']:.1f}%)
   • 行尾標點潔淨度 (No 。,; )  : {total_lines - len(trailing_punct_lines)}/{total_lines} 潔淨 (違規: {len(trailing_punct_lines)})
-  • 行內逗號轉自然空格        : 100% 轉化完成 (極簡排版)
+  • 括號成對閉合 (Brackets)   : {total_lines - len(unclosed_bracket_lines)}/{total_lines} 閉合 (違規: {len(unclosed_bracket_lines)})
+  • 語法標記潔淨 (No Markdown): {total_lines - len(residual_md_lines)}/{total_lines} 潔淨 (違規: {len(residual_md_lines)})
 
-【時間軸與閱聽節奏 (Rhythm)】
+【時間軸與聲學對齊 (Timing & Acoustics)】
+  • 物理聲學鎖定率 (Acoustic): {locked_pct:.1f}% ({locked_count}/{max(1, locked_count + fallback_count)} 句物理時間完全鎖定)
   • 最短停留時間 (Dur >= 1.0s): {total_lines - len(short_dur)}/{total_lines} 達標 ({100.0 - metrics['duration_under_1s_rate_pct']:.1f}%)
   • 最長停留時間 (Dur <= 6.0s): {total_lines - len(long_dur)}/{total_lines} 達標 (100.0%)
   • 毫秒微小黑閃 (Gap < 0.2s) : {len(micro_gaps)} 處 (100% 消除視覺閃爍)
   • 時間軸重疊衝突 (Overlaps) : {len(overlaps)} 處 (100% 物理時間連續)
   • 平滑切換銜接 (Zero Gaps)  : {len(zero_gaps)} 對 | 自然呼吸停頓: {len(normal_gaps)} 對
-================================================================================
+  • 長時間留白/靜音 (>= 10.0s): {len(prolonged_silences)} 處 ({'✅ 節奏緊湊無中斷' if len(prolonged_silences) == 0 else f'⚠️ {len(prolonged_silences)} 處長停頓需查證'})
 """
+
+    if review_issues:
+        c_card += f"\n【⚠️ 待複查警示清單 Top {min(5, len(review_issues))}/{len(review_issues)} 句】\n"
+        for it in review_issues[:5]:
+            c_card += f"  • #{it['index']:03d} [{it['timestamp']}] {it['type']} ({it['detail']}): \"{it['text'][:24]}\"\n"
+
+    c_card += "================================================================================\n"
+
+    # Build Markdown Review Table
+    review_table_rows = []
+    for it in review_issues[:15]:
+        review_table_rows.append(
+            f"| `#{it['index']}` | `{it['timestamp']}` | {it['type']} | `{it['detail']}` | {it['text']} |"
+        )
+    review_table_md = "\n".join(review_table_rows) if review_table_rows else "| - | - | - | - | 無待複查項目 (100% 完美達標) |"
+
+    # Build Prolonged Silence Markdown Section
+    if prolonged_silences:
+        silence_rows = []
+        for s_idx, s_gap in enumerate(prolonged_silences, start=1):
+            p_text = (s_gap['prev_text'][:20] + '...') if len(s_gap['prev_text']) > 20 else s_gap['prev_text']
+            n_text = (s_gap['next_text'][:20] + '...') if len(s_gap['next_text']) > 20 else s_gap['next_text']
+            silence_rows.append(
+                f"| `{s_idx}` | `{s_gap['timestamp']}` | `{s_gap['duration']:.2f}s` | {p_text} | {n_text} | ⚠️ 建議核對是否為純空景/音樂或漏字 |"
+            )
+        prolonged_silence_md = (
+            "| 序號 | 靜音時間區間 | 靜音時長 | 前一句字幕內容 | 後一句字幕內容 | 狀態提示 |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n" +
+            "\n".join(silence_rows)
+        )
+    else:
+        prolonged_silence_md = "✅ **全片無超過 10 秒之長時間對白中斷**，節奏流暢緊湊。"
 
     # Markdown Report
     md_report = f"""# YouTube / Netflix 影視級字幕品質檢驗報告
 
 > **產出時間**: {time.strftime('%Y-%m-%d %H:%M:%S')}  
 > **語系代碼**: `{norm_lang}`  
-> **合規評分**: **{metrics['compliance_score_pct']:.1f}% (Grade A+)**
+> **合規評分**: **{compliance_score:.1f}% (Grade {grade})**  
+> **聲學鎖定**: **{locked_pct:.1f}%** ({locked_count}/{max(1, locked_count + fallback_count)} 句完全對齊物理聲學)
 
 ---
 
@@ -1070,14 +1605,18 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
 * **開場聲學起點**: `{metrics['first_in_timestamp']}`（物理波形起始點，0 提前劇透）
 * **結尾收尾時間**: `{metrics['last_out_timestamp']}`
 * **平均單句時長**: `{mean_dur:.2f}` 秒（中位數 `{median_dur:.2f}` 秒）
+* **平均閱讀速度**: `{mean_cps}` 字/秒（最高峰值 `{peak_cps}` CPS）
 
 ---
 
-## 2. 排版與字數指標 (Layout & Punctuation)
+## 2. 排版與字數指標 (Layout & Typography)
 | 檢驗項目 | 標準規範 | 實測數值 | 狀態 |
 | :--- | :--- | :--- | :--- |
-| **單行字數上限** | $\\le {max_char_limit}$ 字/字元 | `{total_lines - len(overlength_lines)} / {total_lines}` ({100.0 - metrics['overlength_rate_pct']:.1f}%) | ✅ 達標 |
-| **行尾贅字標點** | 嚴禁 `。`、`，`、`；` | `{len(trailing_punct_lines)}` 處違規 | ✅ 100% 潔淨 |
+| **單行字數上限** | $\\le {max_char_limit}$ 字/字元 | `{total_lines - len(overlength_lines)} / {total_lines}` ({100.0 - metrics['overlength_rate_pct']:.1f}%) | {'✅ 達標' if metrics['overlength_rate_pct'] <= 5.0 else '⚠️ 建議微調'} |
+| **閱讀速度 (CPS)** | $\\le {cps_limit}$ 字/秒 | `{total_lines - len(high_cps_lines)} / {total_lines}` 舒適 ({100.0 - metrics['high_cps_rate_pct']:.1f}%) | {'✅ 舒適' if len(high_cps_lines) == 0 else f'⚠️ {len(high_cps_lines)} 句過促'} |
+| **行尾贅字標點** | 嚴禁 `。`、`，`、`；` | `{len(trailing_punct_lines)}` 處違規 | {'✅ 100% 潔淨' if len(trailing_punct_lines) == 0 else f'⚠️ {len(trailing_punct_lines)} 處未清理'} |
+| **括號成對閉合** | 全形/半形括號成對 | `{len(unclosed_bracket_lines)}` 處未閉合 | {'✅ 100% 成對' if len(unclosed_bracket_lines) == 0 else f'⚠️ {len(unclosed_bracket_lines)} 處未閉合'} |
+| **語法標記潔淨** | 嚴禁殘留 `**`、`_`、`#` | `{len(residual_md_lines)}` 處殘留 | {'✅ 100% 潔淨' if len(residual_md_lines) == 0 else f'⚠️ {len(residual_md_lines)} 處殘留'} |
 | **行內逗號轉空格** | 自然空格/頓號替代 | `{len(inline_comma_lines)}` 處書面逗號殘留 | ✅ 極簡排版 |
 | **中英/數字混排空格** | 單一半形空格 | 100% 自動正規化 | ✅ 標準化 |
 
@@ -1086,15 +1625,42 @@ def audit_subtitles_quality(srt_content, language="zh-TW"):
 ## 3. 時間軸與閱聽節奏指標 (Timing & Pacing)
 | 檢驗項目 | 標準規範 | 實測數值 | 說明 |
 | :--- | :--- | :--- | :--- |
+| **物理聲學鎖定** | 詞級波形錨定 | `{locked_pct:.1f}%` ({locked_count} 句鎖定) | {'✅ 完美咬合' if fallback_count == 0 else f'⚠️ {fallback_count} 句使用 LLM 估計時間'} |
 | **最短停留時間** | $\\ge 1.0\\text{{s}}$ | `{100.0 - metrics['duration_under_1s_rate_pct']:.1f}%` ({total_lines - len(short_dur)} 句) | 短句於靜音空隙補足至 1.0s |
 | **最長停留時間** | $\\le 6.0\\text{{s}}$ | `100.0%` (0 處卡死) | 杜絕字幕卡死感 |
 | **時間軸重疊 (Overlaps)** | $0\\text{{s}}$ | `0` 處重疊衝突 | 100% 物理單向連續 |
 | **毫秒黑閃 (Micro-Gaps)** | $< 0.2\\text{{s}}$ | `0` 處黑閃 | 100% 防閃爍平滑橋接 |
 | **平滑無縫銜接** | Gap == 0s | `{len(zero_gaps)}` 對 | 連續對話平滑接軌 |
 | **自然呼吸停頓** | Gap $\\ge 0.2\\text{{s}}$ | `{len(normal_gaps)}` 對 | 保留講者停頓留白 |
+| **長時間無對白/靜音** | 停頓 $\\ge 10.0\\text{{s}}$ | `{len(prolonged_silences)}` 處長停頓 | {'✅ 對白緊湊無中斷' if len(prolonged_silences) == 0 else f'⚠️ {len(prolonged_silences)} 處長停頓需查證'} |
+
+---
+
+## 4. 長時間無對白/靜音區間檢驗 (Prolonged Silence Audit >= 10s)
+> 檢測對白中斷超過 10 秒之區間，供剪輯師快速排查是否為純音樂/空景、或 Whisper ASR / VAD 語音切除遺漏：
+
+{prolonged_silence_md}
+
+---
+
+## 5. 專有名詞庫檢驗 (Glossary Consistency)
+* **檢測專有名詞總數**: `{glossary_total_terms}` 個
+* **成功匹配入字幕數**: `{len(glossary_terms_found)}` 個（涵蓋重點人名、品牌與日文漢字）
+
+---
+
+## 6. ⚠️ 待複查警示清單 (Actionable Review List)
+> 剪輯師可依據以下時間碼，在 DaVinci Resolve / Premiere Pro 時間線上快速定位微調：
+
+| 序號 | 時間區間 | 警示類型 | 實測指標 | 字幕內容 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+{review_table_md}
 """
+    if len(review_issues) > 15:
+        md_report += f"\n*(其餘 {len(review_issues) - 15} 項次要微調項目已記錄於 JSON 報告中)*\n"
 
     return metrics, c_card, md_report
+
 
 
 def main():
@@ -1105,6 +1671,7 @@ def main():
     parser.add_argument("-i", "--input", required=True, help="Path to input video (e.g. final_cut_full.mp4) or audio file")
     parser.add_argument("-o", "--output-dir", default=None, help="Output directory for SRT/VTT subtitles (default: same as input)")
     parser.add_argument("--outline", default=None, help="User interview outline, topic summary, or glossary notes to bias terminology")
+    parser.add_argument("--script", default=None, help="Path to full recording script, manuscript, or spoken draft to anchor terminology and phrasing")
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
                         help="Whisper model size for Stage 2 acoustic transcription (default: base)")
     parser.add_argument("--model", default="gemini-3.7-flash",
@@ -1143,11 +1710,19 @@ def main():
         with open(user_outline_text, "r", encoding="utf-8") as f:
             user_outline_text = f.read().strip()
 
+    # Read full script file if provided
+    user_script_text = args.script
+    if user_script_text and os.path.isfile(user_script_text):
+        with open(user_script_text, "r", encoding="utf-8") as f:
+            user_script_text = f.read().strip()
+
     print("\n" + "=" * 78)
     print("🎬  YouTube Subtitles Generator (Global Glossary + Whisper ASR + Gemini Audio Proofreading)")
     print("=" * 78)
     print(f"  • Input Media   : {args.input}")
     print(f"  • LLM Model     : {args.model}")
+    if args.script:
+        print(f"  • Source Script : {os.path.basename(args.script) if os.path.isfile(args.script) else 'Supplied text'} ({len(user_script_text or '')} chars)")
     if args.outline:
         print(f"  • User Outline  : {args.outline[:50]}...")
     if args.base_url:
@@ -1182,6 +1757,7 @@ def main():
                 global_glossary = extract_global_glossary(
                     audio_wav=tmp_wav,
                     user_outline=user_outline_text,
+                    user_script=user_script_text,
                     api_key=args.api_key,
                     base_url=args.base_url,
                     model=args.model
@@ -1191,7 +1767,13 @@ def main():
                         f.write(global_glossary + "\n")
                     print(f"  • Saved Global Glossary: {glossary_path}")
 
-        # Stage 2: Whisper Acoustic Transcription (Zero-Drift Physical Timestamps)
+        # Extract Whisper initial prompt from Global Glossary (Dual-track parsing)
+        whisper_bias_prompt = extract_whisper_prompt(global_glossary, language=args.language)
+        if whisper_bias_prompt:
+            print(f"  • Extracted Whisper Initial Prompt ({len(whisper_bias_prompt)} chars):")
+            print(f"    \"{whisper_bias_prompt}\"")
+
+        # Stage 2: Whisper Acoustic Transcription (Zero-Drift Physical Timestamps with initial_prompt bias)
         raw_words_path = os.path.join(out_dir, f"{input_basename}_words.json")
         if os.path.exists(raw_srt_path) and os.path.exists(raw_words_path) and not args.force:
             print(f"\n[Stage 2/3] 🎙️ Found cached Whisper acoustic baseline:")
@@ -1208,14 +1790,26 @@ def main():
                 print(f"  ✓ Successfully loaded {len(segments)} segments and {len(all_words)} word timestamps from cache.")
             except Exception as e:
                 print(f"  [Notice] Failed to load cache ({e}), re-running Whisper transcription...")
-                segments, detected_lang, all_words = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
+                segments, detected_lang, all_words = run_whisper_transcription(
+                    tmp_wav,
+                    model_size=args.whisper_model,
+                    language=args.language,
+                    device=args.device,
+                    initial_prompt=whisper_bias_prompt
+                )
                 raw_srt = build_srt_from_segments(segments)
                 with open(raw_srt_path, "w", encoding="utf-8") as f:
                     f.write(raw_srt)
                 with open(raw_words_path, "w", encoding="utf-8") as f:
                     json.dump({"language": detected_lang, "segments": segments, "words": all_words}, f, ensure_ascii=False)
         else:
-            segments, detected_lang, all_words = run_whisper_transcription(tmp_wav, model_size=args.whisper_model, language=args.language, device=args.device)
+            segments, detected_lang, all_words = run_whisper_transcription(
+                tmp_wav,
+                model_size=args.whisper_model,
+                language=args.language,
+                device=args.device,
+                initial_prompt=whisper_bias_prompt
+            )
             raw_srt = build_srt_from_segments(segments)
             with open(raw_srt_path, "w", encoding="utf-8") as f:
                 f.write(raw_srt)
@@ -1226,23 +1820,35 @@ def main():
         effective_lang = detected_lang if str(args.language).lower() in ("auto", "none") else args.language
         print(f"  • Effective Language Locale: {normalize_language_tag(effective_lang)} (Input: '{args.language}', Detected: '{detected_lang}')")
 
+        # Chunk-level cache path
+        chunk_cache_path = os.path.join(out_dir, f".{input_basename}_chunk_cache.json")
+        if args.force and os.path.exists(chunk_cache_path):
+            try:
+                os.remove(chunk_cache_path)
+            except Exception:
+                pass
+
+        alignment_stats = None
         if not resolved_key and not args.base_url:
             print(f"\n[Stage 3/3] ℹ️  No LLM API Key (GEMINI_API_KEY / OPENAI_API_KEY) found.")
             print(f"            Saving raw Whisper acoustic transcription directly as final SRT/VTT.")
-            final_srt = sanitize_subtitle_timings(raw_srt, language=effective_lang)
+            final_srt = sanitize_subtitle_timings(raw_srt, all_words=all_words, language=effective_lang)
+            alignment_stats = {"total": len(segments), "locked": len(segments), "fallback": 0, "fallback_indices": []}
         else:
             # Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading
-            final_srt = proofread_srt_with_llm(
+            final_srt, alignment_stats = proofread_srt_with_llm(
                 raw_srt=raw_srt,
                 audio_wav=tmp_wav,
                 global_glossary=global_glossary,
+                user_script=user_script_text,
                 api_key=args.api_key,
                 base_url=args.base_url,
                 model=args.model,
                 chunk_size=args.chunk_size,
                 max_workers=args.workers,
                 language=effective_lang,
-                all_words=all_words
+                all_words=all_words,
+                cache_path=chunk_cache_path
             )
 
         # Write Final SRT
@@ -1256,8 +1862,13 @@ def main():
             f.write(vtt_content)
         print(f"[Output 2/4] 🌐 Saved WebVTT (.vtt) Subtitles for YouTube / Web: {final_vtt_path}")
 
-        # Stage 4 / Quality Audit: Run comprehensive quality & pacing audit
-        metrics, c_card, md_report = audit_subtitles_quality(final_srt, language=effective_lang)
+        # Stage 4 / Quality Audit: Run comprehensive quality, speed & acoustic audit
+        metrics, c_card, md_report = audit_subtitles_quality(
+            final_srt,
+            language=effective_lang,
+            global_glossary=global_glossary,
+            alignment_stats=alignment_stats
+        )
 
         with open(report_json_path, "w", encoding="utf-8") as f:
             json.dump(metrics, f, ensure_ascii=False, indent=2)

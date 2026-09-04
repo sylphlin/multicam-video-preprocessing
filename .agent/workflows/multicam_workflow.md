@@ -95,9 +95,13 @@ flowchart TD
   # Standard Execution (Auto-extracts glossary from full episode audio):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4
 
-  # If user provided interview outline / guest notes in prompt (Optional Outline Injection):
+  # If user provided interview outline / guest notes (Optional Outline Injection):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --outline "<OUTLINE_TEXT_OR_FILE>"
+
+  # If user provided full recording script / manuscript (Ground Truth Manuscript Anchor):
+  python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --script "<SCRIPT_TEXT_OR_FILE>"
   ```
 - **Exit Gate 4 Verification**:
   - [x] `<OUTPUT_DIR>/final_cut_full.srt` and `<OUTPUT_DIR>/final_cut_full.vtt` exist and contain millisecond-accurate corrected subtitles.
   - [x] `<OUTPUT_DIR>/final_cut_full_glossary.md` exists with global terminology rules.
+  - [x] `<OUTPUT_DIR>/final_cut_full_subtitle_report.md` exists with Netflix/YouTube pacing audit and actionable review list.

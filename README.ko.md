@@ -94,18 +94,39 @@ multicam-video-preprocessing/
 
 ### 4단계: YouTube 자막 생성 (`generate_subtitles.py`)
 - **3단계 골든 자막 생성 파이프라인 (Three-Stage Pipeline)**:
-  1. **전체 오디오 글로벌 용어집 추출**: Gemini 1M Context로 전체 에피소드 오디오를 청취하여 고유명사, 영문명, 전문 용어집(`final_cut_full_glossary.md`)을 자동 생성.
-  2. **Whisper 음향 물리 밀리초 타임코드 및 단어 타임스탬프**: 로컬 Whisper(ARM NEON / AVX int8)로 단어 수준 음향 파형을 측정하여 0.000초 오차 없는 기준 타임라인 및 단어 캐시(`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`)를 생성 (재실행 시 수초 내 로드).
-  3. **청크 단위 물리 음향 앵커 재투영 (Chunk-Scoped Reprojection)**: Gemini는 문맥 줄바꿈과 텍스트 교정에만 전념하고, 백엔드 SequenceMatcher 단조 정렬 알고리즘이 Whisper 단어 수준 물리 시간에 정밀 재투영 (음성과 100% 일치, 스포일러/지연 완전 근절).
-- **🎯 방송 및 스트리밍 표준 자막 품질 감사 엔진 (자동 최적화)**:
-  - **화자 의미 완결 및 분리**: 동일 화자의 질문/문장은 한 줄로 결합하고, 화자 전환 시 새로운 자막 줄을 강제 분리하여 혼란 방지.
-  - **1줄 글자 수 제한**: 한국어 $\le 16$자, 중국어/일본어 $\le 15$자, 영어 $\le 37$ CPL (긴 문장은 구문 단위로 자동 분할).
+  1. **전체 오디오 매크로 이해, 듀얼 트랙 용어집 및 Whisper Initial Prompt 추출**: Gemini 3.7 Flash(1M Context)로 전체 에피소드 오디오를 청취(인터뷰 개요 `--outline` 또는 녹음 원고/대본 `--script` 지원). Gemini 교정용 Markdown 용어집(`final_cut_full_glossary.md`)과 함께, 상단에 200 토큰(약 100~140자) 이내 고밀도 핵심 키워드 목록(`> **Whisper Initial Prompt**: ...`)을 자동 생성.
+  2. **Whisper 물리 음향 타임코드 및 프롬프트 바이어스 주입**: 1단계의 `initial_prompt`를 로컬 Whisper(`mlx-whisper` / `faster-whisper`)에 주입하여 고유명사의 초동 인식률을 대폭 향상. 단어 수준 물리 음향 파형을 측정(`word_timestamps=True`)하여 0.000초 오차 없는 기준 타임라인 및 단어 캐시(`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`)를 생성 (재실행 시 수초 내 로드).
+  3. **무음 감지 시맨틱 청킹, 마이크로 음향 스냅 및 멀티모달 오디오 교정**:
+     - **무음 감지 시맨틱 청킹 (Silence-Aware Semantic Chunking)**: 고정 행 수 기계적 분할을 폐지하고, 자연스러운 호흡 휴지(Gap $\ge 0.4\text{s}$) 및 문장 종결 부호/어미에서 안전하게 분할.
+     - **마이크로 음향 스냅 (Micro-Acoustic Sub-clause Snapping)**: 긴 문장 분할 시 Whisper 단어 물리 타임스탬프(`all_words`)에 흡착시켜 비례 배분으로 인한 입모양 불일치 배제.
+     - **일본어 한자/가나 발음 동기화 규칙**: 일본어 발음을 구술한 경우 "한자(히라가나)"(예: `改札（かいさつ）`), 문맥상 단순히 언급된 경우 순수 한자(예: `出改札`)로 처리하며, 괄호 제거 대체 매칭으로 음향 탈락 방지.
+     - **청크 단위 영구 캐시 (Chunk-Level Persistent Cache)**: 모델, 프롬프트, 용어집, 텍스트 청크로부터 고유 해시를 생성하여 `.<basename>_chunk_cache.json`에 즉시 저장. 중단 시에도 토큰 낭비 없이 100% 재개 가능.
+     - **플리커 방지 미세 간격 결합**: 미세한 간격($< 0.6\text{s}$)을 0s로 평활화, 진정한 휴지 시 $+0.4\text{s}$ 호흡 여백 후 화면을 깔끔히 클리어.
+- **🎯 Netflix / YouTube 방송 표준 자막 품질 감사 엔진 (8대 핵심 검증 항목)**:
+  - **1줄 글자 수 및 너비 제한**: 한국어 $\le 16$자, 중국어/일본어 $\le 15$자, 영어 $\le 37$ CPL (긴 문장은 구문 단위로 자동 분할).
+  - **가독 속도 모니터링 (CPS)**: CJK $\le 6.0$ CPS, 영어 $\le 20.0$ CPS. 전체 평균 CPS 및 피크 CPS를 산출하고 Netflix 기준 초과 항목을 경고 목록에 등록.
   - **문장 끝 불필요 문장부호 100% 제거**: 문장 끝의 `。`, `，`, `；`를 완전 제거하여 깔끔한 화면 구성.
-  - **음성 시작 0.000초 물리 동기화**: Whisper 음향 파형 시작점에 엄격 고정하여 스포일러 방지.
+  - **타이포그래피 및 서식 정제**: 전각 `（）`, `【】`, `《》`, `「」` 및 반각 괄호 쌍 검증, 누출된 Markdown 태그(`**`, `_`, `` ` ``) 자동 제거.
+  - **장시간 무음/무대화 구간 검사**: 10초 이상의 무음 구간(Gap $\ge 10.0\text{s}$)을 검출하여 B-roll, BGM 또는 ASR 음성 누락 확인용 전후 문맥 및 타임코드 기록.
+  - **음성 시작 0.000초 물리 동기화**: Whisper 음향 파형 시작점에 엄격 고정(0.000s)하여 스포일러 방지.
   - **가독 시간 보호**: $1.0\text{s} \le \text{Duration} \le 6.0\text{s}$ (짧은 문장은 여백을 활용하여 $\ge 1.0\text{s}$ 확보).
-  - **플리커 방지 미세 간격 결합**: $< 0.6\text{s}$ 간격을 0s로 평활화, 진정한 휴지 시 $+0.4\text{s}$ 호흡 여백 후 화면을 깔끔히 클리어.
-  - **단조 시간 연속성 보장**: 시간 역행, 블록 중첩, 0/음수 시간 자막 완전 배제.
-- **출력**: `final_cut_full.srt`, `final_cut_full.vtt`, `final_cut_full_subtitle_report.json`(품질 감사 JSON), `final_cut_full_subtitle_report.md`(시각화 평가 Markdown), `final_cut_full_glossary.md`, `final_cut_full_words.json`.
+  - **플리커 방지 미세 간격 결합**: $< 0.2\text{s}$ 간격을 0s로 평활화, $+0.4\text{s}$ 호흡 여백 확보.
+- **실행 명령어 예시**:
+  ```bash
+  # 기본 실행 (용어집 자동 추출 + Whisper 전사 + Gemini 멀티모달 교정):
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+
+  # 녹음 원고/대본을 전달하여 용어 및 문맥 최적화:
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
+  ```
+- **출력 파일**:
+  - `final_cut_full.srt`: YouTube 표준 SubRip 자막 파일.
+  - `final_cut_full.vtt`: 웹 플레이어용 WebVTT 자막 파일.
+  - `final_cut_full_subtitle_report.json`: 품질 감사 보고서 (JSON, 세부 통계 및 검토 필요 목록).
+  - `final_cut_full_subtitle_report.md`: 품질 감사 시각화 카드 (Markdown, 적합 등급 및 무음 구간 목록).
+  - `final_cut_full_glossary.md`: 에피소드 전체 용어집 (상단에 Whisper Initial Prompt 포함).
+  - `final_cut_full_raw_whisper.srt`: Whisper 전사 초안.
+  - `final_cut_full_words.json`: Whisper 단어 수준 물리 타임스탬프 캐시.
 
 ---
 
