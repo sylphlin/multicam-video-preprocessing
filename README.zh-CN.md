@@ -40,6 +40,8 @@ multicam-video-preprocessing/
 ├── scripts/                           # 核心执行脚本与处理模块
 │   ├── multicam_pipeline.py           # 步骤 1: 多机时间同步、音量标准化、分段与网格合成
 │   ├── generate_edl.py                # 步骤 2: Gemini 多模态 AI 剪辑决策生成
+│   ├── test_agentic_edl.py            # 步骤 2 (次世代): Gemini 3.7 Flash Agentic Video (零切分架构, >1小时)
+│   ├── compare_edl.py                 # 评测工具: 比较分段与 Agentic 全长剪辑决策 (节奏、衔接与 Token)
 │   ├── export_fcp7_xml.py             # 步骤 3A: 导出 FCP7 XML 时间线 (主路径)
 │   ├── edl_to_video.py                # 步骤 3B: 直接渲染成片 (次路径)
 │   ├── concat_videos.py               # 步骤 3B: 全集章节无损拼接 (次路径)
@@ -153,18 +155,23 @@ flowchart TD
 
 ---
 
-### 步骤 2：Gemini 多模态 AI 智能粗剪决策 (`generate_edl.py`)
+### 步骤 2：Gemini 多模态 AI 智能粗剪决策 (`generate_edl.py` / `test_agentic_edl.py`)
 1. **加载专属提示词资产**：
-   - 读取 `assets/edl_interview_template.md` 规则模板。
-2. **Phase 0：头尾废料裁切 (Pre/Post-roll Trimming)**：
-   - 自动辨识并剔除开拍前试音、倒数之废料画面（标记 `Global_Start_Time`）；
-   - 自动识别访谈结尾道别语句，切除收尾未关机闲聊与环境杂音（标记 `Global_End_Time`）。
+   - 读取 `assets/edl_interview_template.md` 广电级访谈剪辑规则模板。
+2. **Phase 0：头尾废料与现场倒数彻底裁切 (零容忍原则与不对称安全边界)**：
+   - **现场倒数零容忍**：系统性侦测并剔除开拍前设备确认、闲聊、打板与现场人员倒数声（如「5, 4, 3, 2, 1」、「五四三二」、「Ready Action」）。
+   - **不对称安全边界 (`[Start, Start+2s]` 自我校验)**：强制要求 `Global_Start_Time` 必须严格落在最后一个倒数数字完全结束之后。模型在起剪后的首 2 秒区间（`[Global_Start_Time, Global_Start_Time + 2.0s]`）进行思维链自审，若仍有倒数残留则自动后移时间戳，确保成片首帧干净对齐第一句台词首字。
+   - **结尾未关机裁切**：自动识别访谈结尾道别语句，切除收尾未关机闲聊、拍摄封面素材与环境杂音（标记 `Global_End_Time`）。
 3. **Phase 1–4：多模态声画语义剪辑决策**：
    - **话者识别与追踪**：以声音为主导锁定当前发话者机位，切镜点对齐语音边界。
    - **关键反应镜头穿插**：过滤 1 至 2 秒短插话，适时切换至聆听者 2 至 3 秒之反应镜头。
    - **防跳切限制**：设定单镜头长度 $\\ge 2.5\\text{s}$，维持视觉流畅。
-4. **产出标准化结果**：
-   - 输出标准 CSV 决策表（`edl_part*.csv`）与 Markdown 裁切分析报告（`edl_part*_report.md`）。
+4. **次世代架构：Agentic Video Understanding (零切分全长剪辑)**：
+   - 通过 Gemini 3.7 Flash Agentic Video 理解能力（`scripts/test_agentic_edl.py`），直接评估 >1 小时未分段之多机网格视频。
+   - 采用目标导向稀疏时域采样，将输入 Token 消耗巨幅降低 **99.7%**（由约 1,000,000 Token 降至约 3,000 Token），彻底免除章节交界处话语被截断的风险。
+   - **基准评测工具 (`scripts/compare_edl.py`)**：量化比较分段切分 vs Agentic 全集决策在剪辑节奏、机位分布、交界衔接性与 Token 效能之差异。
+5. **产出标准化结果**：
+   - 输出标准 CSV 决策表（`edl_part*.csv` 或 `edl_agentic_full.csv`）与 Markdown 裁切分析报告（`edl_part*_report.md` 或 `edl_agentic_full_report.md`）。
 
 ---
 

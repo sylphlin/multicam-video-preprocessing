@@ -46,14 +46,20 @@ flowchart TD
 ---
 
 ### Stage 2: Gemini AI Multimodal Rough-Cut (EDL Generation)
-- **Goal**: Gemini 3.7 Flash 1M Context multimodal video inspection using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste and generates speech-driven and reaction cut decisions.
-- **Execution Command** (run for **EVERY** part produced in Stage 1):
+- **Goal**: Gemini 3.7 Flash 1M Context multimodal video inspection using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste (with Zero-Tolerance countdown purging & `[Start, Start+2s]` self-verification) and generates speech-driven and reaction cut decisions.
+- **Execution Command (Standard Split Pipeline)** (run for **EVERY** part produced in Stage 1):
   ```bash
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_part1.mp4
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_part2.mp4  # If Part 2 exists
   ```
+- **Execution Command (Next-Gen Zero-Split Agentic Full Pipeline)**:
+  ```bash
+  python3 scripts/test_agentic_edl.py -v <OUTPUT_DIR>/grid_agentic_full.mp4
+  # Optional quantitative comparison against split-part decisions:
+  python3 scripts/compare_edl.py
+  ```
 - **Exit Gate 2 Verification**:
-  - [x] All corresponding `<OUTPUT_DIR>/edl_part*.csv` files exist.
+  - [x] All corresponding `<OUTPUT_DIR>/edl_part*.csv` (or `edl_agentic_full.csv`) files exist.
   - [x] Every CSV file size $> 0\text{ bytes}$ with valid timecodes and camera angles.
   - 🚨 *Do NOT proceed to Stage 3 until all Gate 2 criteria pass.*
 

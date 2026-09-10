@@ -30,6 +30,8 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | :--- | :--- | :--- | :--- |
 | **Step 1** | `scripts/multicam_pipeline.py` | `audio_sync.py`, `audio_normalizer.py`, `video_segmenter.py`, `video_composer.py` | 8kHz FFT Time Sync, EBU R128 (-14 LUFS), 30-40m Pause Splitting, Synced Masters, Multi-in-One Grid |
 | **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `progress.py`, `assets/edl_interview_template.md` | Gemini 3.7 Flash 1M Context multimodal video inspection -> `edl_part*.csv` + Report |
+| **Step 2 (Alt)** | `scripts/test_agentic_edl.py` | `llm_client.py`, `assets/edl_interview_template.md` | Gemini 3.7 Flash Agentic Video Understanding (Zero-Split Pipeline, >1hr video in single request, 99.7% token reduction) |
+| **Benchmark** | `scripts/compare_edl.py` | N/A | Benchmark & compare split-part vs agentic full EDL decisions (pacing, boundary continuity, token usage) |
 | **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Multi-part EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere |
 | **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting -> `final_cut_part*.mp4` |
 | **Step 3B** | `scripts/concat_videos.py` | N/A | Lossless concat -> Full episode `final_cut_full.mp4` |
@@ -40,14 +42,18 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 ## 🔬 Core Technical Principles
 
 1. **8kHz FFT Physical Time Alignment**:
-   - Multi-camera synchronization is 100% computed via 8kHz 1D FFT cross-correlation of acoustic waveforms. Time offsets ($\\Delta t$) achieve millisecond physical accuracy without speech-to-text reliance.
+   - Multi-camera synchronization is 100% computed via 8kHz 1D FFT cross-correlation of acoustic waveforms. Time offsets ($\Delta t$) achieve millisecond physical accuracy without speech-to-text reliance.
 2. **EBU R128 Broadcast Loudness Normalization**:
-   - Audio tracks are normalized to $-14.0\\text{ LUFS}$ ($LRA=11.0\\text{ LU}$, $TP=-1.5\\text{ dBTP}$) compliant with YouTube and broadcast standards.
+   - Audio tracks are normalized to $-14.0\text{ LUFS}$ ($LRA=11.0\text{ LU}$, $TP=-1.5\text{ dBTP}$) compliant with YouTube and broadcast standards.
 3. **30–40 min Natural Pause Chapter Segmentation**:
    - Audio RMS energy scanning detects natural speech breath pauses to slice long footage into 30–40 min chunks, perfectly fitting 1M token context windows while preserving speaker sentence continuity.
 4. **Token-Optimized Compact Grid Composition**:
-   - Merges 2 to 6 camera angles into a single multi-view canvas ($\\le 1920 \\times 1080$, each CAM $\\ge 640 \\times 480$), reducing AI multimodal token consumption by **50% to 83%**.
-5. **Three-Stage Golden Standard Subtitles (Whisper Word Timestamps + Gemini Multimodal)**:
+   - Merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), reducing AI multimodal token consumption by **50% to 83%**.
+5. **Agentic Video Understanding (Zero-Split Full-Length Architecture)**:
+   - Evaluates full-length multicam footage (>1 hour) end-to-end via Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`). Employs goal-directed dynamic sparse sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens) and completely eliminates split-boundary bisection of speaker statements.
+6. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:
+   - Systematically purges all on-set countdown noises ("5, 4, 3, 2, 1", "五四三二", "Ready Action") and pre-roll clutter. Enforces asymmetric safety margins where the start point is self-verified on the `[Start, Start+2s]` window to guarantee the opening frame aligns cleanly with the speaker's true opening word.
+7. **Three-Stage Golden Standard Subtitles (Whisper Word Timestamps + Gemini Multimodal)**:
    - Stage 1 extracts 1M context global domain glossary. Stage 2 extracts Whisper physical word timestamps cached to `_words.json` for instant re-runs. Stage 3 performs chunk-scoped acoustic reprojection (anchoring Gemini syntax/proofread text back to physical word boundaries) and rhythm sanitization (anti-flicker gap bridging $< 0.6\text{s}$, breathing buffer $+0.4\text{s}$, monotonic forward continuity, 0 micro-flickers/overlaps).
 
 ---

@@ -40,6 +40,8 @@ multicam-video-preprocessing/
 ├── scripts/                           # Core execution toolset
 │   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, pause split, grid merge
 │   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash multimodal EDL generation
+│   ├── test_agentic_edl.py            # Step 2 (Alt): Gemini 3.7 Flash Agentic Video (Zero-Split, >1hr)
+│   ├── compare_edl.py                 # Benchmark: Compare split-part vs agentic full EDL decisions
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XML timeline export (Primary)
 │   ├── edl_to_video.py                # Step 3B: Hardware-accelerated clip cutting (Secondary)
 │   ├── concat_videos.py               # Step 3B: Lossless full video concatenation
@@ -153,18 +155,23 @@ Simply prompt the Antigravity Agent in plain conversational language:
 
 ---
 
-### Step 2: Gemini AI Multimodal Rough-Cut (`generate_edl.py`)
+### Step 2: Gemini AI Multimodal Rough-Cut (`generate_edl.py` / `test_agentic_edl.py`)
 1. **Prompt Template Assets**:
-   - Loads `assets/edl_interview_template.md` containing strict interview cutting rules.
-2. **Phase 0: Pre/Post-roll Trimming**:
-   - Identifies and trims clapperboards, countdowns, and pre-show mic testing (`Global_Start_Time`).
-   - Identifies farewell dialogues and trims post-show casual chatter and environment noise (`Global_End_Time`).
+   - Loads `assets/edl_interview_template.md` containing strict broadcast-grade interview cutting rules.
+2. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:
+   - **Zero-Tolerance for On-Set Countdown**: Detects and purges clapperboards, equipment checks, and on-set countdown noises ("5, 4, 3, 2, 1", "五四三二", "Ready Action").
+   - **Asymmetric Safety Margin (`[Start, Start+2s]` Self-Verification)**: Mandates that `Global_Start_Time` must occur strictly after the final countdown sound has ended. The model executes self-verification over the first 2 seconds of the cut (`[Global_Start_Time, Global_Start_Time + 2.0s]`), automatically pushing the cut point forward until countdown residue is 100% eliminated.
+   - **Post-roll Trimming**: Identifies farewell dialogues and trims post-show casual chatter and environment noise (`Global_End_Time`).
 3. **Phase 1–4: Audio-Visual Multimodal Cut Decisions**:
    - **Speaker Tracking**: Follows audio leadership to lock onto the current speaker.
    - **Reaction Shots**: Filters out 1–2s short verbal acknowledgments, switching to 2–3s meaningful listener reaction cuts.
    - **Jump-Cut Prevention**: Enforces minimum single-shot duration $\\ge 2.5\\text{s}$.
-4. **Standardized Deliverables**:
-   - Generates CSV decision tables (`edl_part*.csv`) and Markdown cutting analysis reports (`edl_part*_report.md`).
+4. **Next-Gen: Agentic Video Understanding (Zero-Split Full-Length Pipeline)**:
+   - Evaluates uncut >1hr multicam grid videos via Gemini 3.7 Flash Agentic Video Understanding (`scripts/test_agentic_edl.py`).
+   - Uses goal-directed sparse temporal sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating chapter boundaries and boundary speech bisection.
+   - **Benchmark Tool (`scripts/compare_edl.py`)**: Quantitatively benchmarks split-part vs agentic full EDL decisions across cut pacing, camera angle share, boundary continuity, and token efficiency.
+5. **Standardized Deliverables**:
+   - Generates CSV decision tables (`edl_part*.csv` or `edl_agentic_full.csv`) and Markdown cutting analysis reports (`edl_part*_report.md` or `edl_agentic_full_report.md`).
 
 ---
 

@@ -38,6 +38,8 @@ multicam-video-preprocessing/
 ├── scripts/                           # 핵심 실행 도구 라이브러리
 │   ├── multicam_pipeline.py           # 1단계: 멀티캠 동기화, 음량 표준화, 챕터 분할, 그리드 합성
 │   ├── generate_edl.py                # 2단계: Gemini 3.7 Flash 멀티모달 가편집 결정
+│   ├── test_agentic_edl.py            # 2단계 (차세대): Gemini 3.7 Flash Agentic Video (분할 불필요, 1시간 이상 무손실 처리)
+│   ├── compare_edl.py                 # 벤치마크: 분할 vs Agentic 전체 편집 결정 비교 평가 (템포, 연결성, Token)
 │   ├── export_fcp7_xml.py             # 3A단계: FCP7 XML 타임라인 내보내기 (추천)
 │   ├── edl_to_video.py                # 3B단계: 하드웨어 가속 비디오 렌더링
 │   ├── concat_videos.py               # 3B단계: 전체 챕터 무손실 병합
@@ -86,8 +88,20 @@ multicam-video-preprocessing/
 4. **30~40분 자연스러운 무음 포즈 기반 챕터 분할**: 오디오 RMS 에너지를 스캔하여 문장이 잘리지 않도록 30~40분 단위로 무손실 분할 (1M Token 컨텍스트에 최적화).
 5. **2~6대 멀티캠 컴팩트 그리드 합성**: 최대 1080p 이하, 각 화각 480p 이상의 그리드 비디오를 합성하여 AI 토큰 소비를 50%~83% 절감.
 
-### 2단계: Gemini AI 멀티모달 가편집 결정 (`generate_edl.py`)
-- 화자의 음성을 주도적으로 추적하여 카메라 앵글을 결정하고 리액션 컷을 적절히 삽입하며, 단일 컷 2.5초 이상 점프컷 방지 규칙을 적용하여 `edl_part*.csv` 생성.
+### 2단계: Gemini AI 멀티모달 가편집 결정 (`generate_edl.py` / `test_agentic_edl.py`)
+1. **프롬프트 템플릿 로드**: `assets/edl_interview_template.md`를 통한 방송 품질 기준의 엄격한 가편집 규칙 적용.
+2. **Phase 0: 앞뒤 불필요 구간 및 현장 카운트다운 완전 배제 (무관용 원칙 및 비대칭 안전 마진)**:
+   - **현장 카운트다운 완전 배제**: 장비 점검, 잡담, 슬레이트, 현장 스태프 카운트다운("5, 4, 3, 2, 1", "3, 2, 1" 등)을 시스템적으로 감지하여 제거.
+   - **비대칭 안전 마진 (`[Start, Start+2s]` 자체 검증)**: `Global_Start_Time`은 반드시 마지막 카운트다운 음성이 완전히 종료된 이후로 설정. 컷 시작 직후 첫 2초 구간(`[Global_Start_Time, Global_Start_Time + 2.0s]`)에서 사고 사슬(Chain-of-Thought) 자체 검증을 수행하여 카운트다운이 남아있을 경우 시작점을 뒤로 이동시켜 본편 첫 단어에 완벽히 정렬.
+   - **종료 후 미정지 구간 배제**: 인터뷰 종료 인사를 식별하여 녹화 종료 후 잡담, 썸네일 촬영 등 불필요한 영상(`Global_End_Time`)을 배제.
+3. **Phase 1–4: 멀티모달 음성/영상 편집 결정**:
+   - 화자 음성 주도 카메라 앵글 결정, 적절한 청자 리액션 컷(2~3초) 삽입, 단일 컷 $\ge 2.5\text{s}$ 점프컷 방지 적용.
+4. **차세대 아키텍처: Agentic Video Understanding (분할 불필요 전체 편집)**:
+   - Gemini 3.7 Flash의 Agentic Video 기능(`scripts/test_agentic_edl.py`)을 통해 1시간 이상의 무분할 그리드 영상을 직접 평가.
+   - 목표 지향적 동적 희소 샘플링을 통해 입력 토큰 소비를 **99.7% 절감**(약 1,000,000 토큰에서 약 3,000 토큰으로 감소). 챕터 경계로 인한 발화 단절 위험을 원천 차단.
+   - **벤치마크 도구 (`scripts/compare_edl.py`)**: 분할 처리 vs Agentic 전체 처리의 편집 템포, 앵글 점유율, 경계 연결성, 토큰 효율성을 정량 비교.
+5. **표준 결과물 출력**:
+   - 표준 CSV 결정 목록(`edl_part*.csv` 또는 `edl_agentic_full.csv`) 및 Markdown 가편집 분석 보고서 출력.
 
 ### 3A단계: FCP7 XML 타임라인 내보내기 (`export_fcp7_xml.py`)
 - 모든 챕터의 타임스탬프를 누적 통합하여 DaVinci Resolve / Premiere Pro / Final Cut Pro에 직접 로드 가능한 `final_cut_full.xml` 생성.
