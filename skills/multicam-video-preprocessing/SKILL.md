@@ -30,7 +30,6 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | :--- | :--- | :--- | :--- |
 | **Step 1** | `scripts/multicam_pipeline.py` | `audio_sync.py`, `audio_normalizer.py`, `video_segmenter.py`, `video_composer.py` | 8kHz FFT Time Sync, EBU R128 (-14 LUFS), Synced Masters, Multi-in-One Full Grid (`multicam_merged_full.mp4`) |
 | **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `progress.py`, `assets/edl_interview_template.md` | Gemini 3.7 Flash Agentic Video Understanding (Zero-Split Pipeline, >1hr video, 99.7% token reduction) -> `edl_full.csv` + Report |
-| **Benchmark** | `scripts/compare_edl.py` | N/A | Benchmark & compare split-part vs agentic full EDL decisions (pacing, boundary continuity, token usage) |
 | **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Full-length EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere |
 | **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting directly from synced masters -> `final_cut_full.mp4` |
 | **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `progress.py`, `assets/subtitle_proofread_template.*.md` | Whisper Word Timestamps + Chunk-Scoped Acoustic Reprojection + Gemini 1M Proofreading -> `.srt` / `.vtt` |

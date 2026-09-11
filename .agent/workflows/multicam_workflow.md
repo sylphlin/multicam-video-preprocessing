@@ -52,7 +52,6 @@ flowchart TD
   ```bash
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4
   ```
-  *(Optional: Benchmark against split decisions via `python3 scripts/compare_edl.py`).*
 - **Exit Gate 2 Verification**:
   - [x] `<OUTPUT_DIR>/edl_full.csv` (or `edl.csv`) exists and size $> 0\text{ bytes}$ with valid timecodes and camera angles.
   - [x] `<OUTPUT_DIR>/edl_full_report.md` exists with cutting rationale and performance metrics.

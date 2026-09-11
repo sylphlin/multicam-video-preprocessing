@@ -40,7 +40,6 @@ multicam-video-preprocessing/
 ├── scripts/                           # Core execution toolset
 │   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, synced masters, full grid merge
 │   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash Agentic Video EDL generation (Zero-Split)
-│   ├── compare_edl.py                 # Benchmark: Compare split-part vs agentic full EDL decisions
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XML timeline export (Primary)
 │   ├── edl_to_video.py                # Step 3B: Single-pass hardware-accelerated video rendering (Secondary)
 │   ├── generate_subtitles.py          # Step 4: YouTube subtitles (Whisper + Gemini)
@@ -159,7 +158,6 @@ Simply prompt the Antigravity Agent in plain conversational language:
 3. **Agentic Video Understanding (Zero-Split Full-Length Pipeline)**:
    - Evaluates uncut >1hr multicam grid videos end-to-end via Gemini 3.7 Flash Agentic Video (`processing="agentic"`).
    - Uses goal-directed sparse temporal sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating chapter boundaries and boundary speech bisection.
-   - **Benchmark Tool (`scripts/compare_edl.py`)**: Quantitatively benchmarks split-part vs agentic full EDL decisions across cut pacing, camera angle share, boundary continuity, and token efficiency.
 4. **Standardized Deliverables**:
    - Generates unified CSV decision table (`edl_full.csv`) and Markdown cutting analysis report (`edl_full_report.md`).
 

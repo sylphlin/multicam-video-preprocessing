@@ -40,7 +40,6 @@ multicam-video-preprocessing/
 ├── scripts/                           # 核心执行脚本与处理模块
 │   ├── multicam_pipeline.py           # 步骤 1: 多机时间同步、音量标准化、母带导出与全集网格合成
 │   ├── generate_edl.py                # 步骤 2: Gemini 3.7 Flash Agentic Video 零切分 AI 剪辑决策生成
-│   ├── compare_edl.py                 # 评测工具: 比较分段与 Agentic 全长剪辑决策 (节奏、衔接与 Token)
 │   ├── export_fcp7_xml.py             # 步骤 3A: 导出 FCP7 XML 时间线 (主路径)
 │   ├── edl_to_video.py                # 步骤 3B: 一步到位硬件加速成片直接渲染 (次路径)
 │   ├── generate_subtitles.py          # 步骤 4: 生成 YouTube 字幕 (Whisper+Gemini)
@@ -159,7 +158,6 @@ flowchart TD
 3. **次世代架构：Agentic Video Understanding (零切分全长剪辑)**：
    - 通过 Gemini 3.7 Flash Agentic Video 理解能力（`processing="agentic"`），直接评估 >1 小时未分段之完整多机网格视频。
    - 采用目标导向稀疏时域采样，将输入 Token 消耗巨幅降低 **99.7%**（由约 1,000,000 Token 降至约 3,000 Token），彻底免除章节交界处话语被截断的风险。
-   - **基准评测工具 (`scripts/compare_edl.py`)**：量化比较分段切分 vs Agentic 全集决策在剪辑节奏、机位分布、交界衔接性与 Token 效能之差异。
 4. **产出标准化结果**：
    - 输出单一标准 CSV 决策表（`edl_full.csv`，亦兼容 `edl.csv`）与 Markdown 裁切分析报告（`edl_full_report.md`）。
 

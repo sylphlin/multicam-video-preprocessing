@@ -38,7 +38,6 @@ multicam-video-preprocessing/
 ├── scripts/                           # 핵심 실행 도구 라이브러리
 │   ├── multicam_pipeline.py           # 1단계: 멀티캠 동기화, 음량 표준화, 마스터 출력, 전체 그리드 합성
 │   ├── generate_edl.py                # 2단계: Gemini 3.7 Flash Agentic Video 무분할 가편집 결정
-│   ├── compare_edl.py                 # 벤치마크: 분할 vs Agentic 전체 편집 결정 비교 평가 (템포, 연결성, Token)
 │   ├── export_fcp7_xml.py             # 3A단계: FCP7 XML 타임라인 내보내기 (추천)
 │   ├── edl_to_video.py                # 3B단계: 원패스 하드웨어 가속 직접 렌더링
 │   ├── generate_subtitles.py          # 4단계: YouTube 자막 생성 (Whisper + Gemini)
@@ -94,7 +93,6 @@ multicam-video-preprocessing/
 3. **차세대 아키텍처: Agentic Video Understanding (분할 불필요 전체 편집)**:
    - Gemini 3.7 Flash의 Agentic Video 기능(`processing="agentic"`)을 통해 1시간 이상의 무분할 그리드 영상을 직접 평가.
    - 목표 지향적 동적 희소 샘플링을 통해 입력 토큰 소비를 **99.7% 절감**(약 1,000,000 토큰에서 약 3,000 토큰으로 감소). 챕터 경계로 인한 발화 단절 위험을 원천 차단.
-   - **벤치마크 도구 (`scripts/compare_edl.py`)**: 분할 처리 vs Agentic 전체 처리의 편집 템포, 앵글 점유율, 경계 연결성, 토큰 효율성을 정량 비교.
 4. **표준 결과물 출력**:
    - 단일 표준 CSV 결정 목록(`edl_full.csv`) 및 Markdown 가편집 분석 보고서(`edl_full_report.md`) 출력.
 
