@@ -37,7 +37,6 @@ flowchart TD
     --ref <CAM1.mp4> --targets <CAM2.mp4...> \
     --normalize --merge -o <OUTPUT_DIR>
   ```
-  *(Note: Video slicing is NOT required. If the user explicitly requests chapter-based splitting, e.g. for short thematic episodes, add `--auto-split --split-min-dur 10 --split-max-dur 15`).*
 - **Exit Gate 1 Verification**:
   - [x] `<OUTPUT_DIR>/multicam_sync.json` exists with valid offset data.
   - [x] `<OUTPUT_DIR>/<CAM>_synced.mp4` full-length synchronized masters exist for all cameras.

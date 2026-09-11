@@ -28,7 +28,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 
 | Step | Script | Core Module (`scripts/modules/`) | Function |
 | :--- | :--- | :--- | :--- |
-| **Step 1** | `scripts/multicam_pipeline.py` | `audio_sync.py`, `audio_normalizer.py`, `video_segmenter.py`, `video_composer.py` | 8kHz FFT Time Sync, EBU R128 (-14 LUFS), Synced Masters, Multi-in-One Full Grid (`multicam_merged_full.mp4`) |
+| **Step 1** | `scripts/multicam_pipeline.py` | `audio_sync.py`, `audio_normalizer.py`, `video_composer.py` | 8kHz FFT Time Sync, EBU R128 (-14 LUFS), Synced Masters, Multi-in-One Full Grid (`multicam_merged_full.mp4`) |
 | **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `progress.py`, `assets/edl_interview_template.md` | Gemini 3.7 Flash Agentic Video Understanding (Zero-Split Pipeline, >1hr video, 99.7% token reduction) -> `edl_full.csv` + Report |
 | **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Full-length EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere |
 | **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting directly from synced masters -> `final_cut_full.mp4` |
@@ -43,7 +43,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 2. **EBU R128 Broadcast Loudness Normalization**:
    - Audio tracks are normalized to $-14.0\text{ LUFS}$ ($LRA=11.0\text{ LU}$, $TP=-1.5\text{ dBTP}$) compliant with YouTube and broadcast standards.
 3. **Zero-Split Agentic Video Architecture (No Chapter Slicing Required)**:
-   - Evaluates full-length multicam footage (>1 hour) end-to-end via Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`). Goal-directed sparse sampling reduces token usage by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating sentence bisection and multi-part complexity. (Optional pause splitting remains available via `--auto-split`).
+   - Evaluates full-length multicam footage (>1 hour) end-to-end via Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`). Goal-directed sparse sampling reduces token usage by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating sentence bisection and multi-part complexity.
 4. **Token-Optimized Compact Grid Composition**:
    - Merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), reducing AI multimodal token consumption by **50% to 83%**.
 5. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:

@@ -68,12 +68,6 @@ multicam-video-preprocessing/
 
 ---
 
-### 시나리오 3: 챕터 분할 시간 지정 (사용자 지정 타이밍 ⏱️)
-- **프롬프트 예시**:
-  > *"챕터를 약 10분 내외의 자연스러운 무음 구간에서 분할하여 처리해주세요."*
-- **Agent 동작**:
-  - 설정 파일 수정 없이 자동으로 분할 파라미터를 조정하여 실행합니다.
-
 ---
 
 ## 🔍 단계별 처리 상세 설명 (Detailed Pipeline Steps)
@@ -82,7 +76,7 @@ multicam-video-preprocessing/
 1. **8kHz FFT 오디오 시간 동기화**: 오디오를 8kHz로 다운샘플링하여 1D FFT 상호상관을 고속 계산하고, 각 카메라의 녹화 시작 편차 $\Delta t$ 를 밀리초 단위로 정확히 보정.
 2. **EBU R128 (-14 LUFS) 음량 표준화**: YouTube 권장 기준인 -14 LUFS(True Peak -1.5 dBTP)에 맞춰 2-Pass loudnorm 필터로 음량을 균일화.
 3. **동기화 마스터 비디오 병렬 출력 (`*_synced.mp4`)**: XML 타임라인에서 직접 참조하는 동기화 및 음량 표준화 마스터 비디오를 병렬 출력.
-4. **무분할 전체 멀티캠 컴팩트 그리드 합성 (`multicam_merged_full.mp4`)**: 최대 1080p 이하, 각 화각 480p 이상의 그리드 비디오를 합성하여 Agentic Video를 통한 전체 영상 직접 이해를 가능케 함. (챕터 분할이 필요한 경우 `--auto-split` 지정 가능).
+4. **무분할 전체 멀티캠 컴팩트 그리드 합성 (`multicam_merged_full.mp4`)**: 최대 1080p 이하, 각 화각 480p 이상의 그리드 비디오를 합성하여 Agentic Video를 통한 전체 영상 직접 이해를 가능케 함.
 
 ### 2단계: Gemini 3.7 Flash Agentic Video 가편집 결정 (`generate_edl.py`)
 1. **프롬프트 템플릿 로드**: `assets/edl_interview_template.md`를 통한 방송 품질 기준의 엄격한 가편집 규칙 적용.

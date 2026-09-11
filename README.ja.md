@@ -68,12 +68,6 @@ multicam-video-preprocessing/
 
 ---
 
-### シナリオ 3：チャプター分割時間の間隔指定（カスタム分割 ⏱️）
-- **プロンプト例**：
-  > 「*チャプターを約10分前後の自然なポーズで分割して処理してください。*」
-- **Agent の動作**：
-  - 設定ファイルを変更することなく、自動的に分割パラメータを調整して実行します。
-
 ---
 
 ## 🔍 各ステップの処理詳細 (Detailed Pipeline Steps)
@@ -82,7 +76,7 @@ multicam-video-preprocessing/
 1. **8kHz FFT 音声時間同期**：音声を8kHzにダウンサンプリングして1D FFT相互相関関数を高速計算し、各カメラの開始録画ズレ $\Delta t$ をミリ秒単位で正確に補正。
 2. **EBU R128 (-14 LUFS) 音量正規化**：YouTube推奨基準である -14 LUFS（True Peak -1.5 dBTP）に合わせ、2-Pass loudnorm フィルターで音量を均一化。
 3. **同期マスター動画の並列書き出し (`*_synced.mp4`)**：XMLタイムラインが直接参照する同期済み・音量均一化マスター動画を並列出力。
-4. **分割不要 全編マルチカメラコンパクトグリッド合成 (`multicam_merged_full.mp4`)**：最大1080p以下、各画角480p以上のグリッド動画を合成し、Agentic Video による全編直接理解を可能に。（チャプター分割が必要な場合は `--auto-split` を指定可能）。
+4. **分割不要 全編マルチカメラコンパクトグリッド合成 (`multicam_merged_full.mp4`)**：最大1080p以下、各画角480p以上のグリッド動画を合成し、Agentic Video による全編直接理解を可能に。
 
 ### ステップ 2：Gemini 3.7 Flash Agentic Video 粗編集決定 (`generate_edl.py`)
 1. **プロンプトテンプレートの読み込み**：`assets/edl_interview_template.md` による放送基準の厳格な編集ルールを適用。

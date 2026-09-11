@@ -58,21 +58,6 @@ def print_sync_table(ref_info, target_results, trim_info=None):
     print("-" * 78)
 
 
-def print_split_summary(part_segments):
-    """
-    Print chapter segmentation summary.
-    """
-    print("\n" + "=" * 78)
-    print(f"📑  Automatic Chapter Segmentation (Total {len(part_segments)} Parts)")
-    print("=" * 78)
-    for p in part_segments:
-        print(f"\n  [{p['part_name'].upper()}] Duration: {format_seconds(p['duration_sec'])} | Ref Time: {format_seconds(p['ref_start'])} → {format_seconds(p['ref_end'])}")
-        print("  " + "-" * 74)
-        for cam in p["cameras"]:
-            print(f"    • {cam['camera_name']:<22} : {format_seconds(cam['start_sec'])} → {format_seconds(cam['end_sec'])}")
-    print("=" * 78)
-
-
 def export_sync_json(filepath, ref_info, target_results, trim_info=None, part_segments=None):
     """
     Export structured JSON metadata.

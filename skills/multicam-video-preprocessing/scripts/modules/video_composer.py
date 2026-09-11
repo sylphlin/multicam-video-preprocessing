@@ -16,8 +16,10 @@ import time
 
 try:
     from .progress import LiveTicker
+    from .time_utils import format_seconds
 except ImportError:
     from modules.progress import LiveTicker
+    from modules.time_utils import format_seconds
 
 
 def compute_grid_spec(num_inputs):
@@ -157,3 +159,57 @@ def compose_multicam_video(video_paths, output_path,
                 raise RuntimeError(f"FFmpeg multi-in-one composition failed ({num_inputs} cameras): {err_msg}")
 
     return time.time() - t0
+
+
+def cut_single_clip(video_path, output_path, start_sec, end_sec,
+                    norm_audio_path=None, copy_codec=True,
+                    video_bitrate="6000k", audio_bitrate="192k"):
+    """
+    Cut video sub-clip using lossless stream-copy (-c copy):
+    - If norm_audio_path is provided: mux original video stream with normalized audio stream in one step.
+    - If norm_audio_path is not provided: stream-copy directly from original video.
+    """
+    if start_sec < 0:
+        start_sec = 0.0
+    dur_sec = max(0.0, end_sec - start_sec)
+
+    if norm_audio_path and os.path.exists(norm_audio_path):
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", format_seconds(start_sec),
+            "-i", video_path,
+            "-ss", format_seconds(start_sec),
+            "-i", norm_audio_path,
+            "-t", format_seconds(dur_sec),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-c", "copy",
+            output_path
+        ]
+    elif copy_codec:
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", format_seconds(start_sec),
+            "-i", video_path,
+            "-t", format_seconds(dur_sec),
+            "-c", "copy",
+            output_path
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", format_seconds(start_sec),
+            "-i", video_path,
+            "-t", format_seconds(dur_sec),
+            "-c:v", "h264_videotoolbox", "-b:v", video_bitrate,
+            "-c:a", "aac", "-b:a", audio_bitrate,
+            output_path
+        ]
+
+    t0 = time.time()
+    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if res.returncode != 0:
+        err_msg = res.stderr[-600:] if res.stderr else "Unknown error"
+        raise RuntimeError(f"FFmpeg video cutting failed ({os.path.basename(video_path)}): {err_msg}")
+    return time.time() - t0
+

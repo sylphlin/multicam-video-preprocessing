@@ -109,16 +109,7 @@ Simply prompt the Antigravity Agent in plain conversational language:
 
 ---
 
-### Scenario 3: Custom Chapter Duration (Custom Segment Timing ⏱️)
-- **Use Case**: Shorter footage (e.g. 30-minute episode) where you want chapters sliced around 10 or 15 minutes.
-- **Prompt Example**:
-  > *"Please process these multicam videos, but split chapters around 10-minute natural pauses and generate an XML timeline."*
-- **Agent Behavior**:
-  - The Agent automatically adapts the duration window (`--split-min-dur 8 --split-max-dur 12`) without modifying any script or workflow configuration.
-
----
-
-### Scenario 4: Subtitles for Existing Video (Transcription & Proofreading 📝)
+### Scenario 3: Subtitles for Existing Video (Transcription & Proofreading 📝)
 - **Use Case**: You already have a finished video (`final_cut.mp4`) and need millisecond-accurate, terminology-proofread YouTube subtitles.
 - **Prompt Example**:
   > *"Please generate YouTube subtitles for `output/final_cut_full.mp4` and fix homophones and technical terms."*
@@ -144,7 +135,7 @@ Simply prompt the Antigravity Agent in plain conversational language:
 3. **Full Synchronized Masters Export (`*_synced.mp4`)**:
    - Trims and exports full-length aligned, loudness-normalized masters in parallel, referenced directly by NLE XML timelines.
 4. **Zero-Split Full-Length Grid Composition (`multicam_merged_full.mp4`)**:
-   - Automatically merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), ready for direct full-length AI inspection without slicing. (Optional chapter splitting remains available via `--auto-split`).
+   - Automatically merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), ready for direct full-length AI inspection without slicing.
 
 ---
 

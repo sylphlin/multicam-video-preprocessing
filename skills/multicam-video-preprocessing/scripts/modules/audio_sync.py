@@ -172,3 +172,22 @@ def sync_all_targets(ref_video, target_videos, sr=8000, sample_dur=None, workers
 
     results.sort(key=lambda r: target_videos.index(r["target_video"]))
     return ref_info, results
+
+
+def compute_common_overlap_range(ref_info, target_results):
+    """
+    Calculate the overlapping time range [overlap_start, overlap_end] relative to reference camera timeline
+    where ALL cameras are simultaneously active.
+    """
+    overlap_start = 0.0
+    overlap_end = ref_info["duration_sec"]
+
+    for tgt in target_results:
+        off = tgt["offset_sec"]
+        tgt_dur = tgt["duration_sec"]
+        # In ref timeline, target camera exists in [off, off + tgt_dur]
+        overlap_start = max(overlap_start, off)
+        overlap_end = min(overlap_end, off + tgt_dur)
+
+    return overlap_start, max(overlap_start, overlap_end)
+
