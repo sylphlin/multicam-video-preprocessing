@@ -16,7 +16,13 @@ CLI Examples:
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 CAM3.mp4
 
-  # Example 2: Full Pipeline (Sync + EBU R128 + 30-40 min Chapter Slicing + Multi-in-One Merge + Synced Masters)
+  # Example 2: Standard Agentic Zero-Split Pipeline (Sync + EBU R128 + Full-Length Grid Merge + Synced Masters)
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --normalize --merge \
+    --output-dir ./output/
+
+  # Example 3: Optional Legacy Chapter Slicing Mode (30-40 min Chapters)
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
     --auto-split --split-min-dur 30 --split-max-dur 40 \
@@ -343,22 +349,32 @@ def main():
                 "name": r["target_basename"]
             })
 
-        for task in export_tasks:
-            mode_tag = "Stream Copy + Norm Audio" if task["audio"] else "Stream Copy (-c copy)"
-            print(f"\n  ► Slicing {task['name']} ({format_seconds(task['start'])} → {format_seconds(task['end'])}) [{mode_tag}] → {task['output']} ...")
-            t_proc = cut_single_clip(
-                task["video"], task["output"], task["start"], task["end"],
-                norm_audio_path=task["audio"], copy_codec=True,
+        print(f"\n  ► Exporting full-length synchronized camera masters ({total_cams} CAMs) in parallel for NLE editing ...")
+        t_masters_start = time.time()
+
+        def _export_single_task(stask):
+            t_s_0 = time.time()
+            cut_single_clip(
+                stask["video"], stask["output"], stask["start"], stask["end"],
+                norm_audio_path=stask["audio"], copy_codec=True,
                 video_bitrate=args.video_bitrate, audio_bitrate=args.audio_bitrate
             )
-            print(f"    ✓ Finished in {t_proc:.1f}s")
+            return stask["name"], os.path.basename(stask["output"]), time.time() - t_s_0
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(export_tasks), args.workers)) as executor:
+            e_futures = [executor.submit(_export_single_task, st) for st in export_tasks]
+            for fut in concurrent.futures.as_completed(e_futures):
+                src_name, dst_name, dur = fut.result()
+                print(f"    ✓ Sliced {src_name} → {dst_name} ({dur:.1f}s)")
+
+        print(f"  ✓ All synchronized camera masters exported in {time.time() - t_masters_start:.1f}s!")
 
         # Step 4: Multi-in-One Composition for 2-6 Cameras
         if args.merge:
             print(f"\n[Step 4/4] 🔲 Rendering Multi-in-One grid video ({total_cams} CAMs, {cols}x{rows} grid, {cw}x{ch}/cell -> {tot_w}x{tot_h})...")
             synced_video_paths = [t["output"] for t in export_tasks]
             script_dir = args.output_dir or "."
-            merged_video_path = os.path.join(script_dir, "multicam_merged_synced.mp4")
+            merged_video_path = os.path.join(script_dir, "multicam_merged_full.mp4")
             print(f"  ► Composing Multi-in-One grid video ({total_cams} CAMs -> {tot_w}x{tot_h}) → {os.path.basename(merged_video_path)} ...")
             t_comp = compose_multicam_video(
                 synced_video_paths, merged_video_path,
@@ -366,6 +382,13 @@ def main():
                 encoder=args.encoder
             )
             print(f"    ✓ Composed {os.path.basename(merged_video_path)} in {t_comp:.1f}s")
+            # Create compatibility symlink/alias multicam_merged_synced.mp4
+            compat_path = os.path.join(script_dir, "multicam_merged_synced.mp4")
+            if not os.path.exists(compat_path):
+                try:
+                    os.symlink(os.path.basename(merged_video_path), compat_path)
+                except OSError:
+                    pass
         else:
             print(f"\n[Step 4/4] 🔲 Multi-in-One composition: Skipped (flag --merge not specified)")
 

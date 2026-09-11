@@ -600,6 +600,13 @@ def main():
             pat_fallback = os.path.join(args.dir, "**/*.csv")
             edl_files = [f for f in glob.glob(pat_fallback, recursive=True) if "sync" not in os.path.basename(f).lower()]
 
+        # If a unified full-length EDL exists, prioritize it over separate chapter parts
+        if edl_files:
+            full_edls = [f for f in edl_files if "full" in os.path.basename(f).lower()]
+            if full_edls:
+                full_edls.sort(key=lambda x: (0 if os.path.basename(x) == "edl_full.csv" else 1, len(os.path.basename(x))))
+                edl_files = [full_edls[0]]
+
     if not edl_files:
         print("[Error] No EDL CSV files found. Please specify -e/--edl or -d/--dir.", file=sys.stderr)
         sys.exit(1)

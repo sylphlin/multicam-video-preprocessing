@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
 AI Multimodal Video to EDL Decision Generator (generate_edl.py).
-Uploads multi-camera / multi-in-one merged video to multimodal LLM File API,
-applies the editable EDL Prompt Template, and extracts standard EDL CSV + Trimming Report.
+Powered by Gemini 3.7 Flash Agentic Video Understanding (processing="agentic")
+for zero-split full-length multicam video editing (>1 hour in a single pass).
 
-Default Model: gemini-3.7-flash (customizable via --model)
-Prompt Assets: assets/edl_interview_template.md
+Features:
+  - Agentic Video Understanding (Default): Uses goal-directed sparse temporal sampling,
+    reducing token usage by 99.7% (~3k tokens for 1hr video) and eliminating split boundaries.
+  - Resumable Chunked Upload & Server Cache: Automatically checks active server state
+    via `.{video}_upload_cache.json` to skip re-uploading large video files.
+  - Broadcast-Grade EDL Prompt: Loads assets/edl_interview_template.md with zero-tolerance
+    pre-roll / countdown elimination and asymmetric safety margin.
+  - Dual Mode Support: Native support for --processing agentic (default) and --processing standard.
 """
 
 import argparse
@@ -35,6 +41,7 @@ DEFAULT_PROMPT_TEMPLATE_PATHS = [
     os.path.expanduser("~/.gemini/config/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing/assets/edl_interview_template.md"),
     os.path.expanduser("~/.codex/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing/assets/edl_interview_template.md"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "edl_interview_template.md"),
+    os.path.join(os.getcwd(), "assets", "edl_interview_template.md"),
 ]
 
 
@@ -53,11 +60,31 @@ def load_prompt_template(custom_path=None):
     raise FileNotFoundError(f"Could not locate EDL prompt template. Searched: {paths_to_try}")
 
 
-def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
+def upload_video_resumable(video_path, api_key, chunk_size_mb=64, force_upload=False):
     """
     Upload video file using Google Generative Language Resumable File API.
-    Uses chunked upload (default 64MB) with automatic exponential backoff retries and robust SSL.
+    Checks cache first to avoid re-uploading large (>1GB) files.
     """
+    cache_path = os.path.join(os.path.dirname(os.path.abspath(video_path)), f".{os.path.basename(video_path)}_upload_cache.json")
+    ctx = get_ssl_context()
+
+    if not force_upload and os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            file_name_id = cached.get("file_name_id")
+            file_uri = cached.get("file_uri")
+            
+            # Verify file still exists and is ACTIVE on Google server
+            check_url = f"https://generativelanguage.googleapis.com/v1beta/{file_name_id}?key={api_key}"
+            with urllib.request.urlopen(check_url, context=ctx, timeout=15) as resp:
+                check_data = json.loads(resp.read().decode("utf-8"))
+                if check_data.get("state") == "ACTIVE":
+                    print(f"  ✓ Reusing cached active upload: {file_name_id} ({file_uri})")
+                    return file_uri, file_name_id
+        except Exception:
+            pass  # Cache invalid or expired, proceed to upload
+
     file_size = os.path.getsize(video_path)
     file_name = os.path.basename(video_path)
     mime_type, _ = mimetypes.guess_type(video_path)
@@ -67,8 +94,6 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     print(f"  • File Name  : {file_name} ({file_size / (1024 * 1024):.1f} MB)")
     print(f"  • Chunk Size : {chunk_size_mb} MB")
     print(f"  • MIME Type  : {mime_type}")
-
-    ctx = get_ssl_context()
 
     # 1. Initial Resumable Upload Request
     init_url = f"https://generativelanguage.googleapis.com/upload/v1beta/files?key={api_key}"
@@ -98,35 +123,36 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     t0 = time.time()
     offset = 0
     file_info = {}
-    max_retries = 5
 
     with open(video_path, "rb") as f:
         while offset < file_size:
             chunk = f.read(CHUNK_SIZE)
             chunk_len = len(chunk)
             is_last = (offset + chunk_len) >= file_size
-
             command = "upload, finalize" if is_last else "upload"
-            upload_headers = {
-                "Content-Length": str(chunk_len),
+
+            chunk_headers = {
+                "X-Goog-Upload-Command": command,
                 "X-Goog-Upload-Offset": str(offset),
-                "X-Goog-Upload-Command": command
+                "Content-Length": str(chunk_len)
             }
 
-            chunk_uploaded = False
+            max_retries = 5
             for attempt in range(max_retries):
-                upload_req = urllib.request.Request(upload_url, data=chunk, headers=upload_headers, method="POST")
                 try:
-                    with urllib.request.urlopen(upload_req, context=ctx, timeout=120) as resp:
-                        if is_last:
-                            resp_data = json.loads(resp.read().decode("utf-8"))
-                            file_info = resp_data.get("file", {})
-                    chunk_uploaded = True
+                    chunk_req = urllib.request.Request(upload_url, data=chunk, headers=chunk_headers, method="POST")
+                    with urllib.request.urlopen(chunk_req, context=ctx, timeout=120) as resp:
+                        resp_data = resp.read().decode("utf-8", errors="ignore")
+                        if is_last and resp_data:
+                            try:
+                                file_info = json.loads(resp_data).get("file", {})
+                            except Exception:
+                                pass
                     break
                 except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
                     if attempt < max_retries - 1:
-                        sleep_sec = 2 ** attempt
-                        print(f"\n  [Retry {attempt+1}/{max_retries}] Upload chunk at offset {offset / (1024 * 1024):.1f}MB failed ({e}). Retrying in {sleep_sec}s...")
+                        sleep_sec = 2 ** (attempt + 1)
+                        print(f"\n  ⚠️ Chunk upload failed ({e}), retrying in {sleep_sec}s...")
                         time.sleep(sleep_sec)
                     else:
                         raise RuntimeError(f"Failed to upload video chunk at offset {offset} after {max_retries} attempts: {e}")
@@ -148,7 +174,7 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     get_file_url = f"https://generativelanguage.googleapis.com/v1beta/{file_name_id}?key={api_key}"
     t_wait_start = time.time()
 
-    for attempt in range(60):
+    for attempt in range(120):
         try:
             with urllib.request.urlopen(get_file_url, context=ctx, timeout=15) as resp:
                 check_data = json.loads(resp.read().decode("utf-8"))
@@ -156,6 +182,12 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
                 elapsed_wait = time.time() - t_wait_start
                 if state == "ACTIVE":
                     print(f"\r  ✓ Video state is ACTIVE and ready for inference ({elapsed_wait:.1f}s).          \n", flush=True)
+                    # Cache upload
+                    try:
+                        with open(cache_path, "w", encoding="utf-8") as cf:
+                            json.dump({"file_name_id": file_name_id, "file_uri": file_uri, "timestamp": time.time()}, cf)
+                    except Exception:
+                        pass
                     return file_uri, file_name_id
                 elif state == "FAILED":
                     raise RuntimeError(f"Gemini file processing failed: {check_data.get('error')}")
@@ -170,9 +202,91 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64):
     return file_uri, file_name_id
 
 
-def generate_edl_content(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
-    """Call Gemini generateContent API with video URI and prompt."""
-    print(f"\n[Step 2/3] 🤖 Calling Gemini model: {model} ...")
+def call_agentic_video_edl(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
+    """
+    Call Gemini using Agentic Video Understanding (processing="agentic").
+    Uses google.genai client.interactions.create with fallback to client.models.generate_content.
+    """
+    import google.genai as genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    print(f"\n[Step 2/3] 🤖 Calling Agentic Video Understanding ({model}) ...")
+    print(f"  • Video URI    : {file_uri}")
+    print(f"  • Processing   : agentic (dynamic sparse sampling & sub-second retrieval)")
+    t0 = time.time()
+
+    raw_output = ""
+    usage_info = {}
+
+    with LiveTicker(f"Agentic Gemini ({model}) actively scanning video & computing EDL cuts"):
+        try:
+            # Primary: client.interactions.create
+            interaction = client.interactions.create(
+                model=model,
+                input=[
+                    {
+                        "type": "video",
+                        "uri": file_uri,
+                        "processing": "agentic"
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt_text
+                    }
+                ]
+            )
+            raw_output = interaction.output_text or ""
+            if hasattr(interaction, "usage") and interaction.usage:
+                usage_info = {
+                    "total_input_tokens": getattr(interaction.usage, "total_input_tokens", 0),
+                    "total_output_tokens": getattr(interaction.usage, "total_output_tokens", 0),
+                    "total_thought_tokens": getattr(interaction.usage, "total_thought_tokens", 0),
+                    "total_tokens": getattr(interaction.usage, "total_tokens", 0),
+                }
+        except Exception as e:
+            print(f"\n  ⚠️ interactions.create encountered: {e}. Trying client.models.generate_content with MediaProcessing.AGENTIC...")
+            try:
+                # Fallback: client.models.generate_content
+                part = types.Part(
+                    file_data=types.FileData(file_uri=file_uri, mime_type="video/mp4"),
+                    media_processing=types.MediaProcessing.AGENTIC
+                )
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[part, prompt_text],
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        max_output_tokens=8192
+                    )
+                )
+                raw_output = response.text or ""
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    usage_info = {
+                        "total_input_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
+                        "total_output_tokens": getattr(response.usage_metadata, "candidates_token_count", 0),
+                        "total_thought_tokens": getattr(response.usage_metadata, "thoughts_token_count", 0),
+                        "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
+                    }
+            except Exception as e2:
+                raise RuntimeError(f"Both Agentic Video API methods failed: interactions.create ({e}), generate_content ({e2})")
+
+    duration = time.time() - t0
+    print(f"  ✓ Agentic Video inference completed in {duration:.1f}s")
+    if usage_info:
+        print(f"  📊 Token Usage:")
+        print(f"     - Input Tokens  : {usage_info.get('total_input_tokens', 0):,}")
+        print(f"     - Output Tokens : {usage_info.get('total_output_tokens', 0):,}")
+        if usage_info.get('total_thought_tokens'):
+            print(f"     - Thought Tokens: {usage_info.get('total_thought_tokens', 0):,}")
+        print(f"     - Total Tokens  : {usage_info.get('total_tokens', 0):,}")
+
+    return raw_output, usage_info, duration
+
+
+def generate_edl_content_standard(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
+    """Standard multimodal generateContent call (1fps video sampling fallback)."""
+    print(f"\n[Step 2/3] 🤖 Calling Gemini model: {model} (Standard Mode) ...")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
@@ -198,16 +312,24 @@ def generate_edl_content(file_uri, prompt_text, api_key, model="gemini-3.7-flash
     )
 
     ctx = get_ssl_context()
-    with LiveTicker(f"Gemini ({model}) analyzing multimodal video & computing EDL cuts"):
+    t0 = time.time()
+    with LiveTicker(f"Gemini ({model}) analyzing video & computing EDL cuts"):
         try:
             with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 candidates = data.get("candidates", [])
+                output_text = ""
                 if candidates:
                     parts = candidates[0].get("content", {}).get("parts", [])
                     text_parts = [p.get("text", "") for p in parts if "text" in p]
-                    return "".join(text_parts).strip()
-                return ""
+                    output_text = "".join(text_parts).strip()
+                usage_metadata = data.get("usageMetadata", {})
+                usage_info = {
+                    "total_input_tokens": usage_metadata.get("promptTokenCount", 0),
+                    "total_output_tokens": usage_metadata.get("candidatesTokenCount", 0),
+                    "total_tokens": usage_metadata.get("totalTokenCount", 0),
+                }
+                return output_text, usage_info, time.time() - t0
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", errors="ignore")
             raise RuntimeError(f"Gemini generateContent failed (HTTP {e.code}): {err}")
@@ -227,28 +349,77 @@ def delete_remote_file(file_name_id, api_key):
         pass
 
 
-def extract_csv_from_markdown(text):
-    """Extract CSV content from markdown code fence block."""
-    matches = re.findall(r"```(?:csv)?\s*\n(.*?)\n```", text, re.DOTALL | re.IGNORECASE)
-    for m in matches:
-        if "Start_Time" in m and "Best_Camera" in m:
-            return m.strip()
-    return None
+def parse_edl_csv_and_report(raw_text):
+    """
+    Extract the CSV decision block and the Markdown analysis report from LLM output.
+    """
+    csv_rows = []
+
+    # 1. Match CSV block inside ```csv ... ``` or raw CSV table
+    csv_match = re.search(r"```(?:csv)?\s*\n(.*?)\n```", raw_text, re.DOTALL | re.IGNORECASE)
+    csv_content = csv_match.group(1).strip() if csv_match else ""
+
+    if not csv_content:
+        # Fallback: search for header Start_Time,End_Time
+        lines = raw_text.splitlines()
+        capturing = False
+        captured_lines = []
+        for line in lines:
+            if "Start_Time" in line and "Best_Camera" in line:
+                capturing = True
+                captured_lines.append(line)
+                continue
+            if capturing:
+                if re.match(r"^\d{2}:\d{2}", line.strip()):
+                    captured_lines.append(line)
+                elif line.strip() == "" or line.startswith("#"):
+                    break
+        if captured_lines:
+            csv_content = "\n".join(captured_lines)
+
+    if csv_content:
+        reader = csv.reader(csv_content.splitlines())
+        for row in reader:
+            if row:
+                csv_rows.append(row)
+
+    # 2. Extract Report Markdown (remove csv block)
+    report_markdown = re.sub(r"```(?:csv)?\s*\n.*?\n```", "", raw_text, flags=re.DOTALL | re.IGNORECASE).strip()
+    if not report_markdown:
+        report_markdown = "# Multimodal AI EDL Analysis Report\n\nNo structured analysis commentary provided by model."
+
+    return csv_rows, report_markdown
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AI Multimodal Video to EDL Decision Generator (Gemini / Codex / Local Models).",
+        description="AI Multimodal Video to EDL Decision Generator (Gemini 3.7 Flash Agentic Video Understanding).",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument("-v", "--video", required=True, help="Path to input composite grid video (e.g. multicam_merged_part1.mp4)")
-    parser.add_argument("-o", "--output-dir", default=None, help="Output directory for EDL CSV and report (default: same as input video)")
-    parser.add_argument("-t", "--template", default=None, help="Custom prompt template file path")
-    parser.add_argument("--model", default="gemini-3.7-flash", help="Multimodal model name (default: gemini-3.7-flash)")
-    parser.add_argument("--base-url", default=None, help="OpenAI-compatible base URL for Codex or Local model endpoints")
-    parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable or .env file)")
-    parser.add_argument("--upload-chunk-size", type=int, default=64, help="Upload chunk size in MB (default: 64)")
-    parser.add_argument("--keep-remote", action="store_true", help="Keep uploaded video file on Gemini Files API")
+    parser.add_argument("-v", "--video", "-i", "--input", dest="video", required=True,
+                        help="Path to composite grid video (e.g. multicam_merged_full.mp4)")
+    parser.add_argument("-o", "--output-dir", default=None,
+                        help="Output directory for EDL CSV and report (default: same as input video)")
+    parser.add_argument("--output-csv", default=None,
+                        help="Custom destination path for EDL CSV file (optional)")
+    parser.add_argument("--report", default=None,
+                        help="Custom destination path for analysis report markdown (optional)")
+    parser.add_argument("-t", "--template", default=None,
+                        help="Custom prompt template file path (defaults to assets/edl_interview_template.md)")
+    parser.add_argument("--model", default="gemini-3.7-flash",
+                        help="Multimodal model name (default: gemini-3.7-flash)")
+    parser.add_argument("--processing", choices=["agentic", "standard"], default="agentic",
+                        help="Video processing mode: 'agentic' (default, 99.7%% token savings, >1hr zero-split) or 'standard'")
+    parser.add_argument("--base-url", default=None,
+                        help="OpenAI-compatible base URL for custom model endpoints")
+    parser.add_argument("--api-key", default=None,
+                        help="API Key (or set GEMINI_API_KEY environment variable or .env file)")
+    parser.add_argument("--upload-chunk-size", type=int, default=64,
+                        help="Upload chunk size in MB (default: 64)")
+    parser.add_argument("--force-upload", action="store_true",
+                        help="Force re-upload of video file even if active cache exists")
+    parser.add_argument("--keep-remote", action="store_true",
+                        help="Keep uploaded video file on Gemini Files API")
 
     args = parser.parse_args()
 
@@ -270,42 +441,112 @@ def main():
 
     video_basename = os.path.splitext(os.path.basename(args.video))[0]
     part_match = re.search(r"(part\d+)", video_basename, re.IGNORECASE)
-    part_tag = f"_{part_match.group(1).lower()}" if part_match else ""
+    
+    if args.output_csv:
+        edl_csv_path = args.output_csv
+    elif part_match:
+        part_tag = f"_{part_match.group(1).lower()}"
+        edl_csv_path = os.path.join(out_dir, f"edl{part_tag}.csv")
+    else:
+        edl_csv_path = os.path.join(out_dir, "edl_full.csv")
 
-    edl_csv_path = os.path.join(out_dir, f"edl{part_tag}.csv")
-    report_path = os.path.join(out_dir, f"edl{part_tag}_report.md")
+    if args.report:
+        report_path = args.report
+    elif part_match:
+        part_tag = f"_{part_match.group(1).lower()}"
+        report_path = os.path.join(out_dir, f"edl{part_tag}_report.md")
+    else:
+        report_path = os.path.join(out_dir, "edl_full_report.md")
 
     print("\n" + "=" * 78)
-    print(f"🎬  Multimodal AI Video to EDL Generator (Model: {args.model})")
+    print(f"🎬  Multimodal AI Video to EDL Generator (Model: {args.model} | Mode: {args.processing.upper()})")
     print("=" * 78)
-    print(f"  • Input Video : {args.video}")
-    print(f"  • Model       : {args.model}")
-    print(f"  • Target CSV  : {edl_csv_path}")
+    print(f"  • Input Video  : {args.video}")
+    print(f"  • Architecture : {'Zero-Split Agentic Video (99.7% Token Reduction)' if args.processing == 'agentic' else 'Standard 1fps Multimodal'}")
+    print(f"  • Target CSV   : {edl_csv_path}")
     print(f"  • Target Report: {report_path}")
     print("-" * 78)
 
     prompt_text = load_prompt_template(args.template)
 
-    file_uri, file_name_id = upload_video_resumable(args.video, api_key, chunk_size_mb=args.upload_chunk_size)
+    # If full-length video, ensure model knows timecode format covers >1hr
+    if not part_match:
+        prompt_text += (
+            "\n\n---\n"
+            "### 額外時間碼與全片長度特別指示：\n"
+            "1. 本影片為完整全集錄影，時間碼格式請支援 `HH:MM:SS.000` 或 `MM:SS.000`（如 `01:02:15.000` 或 `62:15.000` 皆可）。\n"
+            "2. 請由開頭 Global_Start_Time 一路分析覆蓋至全片結束 Global_End_Time，全片無切分斷句。\n"
+        )
+
+    file_uri, file_name_id = upload_video_resumable(
+        video_path=args.video,
+        api_key=api_key,
+        chunk_size_mb=args.upload_chunk_size,
+        force_upload=args.force_upload
+    )
 
     try:
-        response_text = generate_edl_content(file_uri, prompt_text, api_key, model=args.model)
-
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write(response_text + "\n")
-        print(f"\n[Step 3/3] 📄 Full AI Analysis Report saved to: {report_path}")
-
-        csv_content = extract_csv_from_markdown(response_text)
-        if csv_content:
-            with open(edl_csv_path, "w", encoding="utf-8") as f:
-                f.write(csv_content + "\n")
-            print(f"  ✓ Extracted EDL CSV saved to: {edl_csv_path}")
+        if args.processing == "agentic":
+            try:
+                response_text, usage_info, duration = call_agentic_video_edl(file_uri, prompt_text, api_key, model=args.model)
+            except Exception as e:
+                print(f"\n[Warning] Agentic processing failed ({e}). Falling back to standard generateContent...", file=sys.stderr)
+                response_text, usage_info, duration = generate_edl_content_standard(file_uri, prompt_text, api_key, model=args.model)
         else:
-            print(f"  [Warning] Could not extract CSV block from response. See full report: {report_path}", file=sys.stderr)
+            response_text, usage_info, duration = generate_edl_content_standard(file_uri, prompt_text, api_key, model=args.model)
+
+        # Parse CSV & Report
+        csv_rows, report_md = parse_edl_csv_and_report(response_text)
+
+        if not csv_rows:
+            print("\n[Warning] Could not extract valid CSV rows from model output.", file=sys.stderr)
+            raw_debug_path = edl_csv_path.replace(".csv", "_raw_output.txt")
+            with open(raw_debug_path, "w", encoding="utf-8") as f:
+                f.write(response_text)
+            print(f"  • Raw model output saved to: {raw_debug_path}")
+            sys.exit(1)
+
+        # Write CSV
+        with open(edl_csv_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(csv_rows)
+        print(f"\n[Step 3/3] 📁 Saved outputs:")
+        print(f"  ✓ EDL Decision CSV : {edl_csv_path} ({len(csv_rows) - 1} shot cuts)")
+
+        # Write alias edl.csv if this is full cut
+        if not part_match and not args.output_csv:
+            alias_csv = os.path.join(out_dir, "edl.csv")
+            try:
+                with open(alias_csv, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(csv_rows)
+            except Exception:
+                pass
+
+        # Append usage metrics to report
+        token_section = (
+            f"\n\n---\n## 📊 Multimodal Performance Metrics\n"
+            f"- **Model**: `{args.model}`\n"
+            f"- **Processing Mode**: `{args.processing.upper()}`\n"
+            f"- **Inference Duration**: `{duration:.1f}s`\n"
+        )
+        if usage_info:
+            token_section += f"- **Input Tokens**: `{usage_info.get('total_input_tokens', 0):,}`\n"
+            token_section += f"- **Output Tokens**: `{usage_info.get('total_output_tokens', 0):,}`\n"
+            if usage_info.get('total_thought_tokens'):
+                token_section += f"- **Thought Tokens**: `{usage_info.get('total_thought_tokens', 0):,}`\n"
+            token_section += f"- **Total Tokens**: `{usage_info.get('total_tokens', 0):,}`\n"
+
+        final_report = report_md + token_section
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(final_report)
+        print(f"  ✓ Analysis Report  : {report_path}")
 
     finally:
         if not args.keep_remote and file_name_id:
-            delete_remote_file(file_name_id, api_key)
+            # If cached, don't delete immediately unless force-upload was requested
+            if args.force_upload:
+                delete_remote_file(file_name_id, api_key)
 
     print("\n" + "=" * 78)
     print("✅  AI EDL Generation Completed Successfully!")

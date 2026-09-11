@@ -224,7 +224,17 @@ def auto_discover_camera_files(media_dir, part_tag=None):
                     if pt_lower in f.lower():
                         candidates.append(f)
 
-    # 2. Fallback: all non-intermediate video files
+    # 2. Prioritize full synchronized camera masters (*_synced.mp4) for full cuts
+    if not candidates:
+        synced_files = [
+            f for f in all_files
+            if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v"))
+            and "synced" in f.lower() and "merged" not in f.lower() and "final" not in f.lower() and "seg_" not in f.lower()
+        ]
+        if synced_files:
+            candidates = synced_files
+
+    # 3. Fallback: all non-intermediate video files
     if not candidates:
         for f in all_files:
             if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v")):

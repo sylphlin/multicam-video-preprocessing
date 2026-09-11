@@ -1,10 +1,12 @@
 ---
-description: "Universal 4-stage gated execution runbook for 2 to 6 camera audio sync, chapter splitting, Gemini AI rough-cut, NLE XML export, and subtitles."
+description: "Universal 4-stage gated execution runbook for 2 to 6 camera audio sync, Gemini 3.7 Flash Agentic Video zero-split rough-cut, NLE XML export, and subtitles."
 ---
 
-# Multi-Camera AI Preprocessing & Video Editing Workflow
+# Multi-Camera AI Preprocessing & Video Editing Workflow (Zero-Split Agentic Architecture)
 
 This runbook defines the exact execution sequence, stage gates, CLI commands, and verification criteria for processing multi-camera video footage in Antigravity.
+
+Powered by **Gemini 3.7 Flash Agentic Video Understanding**, footage of any length (>1 hour) is processed end-to-end as a unified full-length timeline without requiring chapter segmentation (Zero-Split Pipeline), eliminating boundary speech bisection and slashing token consumption by 99.7%.
 
 ---
 
@@ -12,11 +14,11 @@ This runbook defines the exact execution sequence, stage gates, CLI commands, an
 
 ```mermaid
 flowchart TD
-    S1["Stage 1: Multicam Preprocessing<br/>(scripts/multicam_pipeline.py)"] --> G1{"Gate 1 Verification<br/>• multicam_sync.json exists<br/>• multicam_merged_part*.mp4 exists"}
-    G1 -->|"Passed"| S2["Stage 2: Gemini AI Rough-Cut<br/>(scripts/generate_edl.py)"]
-    S2 --> G2{"Gate 2 Verification<br/>• All edl_part*.csv exist and >0 bytes"}
+    S1["Stage 1: Multicam Preprocessing<br/>(scripts/multicam_pipeline.py --normalize --merge)"] --> G1{"Gate 1 Verification<br/>• multicam_sync.json exists<br/>• multicam_merged_full.mp4 exists<br/>• *_synced.mp4 masters exist"}
+    G1 -->|"Passed"| S2["Stage 2: Agentic Video Rough-Cut<br/>(scripts/generate_edl.py)"]
+    S2 --> G2{"Gate 2 Verification<br/>• edl_full.csv exists and >0 bytes<br/>• Zero countdown residue"}
     G2 -->|"Passed (Primary 90%)"| S3A["Stage 3A: Export Timeline<br/>(scripts/export_fcp7_xml.py)"]
-    G2 -->|"Passed (Secondary 10%)"| S3B["Stage 3B: Direct Rendering<br/>(edl_to_video.py + concat)"]
+    G2 -->|"Passed (Secondary 10%)"| S3B["Stage 3B: Direct Rendering<br/>(scripts/edl_to_video.py)"]
     S3A --> G3A{"Gate 3A Verification<br/>final_cut_full.xml exists"}
     S3B --> G3B{"Gate 3B Verification<br/>final_cut_full.mp4 exists"}
     G3B --> S4["Stage 4: YouTube Subtitles<br/>(scripts/generate_subtitles.py)"]
@@ -27,46 +29,39 @@ flowchart TD
 
 ## 📋 Stage-by-Stage Execution Runbook
 
-### Stage 1: Physical Preprocessing (Sync, Normalization, Split, Grid)
-- **Goal**: Global 8kHz FFT time alignment, EBU R128 (-14 LUFS) audio normalization, 30-40 min natural pause chapter segmentation, full-length synced camera masters export, and compact multi-in-one grid composition (max <= 1920x1080).
-- **Execution Command**:
+### Stage 1: Physical Preprocessing (Sync, Normalization, Master Export, Grid Merge)
+- **Goal**: Global 8kHz FFT time alignment, EBU R128 (-14 LUFS) broadcast audio normalization, full-length synchronized camera masters export (`CAM*_synced.mp4`), and compact multi-in-one grid composition (`multicam_merged_full.mp4`, max $\le 1920 \times 1080$, min $\ge 640 \times 480$/CAM).
+- **Execution Command (Standard Zero-Split Flow)**:
   ```bash
   python3 scripts/multicam_pipeline.py \
     --ref <CAM1.mp4> --targets <CAM2.mp4...> \
-    --auto-split --split-min-dur 30 --split-max-dur 40 \
     --normalize --merge -o <OUTPUT_DIR>
   ```
-  *(Note: If the user prompt explicitly specifies a different chapter duration, e.g. around 10 or 15 mins, dynamically adapt `--split-min-dur` and `--split-max-dur` accordingly without modifying the workflow file).*
+  *(Note: Video slicing is NOT required. If the user explicitly requests chapter-based splitting, e.g. for short thematic episodes, add `--auto-split --split-min-dur 10 --split-max-dur 15`).*
 - **Exit Gate 1 Verification**:
   - [x] `<OUTPUT_DIR>/multicam_sync.json` exists with valid offset data.
-  - [x] `<OUTPUT_DIR>/<CAM>_synced.mp4` full-length synchronized masters exist.
-  - [x] At least one `<OUTPUT_DIR>/multicam_merged_part*.mp4` grid video exists.
+  - [x] `<OUTPUT_DIR>/<CAM>_synced.mp4` full-length synchronized masters exist for all cameras.
+  - [x] `<OUTPUT_DIR>/multicam_merged_full.mp4` (or `multicam_merged_synced.mp4`) grid video exists.
   - 🚨 *Do NOT proceed to Stage 2 until all Gate 1 criteria pass.*
 
 ---
 
-### Stage 2: Gemini AI Multimodal Rough-Cut (EDL Generation)
-- **Goal**: Gemini 3.7 Flash 1M Context multimodal video inspection using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste (with Zero-Tolerance countdown purging & `[Start, Start+2s]` self-verification) and generates speech-driven and reaction cut decisions.
-- **Execution Command (Standard Split Pipeline)** (run for **EVERY** part produced in Stage 1):
+### Stage 2: Gemini AI Multimodal Rough-Cut (Agentic Video EDL Generation)
+- **Goal**: Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`) dynamically inspects the full-length grid video using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste with Zero-Tolerance countdown purging & `[Start, Start+2.0s]` self-verification.
+- **Execution Command**:
   ```bash
-  python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_part1.mp4
-  python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_part2.mp4  # If Part 2 exists
+  python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4
   ```
-- **Execution Command (Next-Gen Zero-Split Agentic Full Pipeline)**:
-  ```bash
-  python3 scripts/test_agentic_edl.py -v <OUTPUT_DIR>/grid_agentic_full.mp4
-  # Optional quantitative comparison against split-part decisions:
-  python3 scripts/compare_edl.py
-  ```
+  *(Optional: Benchmark against split decisions via `python3 scripts/compare_edl.py`).*
 - **Exit Gate 2 Verification**:
-  - [x] All corresponding `<OUTPUT_DIR>/edl_part*.csv` (or `edl_agentic_full.csv`) files exist.
-  - [x] Every CSV file size $> 0\text{ bytes}$ with valid timecodes and camera angles.
+  - [x] `<OUTPUT_DIR>/edl_full.csv` (or `edl.csv`) exists and size $> 0\text{ bytes}$ with valid timecodes and camera angles.
+  - [x] `<OUTPUT_DIR>/edl_full_report.md` exists with cutting rationale and performance metrics.
   - 🚨 *Do NOT proceed to Stage 3 until all Gate 2 criteria pass.*
 
 ---
 
 ### Stage 3A: Export NLE Timeline (⭐ Primary Path / 90% Use Case)
-- **Goal**: Multi-part timestamp accumulation, continuous master audio track, and color marker injection into standard FCP7 XML (`xmeml version 4`).
+- **Goal**: Convert full-length EDL CSV and synchronized camera masters into standard Final Cut Pro 7 XML (`xmeml version 4`) with color decision markers.
 - **Execution Command**:
   ```bash
   python3 scripts/export_fcp7_xml.py -d <OUTPUT_DIR> -o <OUTPUT_DIR>/final_cut_full.xml
@@ -82,12 +77,10 @@ flowchart TD
 ---
 
 ### Stage 3B: Direct Video Rendering (🎬 Secondary Fast Preview Path / 10% Use Case)
-- **Goal**: Hardware-accelerated clip rendering and lossless concat into full-length `final_cut_full.mp4`.
+- **Goal**: Hardware-accelerated clip rendering directly from synchronized camera masters into full-length `final_cut_full.mp4` in a single pass.
 - **Execution Command**:
   ```bash
-  python3 scripts/edl_to_video.py --edl <OUTPUT_DIR>/edl_part1.csv
-  python3 scripts/edl_to_video.py --edl <OUTPUT_DIR>/edl_part2.csv  # If Part 2 exists
-  python3 scripts/concat_videos.py -d <OUTPUT_DIR> -o <OUTPUT_DIR>/final_cut_full.mp4
+  python3 scripts/edl_to_video.py --edl <OUTPUT_DIR>/edl_full.csv --media-dir <OUTPUT_DIR> -o <OUTPUT_DIR>/final_cut_full.mp4
   ```
 - **Exit Gate 3B Verification**:
   - [x] `<OUTPUT_DIR>/final_cut_full.mp4` exists with duration $> 0$.

@@ -38,13 +38,11 @@ multicam-video-preprocessing/
 │   ├── edl_interview_template.md      # Gemini multimodal interview rough-cut rules
 │   └── subtitle_proofread_template.md # YouTube subtitle proofreading rules
 ├── scripts/                           # Core execution toolset
-│   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, pause split, grid merge
-│   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash multimodal EDL generation
-│   ├── test_agentic_edl.py            # Step 2 (Alt): Gemini 3.7 Flash Agentic Video (Zero-Split, >1hr)
+│   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, synced masters, full grid merge
+│   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash Agentic Video EDL generation (Zero-Split)
 │   ├── compare_edl.py                 # Benchmark: Compare split-part vs agentic full EDL decisions
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XML timeline export (Primary)
-│   ├── edl_to_video.py                # Step 3B: Hardware-accelerated clip cutting (Secondary)
-│   ├── concat_videos.py               # Step 3B: Lossless full video concatenation
+│   ├── edl_to_video.py                # Step 3B: Single-pass hardware-accelerated video rendering (Secondary)
 │   ├── generate_subtitles.py          # Step 4: YouTube subtitles (Whisper + Gemini)
 │   └── modules/                       # Core acoustic and video algorithms
 └── README.md
@@ -56,16 +54,15 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    subgraph S1["Step 1: Multicam Preprocessing (multicam_pipeline.py)"]
+    subgraph S1["Step 1: Multicam Preprocessing (multicam_pipeline.py --normalize --merge)"]
         A["Raw Footage (CAM1, CAM2...)"] --> S1_1["1.1 8kHz FFT Time Alignment (Compute Δt)"]
         S1_1 --> S1_2["1.2 EBU R128 Loudness Normalization (-14 LUFS)"]
         S1_2 --> S1_3["1.3 Export Full Synced Masters (CAM*_synced.mp4)"]
-        S1_3 --> S1_4["1.4 Natural Pause Chapter Splitting (Part 1, Part 2...)"]
-        S1_4 --> S1_5["1.5 Compact Grid Video Composition (multicam_merged_part*.mp4)"]
+        S1_3 --> S1_4["1.4 Multi-in-One Full Grid Composition (multicam_merged_full.mp4)"]
     end
 
-    S1_5 --> S2["Step 2: Gemini AI Multimodal Rough-Cut (generate_edl.py)"]
-    S2 --> EDL["EDL Cut Decisions (edl_part*.csv)"]
+    S1_4 --> S2["Step 2: Gemini 3.7 Flash Agentic Video Rough-Cut<br/>(generate_edl.py / 99.7% Token Reduction)"]
+    S2 --> EDL["Single Unified EDL (edl_full.csv)"]
 
     subgraph S3A["Primary Path: Professional NLE Timeline (90%)"]
         S1_3 --> S3A_ACT["Step 3A: Export FCP7 XML Timeline (export_fcp7_xml.py)"]
@@ -74,7 +71,7 @@ flowchart TD
     end
 
     subgraph S3B["Secondary Path: Direct Video & Subtitles (10%)"]
-        S1_3 --> S3B_ACT["Step 3B: Direct Rendering & Concat (edl_to_video.py + concat)"]
+        S1_3 --> S3B_ACT["Step 3B: Direct Single-Pass Rendering (edl_to_video.py)"]
         EDL --> S3B_ACT
         S3B_ACT --> MP4["final_cut_full.mp4"]
         MP4 --> S4["Step 4: YouTube Subtitles Generation (generate_subtitles.py)"]
@@ -139,47 +136,40 @@ Simply prompt the Antigravity Agent in plain conversational language:
 
 1. **8kHz FFT Audio Time Alignment**:
    - **Why 8kHz Downsampling?**: Human vocal frequencies are concentrated between 300Hz and 3.4kHz. Downsampling to 8kHz retains 100% of vocal acoustic features while reducing memory overhead and accelerating FFT cross-correlation by >10x.
-   - **FFT Cross-Correlation**: Converts audio signals from time-domain to frequency-domain to calculate cross-correlation power peaks. Measures exact physical offset $\\Delta t$ (millisecond precision) across all target cameras relative to CAM1 and trims lead/lag offsets.
+   - **FFT Cross-Correlation**: Converts audio signals from time-domain to frequency-domain to calculate cross-correlation power peaks. Measures exact physical offset $\Delta t$ (millisecond precision) across all target cameras relative to CAM1 and trims lead/lag offsets.
 2. **EBU R128 (-14 LUFS) Loudness Normalization (YouTube Broadcast Standard)**:
    - **YouTube Compliance**: YouTube enforces **-14.0 LUFS** as its target integrated loudness standard. Overly loud audio triggers harsh backend compression, while low audio reduces mobile playback clarity.
    - **Two-Pass Loudnorm Filter**:
      - Pass 1: Measures Integrated Loudness (`I`), Loudness Range (`LRA` = 11.0 LU), and True Peak (`TP` = -1.5 dBTP) via FFmpeg `ebur128`.
      - Pass 2: Applies linear gain normalization via `loudnorm` filter with measured parameters, preventing digital clipping (True Peak Clipping Prevention).
 3. **Full Synchronized Masters Export (`*_synced.mp4`)**:
-   - Trims and exports full-length aligned, loudness-normalized masters referenced directly by NLE XML timelines.
-4. **30–40 min Natural Pause Chapter Splitting (1M Token Context Fit)**:
-   - **1M Token Balance**: A 30–40 min multi-in-one grid video consumes ~600k–800k tokens in Gemini 3.7 Flash, reserving ample space for prompt rules, Deep Thinking Chains, and extensive EDL JSON outputs.
-   - **Silence & Breathing Pause Detection**: Instead of hard cutting at fixed timestamps, a sliding window scans audio RMS energy to cut at natural pauses, ensuring speaker sentences are never sliced mid-phrase.
-5. **2 to 6 Camera Compact Grid Composition**:
-   - Automatically arranges angles (Side-by-Side for 2-CAM, $2 \\times 2$ Grid for 3–4 CAM, $3 \\times 2$ Grid for 5–6 CAM) ensuring total canvas $\\le 1920 \\times 1080$ and each CAM $\\ge 640 \\times 480$, saving **50%–83% multimodal tokens**.
+   - Trims and exports full-length aligned, loudness-normalized masters in parallel, referenced directly by NLE XML timelines.
+4. **Zero-Split Full-Length Grid Composition (`multicam_merged_full.mp4`)**:
+   - Automatically merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), ready for direct full-length AI inspection without slicing. (Optional chapter splitting remains available via `--auto-split`).
 
 ---
 
-### Step 2: Gemini AI Multimodal Rough-Cut (`generate_edl.py` / `test_agentic_edl.py`)
+### Step 2: Gemini 3.7 Flash Agentic Video Rough-Cut (`generate_edl.py`)
 1. **Prompt Template Assets**:
    - Loads `assets/edl_interview_template.md` containing strict broadcast-grade interview cutting rules.
 2. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:
    - **Zero-Tolerance for On-Set Countdown**: Detects and purges clapperboards, equipment checks, and on-set countdown noises ("5, 4, 3, 2, 1", "五四三二", "Ready Action").
    - **Asymmetric Safety Margin (`[Start, Start+2s]` Self-Verification)**: Mandates that `Global_Start_Time` must occur strictly after the final countdown sound has ended. The model executes self-verification over the first 2 seconds of the cut (`[Global_Start_Time, Global_Start_Time + 2.0s]`), automatically pushing the cut point forward until countdown residue is 100% eliminated.
    - **Post-roll Trimming**: Identifies farewell dialogues and trims post-show casual chatter and environment noise (`Global_End_Time`).
-3. **Phase 1–4: Audio-Visual Multimodal Cut Decisions**:
-   - **Speaker Tracking**: Follows audio leadership to lock onto the current speaker.
-   - **Reaction Shots**: Filters out 1–2s short verbal acknowledgments, switching to 2–3s meaningful listener reaction cuts.
-   - **Jump-Cut Prevention**: Enforces minimum single-shot duration $\\ge 2.5\\text{s}$.
-4. **Next-Gen: Agentic Video Understanding (Zero-Split Full-Length Pipeline)**:
-   - Evaluates uncut >1hr multicam grid videos via Gemini 3.7 Flash Agentic Video Understanding (`scripts/test_agentic_edl.py`).
+3. **Agentic Video Understanding (Zero-Split Full-Length Pipeline)**:
+   - Evaluates uncut >1hr multicam grid videos end-to-end via Gemini 3.7 Flash Agentic Video (`processing="agentic"`).
    - Uses goal-directed sparse temporal sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating chapter boundaries and boundary speech bisection.
    - **Benchmark Tool (`scripts/compare_edl.py`)**: Quantitatively benchmarks split-part vs agentic full EDL decisions across cut pacing, camera angle share, boundary continuity, and token efficiency.
-5. **Standardized Deliverables**:
-   - Generates CSV decision tables (`edl_part*.csv` or `edl_agentic_full.csv`) and Markdown cutting analysis reports (`edl_part*_report.md` or `edl_agentic_full_report.md`).
+4. **Standardized Deliverables**:
+   - Generates unified CSV decision table (`edl_full.csv`) and Markdown cutting analysis report (`edl_full_report.md`).
 
 ---
 
 ### Step 3A: Export FCP7 XML Timeline (`export_fcp7_xml.py`)
 
 Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
-1. **Multi-Part Cross-Chapter Timestamp Accumulation**:
-   - Accumulates local part timestamps into a continuous timeline.
+1. **Direct Synced Master Linking**:
+   - Links timeline clips directly to full-length synchronized masters (`CAM1_synced.mp4`, `CAM2_synced.mp4`...) with zero offset errors.
 2. **1:1 Absolute Timecode Mapping**:
    - Keeps `start == in` and `end == out` on clips, allowing editors full Ripple/Slip/Slide trim freedom in NLEs.
 3. **Continuous Master Audio & Decision Markers**:
@@ -188,11 +178,10 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 
 ---
 
-### Step 3B: Direct Video Rendering (`edl_to_video.py` & `concat_videos.py`)
-1. **Hardware-Accelerated Clip Cutting**:
-   - Uses Apple Silicon `h264_videotoolbox` to render chapter clips (`final_cut_part*.mp4`).
-2. **Lossless Concat**:
-   - Uses FFmpeg Concat Demuxer (`-c copy`) to merge chapters into full episode `final_cut_full.mp4`.
+### Step 3B: Direct Single-Pass Video Rendering (`edl_to_video.py`)
+1. **Single-Pass Hardware-Accelerated Rendering**:
+   - Renders directly from synchronized camera masters into full episode `final_cut_full.mp4` in a single pass using Apple Silicon `h264_videotoolbox`.
+   - Eliminates intermediate chapter files and multi-step concatenation.
 
 ---
 

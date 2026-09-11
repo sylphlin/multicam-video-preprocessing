@@ -38,13 +38,11 @@ multicam-video-preprocessing/
 │   ├── edl_interview_template.md      # Gemini 訪談粗剪提示詞樣板
 │   └── subtitle_proofread_template.md # YouTube 字幕語意校對樣板
 ├── scripts/                           # 核心執行腳本與處理模組
-│   ├── multicam_pipeline.py           # 步驟 1: 多機時間同步、音量標準化、分段與網格合成
-│   ├── generate_edl.py                # 步驟 2: Gemini 多模態 AI 剪輯決策生成
-│   ├── test_agentic_edl.py            # 步驟 2 (次世代): Gemini 3.7 Flash Agentic Video (零切分架構, >1小時)
+│   ├── multicam_pipeline.py           # 步驟 1: 多機時間同步、音量標準化、母帶導出與全集網格合成
+│   ├── generate_edl.py                # 步驟 2: Gemini 3.7 Flash Agentic Video 零切分 AI 剪輯決策生成
 │   ├── compare_edl.py                 # 評測工具: 比較分段與 Agentic 全長剪輯決策 (節奏、銜接與 Token)
 │   ├── export_fcp7_xml.py             # 步驟 3A: 匯出 FCP7 XML 時間線 (主路徑)
-│   ├── edl_to_video.py                # 步驟 3B: 直接渲染成片 (次路徑)
-│   ├── concat_videos.py               # 步驟 3B: 全集章節無損拼接 (次路徑)
+│   ├── edl_to_video.py                # 步驟 3B: 一步到位硬體加速成片直接渲染 (次路徑)
 │   ├── generate_subtitles.py          # 步驟 4: 生成 YouTube 字幕 (Whisper+Gemini)
 │   └── modules/                       # 核心聲學與視訊演算法庫
 └── README.zh-TW.md
@@ -56,16 +54,15 @@ multicam-video-preprocessing/
 
 ```mermaid
 flowchart TD
-    subgraph S1["步驟 1：多機前處理管線 (multicam_pipeline.py)"]
+    subgraph S1["步驟 1：多機前處理管線 (multicam_pipeline.py --normalize --merge)"]
         A["多機位原始素材 (CAM1, CAM2...)"] --> S1_1["1.1 8kHz FFT 音訊時間線對齊 (計算 Δt)"]
         S1_1 --> S1_2["1.2 EBU R128 音量標準化 (-14 LUFS)"]
         S1_2 --> S1_3["1.3 導出全集同步母帶 (CAM*_synced.mp4)"]
-        S1_3 --> S1_4["1.4 自然停頓點章節切分 (Part 1, Part 2...)"]
-        S1_4 --> S1_5["1.5 多合一網格畫面合成 (multicam_merged_part*.mp4)"]
+        S1_3 --> S1_4["1.4 多合一全集網格畫面合成 (multicam_merged_full.mp4)"]
     end
 
-    S1_5 --> S2["步驟 2：AI 多模態粗剪決策<br/>(generate_edl.py / 提示詞樣板)"]
-    S2 --> EDL["EDL 剪輯決策列表<br/>(edl_part*.csv)"]
+    S1_4 --> S2["步驟 2：Gemini 3.7 Flash Agentic Video 智能粗剪<br/>(generate_edl.py / 節省 99.7% Token)"]
+    S2 --> EDL["單一全片 EDL 剪輯決策表<br/>(edl_full.csv)"]
 
     subgraph S3A["主路徑：專業剪輯 (90%)"]
         S1_3 --> S3A_ACT["步驟 3A：匯出 FCP7 XML 相容時間線<br/>(export_fcp7_xml.py)"]
@@ -74,7 +71,7 @@ flowchart TD
     end
 
     subgraph S3B["次路徑：直接成片與字幕 (10%)"]
-        S1_3 --> S3B_ACT["步驟 3B：直接渲染與無損拼接<br/>(edl_to_video.py + concat_videos.py)"]
+        S1_3 --> S3B_ACT["步驟 3B：一步到位成片直接渲染<br/>(edl_to_video.py)"]
         EDL --> S3B_ACT
         S3B_ACT --> MP4["final_cut_full.mp4"]
         MP4 --> S4["步驟 4：YouTube 字幕生成<br/>(generate_subtitles.py)"]
@@ -139,47 +136,40 @@ flowchart TD
 
 1. **8kHz FFT 音訊時間線全域對齊 (8kHz FFT Audio Time Alignment)**：
    - **為什麼降採樣至 8kHz？**：人聲語音頻率特徵集中在 300Hz 至 3.4kHz，8kHz 取樣已足以完整捕捉語音聲學特徵，同時大幅降低記憶體消耗並提升 10 倍以上的運算速度。
-   - **FFT 互相關演算法原理**：程式自動提取基準機（CAM1）與各目標機（CAM2 至 CAMn）的音訊，利用快速傅立葉變換（Fast Fourier Transform）將時域訊號轉換至頻域計算互相關函數（Cross-Correlation），透過尋找互相關能量峰值，精確計算出各機位開始錄製的物理時間偏差 $\\Delta t$（精確至毫秒），並自動校正與修剪起跑時間差。
+   - **FFT 互相關演算法原理**：程式自動提取基準機（CAM1）與各目標機（CAM2 至 CAMn）的音訊，利用快速傅立葉變換（Fast Fourier Transform）將時域訊號轉換至頻域計算互相關函數（Cross-Correlation），透過尋找互相關能量峰值，精確計算出各機位開始錄製的物理時間偏差 $\Delta t$（精確至毫秒），並自動校正與修剪起跑時間差。
 2. **EBU R128 (-14 LUFS) 全集音量標準化 (符合 YouTube 官方建議標準)**：
    - **符合 YouTube 播放規範**：YouTube 平台採用 **-14.0 LUFS** 作為標準響度基準。若影片音量過大（高於 -14 LUFS），YouTube 後台會啟動強制壓縮衰減導致動態範圍受損；若音量過小則影響手機與平板觀眾的聆聽體驗。
    - **雙遍（Two-Pass）分析與濾鏡**：
      - 第一遍：透過 FFmpeg `ebur128` 濾鏡精確量測整段音訊的整合響度（Integrated Loudness, `I`）、響度範圍（Loudness Range, `LRA` = 11.0 LU）與真實峰值（True Peak, `TP` = -1.5 dBTP）。
-     - 第二遍：將實際測得參數帶入 `loudnorm` 濾鏡進行線性增益調整，確保全片各機位與各章節音量完全一致，且絕不發生數位削波破音（True Peak Clipping Prevention）。
-3. **全集同步母帶導出 (`*_synced.mp4`)**：
-   - 依據 $\\Delta t$ 裁切並導出全長對齊、音量標準化的母帶影片，專供 Step 3A 剪輯時間線直接引用。
-4. **30 至 40 分鐘自然停頓點章節智慧分段 (應付 1M Context Window 與模型靈活適配)**：
-   - **1M Token 上下文最佳平衡**：以 Gemini 3.7 Flash 支援的 1M Token Context 為例，30 至 40 分鐘的網格視訊約消耗 60 萬至 80 萬 Token，預留了充足的 Token 空間供系統提示詞、深度思考鏈（Thinking Process）與長文本 EDL 決策輸出。
-   - **自然呼吸與靜音停頓偵測**：程式不會在固定時間點生硬切斷，而是在 30 至 40 分鐘的滑動窗口內分析音訊 RMS 能量，找出語音結束、呼吸停頓或靜音點進行無損切分，確保切片交界處不截斷講者的句子。
-5. **2 至 6 機多合一緊湊網格畫面合成**：
-   - 自動依機位數排版（2機左右並排、3 至 4 機田字格、5 至 6 機六宮格），保證總畫幅 $\\le 1920 \\times 1080$、每機 $\\ge 640 \\times 480$，為後續 AI 分析節省 **50%–83% Token 消耗**。
+     - 第二遍：將實際測得參數帶入 `loudnorm` 濾鏡進行線性增益調整，確保全片各機位音量完全一致，且絕不發生數位削波破音（True Peak Clipping Prevention）。
+3. **全集同步母帶並行導出 (`*_synced.mp4`)**：
+   - 依據 $\Delta t$ 多執行緒並行裁切並導出全長對齊、音量標準化的母帶影片，專供 Step 3A 剪輯時間線直接引用。
+4. **零切分全集多合一緊湊網格畫面合成 (`multicam_merged_full.mp4`)**：
+   - 自動依機位數排版（2機左右並排、3 至 4 機田字格、5 至 6 機六宮格），保證總畫幅 $\le 1920 \times 1080$、每機 $\ge 640 \times 480$，供 Agentic Video 一次性全文理解，免除章節分割的人工切口。（若需自訂分段，可透過 `--auto-split` 開啟）。
 
 ---
 
-### 步驟 2：Gemini 多模態 AI 智能粗剪決策 (`generate_edl.py` / `test_agentic_edl.py`)
+### 步驟 2：Gemini 3.7 Flash Agentic Video 智能粗剪決策 (`generate_edl.py`)
 1. **載入專屬提示詞資產**：
    - 讀取 `assets/edl_interview_template.md` 廣電級訪談剪輯規則樣板。
 2. **Phase 0：頭尾廢料與現場倒數徹底裁切 (零容忍原則與不對稱安全邊界)**：
    - **現場倒數零容忍**：系統性偵測並剔除開拍前設備確認、閒聊、打板與現場人員倒數聲（如「5, 4, 3, 2, 1」、「五四三二」、「Ready Action」）。
    - **不對稱安全邊界 (`[Start, Start+2s]` 自我校驗)**：強制要求 `Global_Start_Time` 必須嚴格落在最後一個倒數數字完全結束之後。模型在起剪後的首 2 秒區間（`[Global_Start_Time, Global_Start_Time + 2.0s]`）進行思維鏈自審，若仍有倒數殘留則自動後移時間戳，確保成片首幀乾淨對齊第一句台詞首字。
    - **結尾未關機裁切**：自動識別訪談結尾道別語句，切除收尾未關機閒聊、拍攝封面素材與環境雜音（標記 `Global_End_Time`）。
-3. **Phase 1–4：多模態聲畫語義剪輯決策**：
-   - **話者識別與追蹤**：以聲音為主導鎖定當前發話者機位，切鏡點對齊語音邊界。
-   - **關鍵反應鏡頭穿插**：過濾 1 至 2 秒短插話，適時切換至聆聽者 2 至 3 秒之反應鏡頭。
-   - **防跳切限制**：設定單鏡頭長度 $\\ge 2.5\\text{s}$，維持視覺流暢。
-4. **次世代架構：Agentic Video Understanding (零切分全長剪輯)**：
-   - 透過 Gemini 3.7 Flash Agentic Video 理解能力（`scripts/test_agentic_edl.py`），直接評估 >1 小時未分段之多機網格影片。
+3. **次世代架構：Agentic Video Understanding (零切分全長剪輯)**：
+   - 透過 Gemini 3.7 Flash Agentic Video 理解能力（`processing="agentic"`），直接評估 >1 小時未分段之完整多機網格影片。
    - 採用目標導向稀疏時域取樣，將輸入 Token 消耗巨幅降低 **99.7%**（由約 1,000,000 Token 降至約 3,000 Token），徹底免除章節交界處話語被截斷的風險。
    - **基準評測工具 (`scripts/compare_edl.py`)**：量化比較分段切分 vs Agentic 全集決策在剪輯節奏、機位分佈、交界銜接性與 Token 效能之差異。
-5. **產出標準化結果**：
-   - 輸出標準 CSV 決策表（`edl_part*.csv` 或 `edl_agentic_full.csv`）與 Markdown 裁切分析報告（`edl_part*_report.md` 或 `edl_agentic_full_report.md`）。
+4. **產出標準化結果**：
+   - 輸出單一標準 CSV 決策表（`edl_full.csv`，亦相容 `edl.csv`）與 Markdown 裁切分析報告（`edl_full_report.md`）。
 
 ---
 
 ### 步驟 3A（主路徑）：匯出 FCP7 XML 剪輯時間線 (`export_fcp7_xml.py`)
 
 本步驟產出業界通用的 **Final Cut Pro 7 XML（xmeml version 4）** 相容格式，可無縫導入 **Final Cut Pro**、**DaVinci Resolve**、**Adobe Premiere Pro** 等主流專業剪輯軟體（NLE）：
-1. **多 Part 跨章節時間戳累加映射**：
-   - 將 Part 1、Part 2 的局部時間戳自動累加為全片連續時間軸。
+1. **直連全集同步母帶**：
+   - 直接關聯 `CAM1_synced.mp4`、`CAM2_synced.mp4`...，全片時間碼 1:1 絕對對齊。
 2. **1:1 絕對時間碼對應**：
    - 時間線上每一個鏡頭保持 `start == in` 與 `end == out`，剪輯師在 NLE 中可自由進行波紋修剪（Slip/Slide）。
 3. **建立連續主音軌與規則 Marker 注入**：
@@ -188,11 +178,9 @@ flowchart TD
 
 ---
 
-### 步驟 3B（次路徑）：直接渲染與無損拼接成片 (`edl_to_video.py` & `concat_videos.py`)
-1. **硬體加速分段渲染**：
-   - 調用 Apple Silicon 硬體編碼器（`h264_videotoolbox`），依據 EDL 快速輸出各章節剪輯成片（`final_cut_part*.mp4`）。
-2. **無損流拼接**：
-   - 使用 FFmpeg Concat Demuxer（`-c copy`）合併為全集 `final_cut_full.mp4`。
+### 步驟 3B（次路徑）：一步到位成片直接渲染 (`edl_to_video.py`)
+1. **一步到位硬體加速成片渲染**：
+   - 調用 Apple Silicon 硬體編碼器（`h264_videotoolbox`），直接讀取全集同步母帶與 `edl_full.csv` 渲染出完整成片 `final_cut_full.mp4`，無需產出中間章節分段或二次拼接。
 
 ---
 
