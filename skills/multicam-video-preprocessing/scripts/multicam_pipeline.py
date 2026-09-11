@@ -59,6 +59,7 @@ def main():
     # Multi-in-One Merging (AI Model Token Optimization)
     parser.add_argument("--merge", "--multi-in-one", dest="merge", action="store_true", help="Render merged multi-in-one grid video to save tokens for Agentic Video")
     parser.add_argument("--encoder", default="h264_videotoolbox", help="Video encoder for rendering (default: h264_videotoolbox, fallback: libx264)")
+    parser.add_argument("--stream-copy", action="store_true", help="Export synchronized camera masters using raw stream-copy (-c copy) instead of frame-accurate re-encoding")
 
     # Output & Naming Controls
     parser.add_argument("-o", "--output-dir", dest="output_dir", default=None, help="Output directory for synced camera masters, grid video, and reports")
@@ -214,15 +215,17 @@ def main():
                 "name": r["target_basename"]
             })
 
-        print(f"\n  ► Exporting full-length synchronized camera masters ({total_cams} CAMs) in parallel for NLE editing ...")
+        mode_str = "Lossless Stream Copy (-c copy)" if args.stream_copy else f"Frame-Accurate Re-encode ({args.encoder})"
+        print(f"\n  ► Exporting full-length synchronized camera masters ({total_cams} CAMs) in parallel [{mode_str}] ...")
         t_masters_start = time.time()
 
         def _export_single_task(stask):
             t_s_0 = time.time()
             cut_single_clip(
                 stask["video"], stask["output"], stask["start"], stask["end"],
-                norm_audio_path=stask["audio"], copy_codec=True,
-                video_bitrate=args.video_bitrate, audio_bitrate=args.audio_bitrate
+                norm_audio_path=stask["audio"], copy_codec=args.stream_copy,
+                video_bitrate=args.video_bitrate, audio_bitrate=args.audio_bitrate,
+                encoder=args.encoder
             )
             return stask["name"], os.path.basename(stask["output"]), time.time() - t_s_0
 

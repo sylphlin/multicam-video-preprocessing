@@ -74,8 +74,8 @@ multicam-video-preprocessing/
 
 ### 1단계: 멀티카메라 물리 전처리 (`multicam_pipeline.py`)
 1. **8kHz FFT 오디오 시간 동기화**: 오디오를 8kHz로 다운샘플링하여 1D FFT 상호상관을 고속 계산하고, 각 카메라의 녹화 시작 편차 $\Delta t$ 를 밀리초 단위로 정확히 보정.
-2. **EBU R128 (-14 LUFS) 음량 표준화**: YouTube 권장 기준인 -14 LUFS(True Peak -1.5 dBTP)에 맞춰 2-Pass loudnorm 필터로 음량을 균일화.
-3. **동기화 마스터 비디오 병렬 출력 (`*_synced.mp4`)**: XML 타임라인에서 직접 참조하는 동기화 및 음량 표준화 마스터 비디오를 병렬 출력.
+2. **EBU R128 (-14 LUFS) 2-Pass 선형 음량 표준화**: Pass 1에서 null sink를 통한 초고속 음향 측정(`I`, `LRA`, `TP`, `target_offset`), Pass 2에서 `linear=true`를 적용하여 다이내믹 펌핑(음량 들쑥날쑥 현상)을 완전 근절하고 -14.0 LUFS로 100% 정밀 고정.
+3. **동기화 마스터 비디오 프레임 단위 정밀 병렬 출력 (`*_synced.mp4`)**: 키프레임(I-frame) 흡착으로 인한 밀리초 단위 밀림 및 검은 화면 끊김을 방지하기 위해 기본적으로 프레임 정밀 하드웨어 재인코딩(`h264_videotoolbox` / `libx264 -crf 18`) 채택. 초고속 무손실 가편집을 위한 `--stream-copy`도 지원.
 4. **무분할 전체 멀티캠 컴팩트 그리드 합성 (`multicam_merged_full.mp4`)**: 최대 1080p 이하, 각 화각 480p 이상의 그리드 비디오를 합성하여 Agentic Video를 통한 전체 영상 직접 이해를 가능케 함.
 
 ### 2단계: Gemini 3.7 Flash Agentic Video 가편집 결정 (`generate_edl.py`)
@@ -104,6 +104,7 @@ multicam-video-preprocessing/
      - **무음 감지 시맨틱 청킹 (Silence-Aware Semantic Chunking)**: 고정 행 수 기계적 분할을 폐지하고, 자연스러운 호흡 휴지(Gap $\ge 0.4\text{s}$) 및 문장 종결 부호/어미에서 안전하게 분할.
      - **마이크로 음향 스냅 (Micro-Acoustic Sub-clause Snapping)**: 긴 문장 분할 시 Whisper 단어 물리 타임스탬프(`all_words`)에 흡착시켜 비례 배분으로 인한 입모양 불일치 배제.
      - **일본어 한자/가나 발음 동기화 규칙**: 일본어 발음을 구술한 경우 "한자(히라가나)"(예: `改札（かいさつ）`), 문맥상 단순히 언급된 경우 순수 한자(예: `出改札`)로 처리하며, 괄호 제거 대체 매칭으로 음향 탈락 방지.
+     - **Gemini API 지수 백오프 및 지터 자동 재시도 (Exponential Backoff & Jitter)**: 동시 요청이나 속도 제한으로 인한 HTTP 429 (`RESOURCE_EXHAUSTED`), 503 / 500 에러 시 최대 5회 자동 재시도(`Retry-After` 자동 분석 및 지터 적용). 워커 간 충돌을 방지하여 교정되지 않은 원본 자막으로 조기 강등되는 현상 방지.
      - **청크 단위 영구 캐시 (Chunk-Level Persistent Cache)**: 모델, 프롬프트, 용어집, 텍스트 청크로부터 고유 해시를 생성하여 `.<basename>_chunk_cache.json`에 즉시 저장. 중단 시에도 토큰 낭비 없이 100% 재개 가능.
      - **플리커 방지 미세 간격 결합**: 미세한 간격($< 0.6\text{s}$)을 0s로 평활화, 진정한 휴지 시 $+0.4\text{s}$ 호흡 여백 후 화면을 깔끔히 클리어.
 - **🎯 Netflix / YouTube 방송 표준 자막 품질 감사 엔진 (8대 핵심 검증 항목)**:

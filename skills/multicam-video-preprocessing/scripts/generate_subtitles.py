@@ -630,7 +630,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
                 t_end_sec = parse_timestamp_str(last_block[1].split("-->")[1]) + 0.5
                 dur_sec = max(1.0, t_end_sec - t_start_sec)
                 
-                chunk_mp3_path = os.path.join(tmp_dir, f"chunk_{c_idx:03d}.mp3")
+                chunk_mp3_path = os.path.join(tmp_dir, f"chunk_{c_idx:03d}_{os.getpid()}.mp3")
                 cmd = [
                     "ffmpeg", "-y", "-ss", f"{t_start_sec:.3f}", "-t", f"{dur_sec:.3f}",
                     "-i", audio_wav, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "48k", chunk_mp3_path
@@ -671,7 +671,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
             return c_idx, chunk_text, False
 
     except Exception as e:
-        print(f"  [Warning] Chunk {c_idx+1} proofreading error: {e}. Keeping original.", file=sys.stderr)
+        print(f"  [Warning] Chunk {c_idx+1} proofreading error after retries: {e}. Keeping original.", file=sys.stderr)
         return c_idx, chunk_text, False
     finally:
         if chunk_mp3_path and os.path.exists(chunk_mp3_path):

@@ -38,18 +38,18 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 
 ## 🔬 Core Technical Principles
 
-1. **8kHz FFT Physical Time Alignment**:
-   - Multi-camera synchronization is 100% computed via 8kHz 1D FFT cross-correlation of acoustic waveforms. Time offsets ($\Delta t$) achieve millisecond physical accuracy without speech-to-text reliance.
-2. **EBU R128 Broadcast Loudness Normalization**:
-   - Audio tracks are normalized to $-14.0\text{ LUFS}$ ($LRA=11.0\text{ LU}$, $TP=-1.5\text{ dBTP}$) compliant with YouTube and broadcast standards.
+1. **8kHz FFT Physical Time Alignment & Frame-Accurate Master Slicing**:
+   - Multi-camera synchronization is 100% computed via 8kHz 1D FFT cross-correlation of acoustic waveforms. Time offsets ($\Delta t$) achieve millisecond physical accuracy without speech-to-text reliance. Synchronized camera masters (`CAM*_synced.mp4`) default to hardware-accelerated frame-accurate re-encoding (`h264_videotoolbox` / `libx264 -crf 18`), eliminating stream-copy keyframe snapping drift and black-frame stutter.
+2. **EBU R128 Two-Pass Linear Loudness Normalization**:
+   - Audio tracks are normalized to $-14.0\text{ LUFS}$ ($LRA=11.0\text{ LU}$, $TP=-1.5\text{ dBTP}$) compliant with YouTube broadcast standards. Uses two-pass analysis: Pass 1 null-sink acoustic measurement, Pass 2 linear gain offset (`linear=true`) to eliminate dynamic pumping artifacts.
 3. **Zero-Split Agentic Video Architecture (No Chapter Slicing Required)**:
    - Evaluates full-length multicam footage (>1 hour) end-to-end via Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`). Goal-directed sparse sampling reduces token usage by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating sentence bisection and multi-part complexity.
 4. **Token-Optimized Compact Grid Composition**:
    - Merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), reducing AI multimodal token consumption by **50% to 83%**.
 5. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:
    - Systematically purges all on-set countdown noises ("5, 4, 3, 2, 1", "五四三二", "Ready Action") and pre-roll clutter. Enforces asymmetric safety margins where the start point is self-verified on the `[Start, Start+2s]` window to guarantee the opening frame aligns cleanly with the speaker's true opening word.
-6. **Three-Stage Golden Standard Subtitles (Whisper Word Timestamps + Gemini Multimodal)**:
-   - Stage 1 extracts 1M context global domain glossary. Stage 2 extracts Whisper physical word timestamps cached to `_words.json` for instant re-runs. Stage 3 performs chunk-scoped acoustic reprojection (anchoring Gemini syntax/proofread text back to physical word boundaries) and rhythm sanitization (anti-flicker gap bridging $< 0.6\text{s}$, breathing buffer $+0.4\text{s}$, monotonic forward continuity, 0 micro-flickers/overlaps).
+6. **Three-Stage Golden Standard Subtitles (Whisper Word Timestamps + Gemini Multimodal + 429 Retry)**:
+   - Stage 1 extracts 1M context global domain glossary. Stage 2 extracts Whisper physical word timestamps cached to `_words.json` for instant re-runs. Stage 3 performs chunk-scoped acoustic reprojection with automatic exponential backoff & jitter retry handling HTTP 429 and transient rate limits, followed by rhythm sanitization (anti-flicker gap bridging $< 0.6\text{s}$, breathing buffer $+0.4\text{s}$, monotonic forward continuity, 0 micro-flickers/overlaps).
 
 ---
 

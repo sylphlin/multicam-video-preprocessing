@@ -162,54 +162,70 @@ def compose_multicam_video(video_paths, output_path,
 
 
 def cut_single_clip(video_path, output_path, start_sec, end_sec,
-                    norm_audio_path=None, copy_codec=True,
-                    video_bitrate="6000k", audio_bitrate="192k"):
+                    norm_audio_path=None, copy_codec=False,
+                    video_bitrate="6000k", audio_bitrate="192k",
+                    encoder="h264_videotoolbox"):
     """
-    Cut video sub-clip using lossless stream-copy (-c copy):
-    - If norm_audio_path is provided: mux original video stream with normalized audio stream in one step.
-    - If norm_audio_path is not provided: stream-copy directly from original video.
+    Cut video sub-clip with frame-accurate synchronization:
+    - If copy_codec=True: stream-copy (-c copy) for fast keyframe-snapped cutting.
+    - If copy_codec=False (default): frame-accurate re-encoding (h264_videotoolbox / libx264)
+      ensuring 0.000s sub-frame alignment without keyframe skipping or freeze frames.
+    - If norm_audio_path is provided: muxes synchronized video with EBU R128 normalized audio.
     """
     if start_sec < 0:
         start_sec = 0.0
     dur_sec = max(0.0, end_sec - start_sec)
 
-    if norm_audio_path and os.path.exists(norm_audio_path):
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", format_seconds(start_sec),
-            "-i", video_path,
-            "-ss", format_seconds(start_sec),
-            "-i", norm_audio_path,
-            "-t", format_seconds(dur_sec),
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-c", "copy",
-            output_path
-        ]
-    elif copy_codec:
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", format_seconds(start_sec),
-            "-i", video_path,
-            "-t", format_seconds(dur_sec),
-            "-c", "copy",
-            output_path
-        ]
-    else:
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", format_seconds(start_sec),
-            "-i", video_path,
-            "-t", format_seconds(dur_sec),
-            "-c:v", "h264_videotoolbox", "-b:v", video_bitrate,
-            "-c:a", "aac", "-b:a", audio_bitrate,
-            output_path
-        ]
+    def _build_cmd(use_copy, enc):
+        c = ["ffmpeg", "-y"]
+        if norm_audio_path and os.path.exists(norm_audio_path):
+            c.extend([
+                "-ss", format_seconds(start_sec),
+                "-i", video_path,
+                "-ss", format_seconds(start_sec),
+                "-i", norm_audio_path,
+                "-t", format_seconds(dur_sec),
+                "-map", "0:v:0",
+                "-map", "1:a:0"
+            ])
+            if use_copy:
+                c.extend(["-c", "copy"])
+            else:
+                if enc == "h264_videotoolbox":
+                    c.extend(["-c:v", enc, "-b:v", video_bitrate, "-pix_fmt", "yuv420p"])
+                else:
+                    c.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"])
+                c.extend(["-c:a", "copy"])
+        else:
+            c.extend([
+                "-ss", format_seconds(start_sec),
+                "-i", video_path,
+                "-t", format_seconds(dur_sec)
+            ])
+            if use_copy:
+                c.extend(["-c", "copy"])
+            else:
+                if enc == "h264_videotoolbox":
+                    c.extend(["-c:v", enc, "-b:v", video_bitrate, "-pix_fmt", "yuv420p"])
+                else:
+                    c.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"])
+                c.extend(["-c:a", "aac", "-b:a", audio_bitrate])
+        c.append(output_path)
+        return c
 
+    cmd = _build_cmd(copy_codec, encoder)
     t0 = time.time()
     res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
     if res.returncode != 0:
-        err_msg = res.stderr[-600:] if res.stderr else "Unknown error"
-        raise RuntimeError(f"FFmpeg video cutting failed ({os.path.basename(video_path)}): {err_msg}")
+        # Fallback to libx264 if hardware encoder failed
+        if not copy_codec and encoder != "libx264":
+            cmd = _build_cmd(False, "libx264")
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+        if res.returncode != 0:
+            err_msg = res.stderr[-600:] if res.stderr else "Unknown error"
+            raise RuntimeError(f"FFmpeg video cutting failed ({os.path.basename(video_path)}): {err_msg}")
+
     return time.time() - t0
 

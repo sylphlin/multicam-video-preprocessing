@@ -8,6 +8,7 @@ Includes robust SSL support for macOS and multi-layer .env discovery (Antigravit
 
 import json
 import os
+import random
 import re
 import ssl
 import sys
@@ -98,9 +99,10 @@ def resolve_api_key(cli_key=None, base_url=None, model=None):
     return None
 
 
-def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, audio_path=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
+def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, audio_path=None, temperature=0.1, max_tokens=8192, thinking_budget=None, max_retries=5):
     """
     Call Google Gemini generateContent REST API with optional video file_uri or audio_path.
+    Includes robust exponential backoff with jitter for HTTP 429 (rate limits) and 5xx errors.
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
@@ -124,30 +126,14 @@ def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file
         "generationConfig": gen_config
     }
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
-    )
-
+    req_data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
     ctx = get_ssl_context()
-    try:
-        with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            candidates = data.get("candidates", [])
-            if candidates:
-                content_parts = candidates[0].get("content", {}).get("parts", [])
-                text_parts = [p.get("text", "") for p in content_parts if "text" in p]
-                return "".join(text_parts).strip()
-            return ""
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Gemini API error (HTTP {e.code}): {err_body}")
-    except urllib.error.URLError as e:
-        # Retry with unverified SSL if certificate verification was the issue
+
+    for attempt in range(max_retries):
+        req = urllib.request.Request(url, data=req_data, headers=headers)
         try:
-            unverified_ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, context=unverified_ctx, timeout=600) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 candidates = data.get("candidates", [])
                 if candidates:
@@ -155,15 +141,59 @@ def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file
                     text_parts = [p.get("text", "") for p in content_parts if "text" in p]
                     return "".join(text_parts).strip()
                 return ""
-        except Exception as retry_err:
-            raise RuntimeError(f"Gemini API connection error: {e.reason} (Retry failed: {retry_err})")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            # Retry on 429 (Resource Exhausted / Rate Limit), 500, 502, 503, 504
+            if e.code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+                retry_after = None
+                if "Retry-After" in e.headers:
+                    try:
+                        retry_after = float(e.headers["Retry-After"])
+                    except Exception:
+                        pass
+                if retry_after is not None:
+                    sleep_sec = retry_after + random.uniform(0.5, 1.5)
+                else:
+                    sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 2.0)
+                status_label = "Rate Limit (429)" if e.code == 429 else f"Server Error ({e.code})"
+                print(f"\n  ⚠️ Gemini API {status_label} hit, retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            raise RuntimeError(f"Gemini API error (HTTP {e.code}): {err_body}")
+        except urllib.error.URLError as e:
+            if attempt < max_retries - 1:
+                sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 1.5)
+                print(f"\n  ⚠️ Gemini API connection issue ({e.reason}), retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            # Retry with unverified SSL if certificate verification was the issue
+            try:
+                unverified_ctx = ssl._create_unverified_context()
+                with urllib.request.urlopen(req, context=unverified_ctx, timeout=600) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        content_parts = candidates[0].get("content", {}).get("parts", [])
+                        text_parts = [p.get("text", "") for p in content_parts if "text" in p]
+                        return "".join(text_parts).strip()
+                    return ""
+            except Exception as retry_err:
+                raise RuntimeError(f"Gemini API connection error: {e.reason} (Retry failed: {retry_err})")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 1.5)
+                print(f"\n  ⚠️ Gemini API call exception ({e}), retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            raise
 
 
 def call_openai_chat_completions(prompt, api_key, base_url="https://api.openai.com/v1", model="gpt-5.6-luna",
-                                 image_base64_list=None, temperature=0.1, max_tokens=8192):
+                                 image_base64_list=None, temperature=0.1, max_tokens=8192, max_retries=5):
     """
     Call OpenAI-Compatible /v1/chat/completions REST endpoint.
     Supports Cloud models (Codex, GPT-5.6 Luna) and Local models (Gemma 4 (gemma4:e4b), Ollama, vLLM).
+    Includes automatic exponential backoff retry for HTTP 429 and 5xx errors.
     """
     clean_base = base_url.rstrip("/")
     if not clean_base.endswith("/chat/completions"):
@@ -194,36 +224,61 @@ def call_openai_chat_completions(prompt, api_key, base_url="https://api.openai.c
     if api_key and api_key != "none":
         headers["Authorization"] = f"Bearer {api_key}"
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers
-    )
-
+    req_data = json.dumps(payload).encode("utf-8")
     ctx = get_ssl_context()
-    try:
-        with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            choices = data.get("choices", [])
-            if choices:
-                message = choices[0].get("message", {})
-                return message.get("content", "").strip()
-            return ""
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"OpenAI-Compatible endpoint error (HTTP {e.code} at {url}): {err_body}")
-    except urllib.error.URLError as e:
+
+    for attempt in range(max_retries):
+        req = urllib.request.Request(url, data=req_data, headers=headers)
         try:
-            unverified_ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, context=unverified_ctx, timeout=600) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 choices = data.get("choices", [])
                 if choices:
                     message = choices[0].get("message", {})
                     return message.get("content", "").strip()
                 return ""
-        except Exception as retry_err:
-            raise RuntimeError(f"OpenAI-Compatible connection error to {url}: {e.reason} (Retry: {retry_err})")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            if e.code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+                retry_after = None
+                if "Retry-After" in e.headers:
+                    try:
+                        retry_after = float(e.headers["Retry-After"])
+                    except Exception:
+                        pass
+                if retry_after is not None:
+                    sleep_sec = retry_after + random.uniform(0.5, 1.5)
+                else:
+                    sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 2.0)
+                status_label = "Rate Limit (429)" if e.code == 429 else f"Server Error ({e.code})"
+                print(f"\n  ⚠️ OpenAI endpoint {status_label} hit, retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            raise RuntimeError(f"OpenAI-Compatible endpoint error (HTTP {e.code} at {url}): {err_body}")
+        except urllib.error.URLError as e:
+            if attempt < max_retries - 1:
+                sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 1.5)
+                print(f"\n  ⚠️ OpenAI endpoint connection error ({e.reason}), retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            try:
+                unverified_ctx = ssl._create_unverified_context()
+                with urllib.request.urlopen(req, context=unverified_ctx, timeout=600) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    choices = data.get("choices", [])
+                    if choices:
+                        message = choices[0].get("message", {})
+                        return message.get("content", "").strip()
+                    return ""
+            except Exception as retry_err:
+                raise RuntimeError(f"OpenAI-Compatible connection error to {url}: {e.reason} (Retry: {retry_err})")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 1.5)
+                print(f"\n  ⚠️ OpenAI endpoint call exception ({e}), retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            raise
 
 
 def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file_uri=None, audio_path=None, image_base64_list=None, temperature=0.1, max_tokens=8192, thinking_budget=None):

@@ -129,11 +129,12 @@ Simply prompt the Antigravity Agent in plain conversational language:
    - **FFT Cross-Correlation**: Converts audio signals from time-domain to frequency-domain to calculate cross-correlation power peaks. Measures exact physical offset $\Delta t$ (millisecond precision) across all target cameras relative to CAM1 and trims lead/lag offsets.
 2. **EBU R128 (-14 LUFS) Loudness Normalization (YouTube Broadcast Standard)**:
    - **YouTube Compliance**: YouTube enforces **-14.0 LUFS** as its target integrated loudness standard. Overly loud audio triggers harsh backend compression, while low audio reduces mobile playback clarity.
-   - **Two-Pass Loudnorm Filter**:
-     - Pass 1: Measures Integrated Loudness (`I`), Loudness Range (`LRA` = 11.0 LU), and True Peak (`TP` = -1.5 dBTP) via FFmpeg `ebur128`.
-     - Pass 2: Applies linear gain normalization via `loudnorm` filter with measured parameters, preventing digital clipping (True Peak Clipping Prevention).
-3. **Full Synchronized Masters Export (`*_synced.mp4`)**:
-   - Trims and exports full-length aligned, loudness-normalized masters in parallel, referenced directly by NLE XML timelines.
+   - **Two-Pass Linear Loudness Normalization**:
+     - Pass 1 (Acoustic Measurement): Decodes audio to null sink at ultra-fast speeds to measure Integrated Loudness (`I`), Loudness Range (`LRA` = 11.0 LU), True Peak (`TP` = -1.5 dBTP), and target gain offset (`target_offset`).
+     - Pass 2 (Linear Gain Normalization): Feeds measured parameters into `loudnorm` with `linear=true`, applying pure linear gain across the entire file to eliminate dynamic pumping artifacts from single-pass compression, ensuring 100% precise -14.0 LUFS locking without True Peak clipping.
+3. **Full Synchronized Masters Frame-Accurate Export (`*_synced.mp4`)**:
+   - **Default Frame-Accurate Re-encoding**: Employs hardware-accelerated video encoding (`h264_videotoolbox` on Apple Silicon, fallback to `libx264 -crf 18`), eliminating keyframe snapping drift, leading black frames, and video freeze issues inherent to stream-copy (`-c copy`). Guarantees millisecond-level physical sync across all camera masters.
+   - **Fast Mode Support**: Optional `--stream-copy` flag available for fast keyframe-snapped lossy cutting.
 4. **Zero-Split Full-Length Grid Composition (`multicam_merged_full.mp4`)**:
    - Automatically merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), ready for direct full-length AI inspection without slicing.
 
@@ -199,6 +200,7 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
    - **Decoupled Text Semantics & Acoustic Time**: Gemini focuses purely on oral syntax re-segmentation, punctuation purification, and homophone error correction.
    - **Micro-Acoustic Sub-clause Snapping**: When long sentences split into sub-clauses, boundaries snap directly to Whisper word-level acoustic physical timestamps (`all_words`), eliminating proportional interpolation errors.
    - **Japanese Pronunciation & Kanji/Kana Sync Rules**: Explicitly pronounced Japanese words format as "Kanji (Hiragana)" (e.g., `改札（かいさつ）`), while unvoiced/passing references remain pure Kanji (e.g., `出改札`), supported by bracket-stripping fallback matching to prevent acoustic detachment.
+   - **Gemini API Exponential Backoff & Jitter Auto-Retry**: When hitting rate limits or transient errors (HTTP 429 `RESOURCE_EXHAUSTED`, 503, 500), automatically retries up to 5 times with exponential backoff and random jitter (respecting `Retry-After`), preventing thundering herds and ensuring all subtitle chunks are reliably proofread without falling back to raw unproofread text.
    - **Chunk-Level Persistent Cache**: Generates deterministic hashes combining model, prompt, glossary, and text chunks, writing proofread segments incrementally to `.<basename>_chunk_cache.json`. In case of network interruptions, re-running resumes seamlessly with zero wasted tokens.
    - **Anti-Flicker Bridging & Natural Breathing Buffer**: Speech micro-gaps ($< 0.6\text{s}$) seamlessly bridge to 0s gap to prevent 1-2 frame black flashes, while genuine conversational pauses preserve $+0.4\text{s}$ reading buffer before cleanly clearing the screen without overlapping subsequent speech.
 

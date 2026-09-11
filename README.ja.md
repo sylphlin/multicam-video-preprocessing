@@ -74,8 +74,8 @@ multicam-video-preprocessing/
 
 ### ステップ 1：マルチカメラ物理前処理 (`multicam_pipeline.py`)
 1. **8kHz FFT 音声時間同期**：音声を8kHzにダウンサンプリングして1D FFT相互相関関数を高速計算し、各カメラの開始録画ズレ $\Delta t$ をミリ秒単位で正確に補正。
-2. **EBU R128 (-14 LUFS) 音量正規化**：YouTube推奨基準である -14 LUFS（True Peak -1.5 dBTP）に合わせ、2-Pass loudnorm フィルターで音量を均一化。
-3. **同期マスター動画の並列書き出し (`*_synced.mp4`)**：XMLタイムラインが直接参照する同期済み・音量均一化マスター動画を並列出力。
+2. **EBU R128 (-14 LUFS) 2-Pass リニア音量正規化**：Pass 1 で null sink を用いて高速音響測定（`I`, `LRA`, `TP`, `target_offset`）。Pass 2 で `linear=true` を適用し、ダイナミックポンピング（音量息継ぎ感）を完全根絶して -14.0 LUFS に 100% 精密固定。
+3. **同期マスター動画のフレーム精度並列書き出し (`*_synced.mp4`)**：キーフレーム（I-frame）吸着によるミリ秒ズレや黒画面カクつきを防ぐため、デフォルトでフレーム精度のハードウェア再エンコード（`h264_videotoolbox` / `libx264 -crf 18`）を採用。高速粗編集用の `--stream-copy` もサポート。
 4. **分割不要 全編マルチカメラコンパクトグリッド合成 (`multicam_merged_full.mp4`)**：最大1080p以下、各画角480p以上のグリッド動画を合成し、Agentic Video による全編直接理解を可能に。
 
 ### ステップ 2：Gemini 3.7 Flash Agentic Video 粗編集決定 (`generate_edl.py`)
@@ -104,6 +104,7 @@ multicam-video-preprocessing/
      - **無音感知セマンティック分割 (Silence-Aware Semantic Chunking)**：固定行数での機械的切断を廃止し、自然な呼吸ポーズ（Gap $\ge 0.4\text{s}$）や文末助詞・句読点で安全に分割。
      - **マイクロ音響スナップ (Micro-Acoustic Sub-clause Snapping)**：長文分割時、Whisper 単語物理タイムスタンプ（`all_words`）に吸着させ、比例配分による口元の微細なズレを排除。
      - **日本語漢字・読み仮名同期規則**：発言者が日本語読みを口述した場合は「漢字（ひらがな）」（例：`改札（かいさつ）`）、中国語会話中で触れたのみの場合は純粋な漢字（例：`出改札`）として処理し、括弧除去フォールバック照合で音響脱落を防止。
+     - **Gemini API 指数バックオフ＆ジッター自動リトライ**：並行リクエストやレート制限による HTTP 429 (`RESOURCE_EXHAUSTED`)、503 / 500 エラー時に最大5回自動リトライ（`Retry-After` 自動解析とジッター付与）。ワーカーの同時再試行による競合を防ぎ、未校正字幕への安易なフォールバックを防止。
      - **チャンク単位の永続キャッシュ (Chunk-Level Persistent Cache)**：モデル・プロンプト・用語集・テキストから一意のハッシュを生成し、`.<basename>_chunk_cache.json` に即時保存。中断時もトークン消費ゼロで 100% 再開可能。
      - **フリッカー防止微小ギャップ結合**：微小な空隙（$< 0.6\text{s}$）を 0s に平滑化、真のポーズ時は $+0.4\text{s}$ の呼吸余白を付与して画面をクリーンにクリア。
 - **🎯 Netflix / YouTube 配信標準字幕品質監査エンジン（8大監査項目）**：

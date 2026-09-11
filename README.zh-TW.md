@@ -129,11 +129,12 @@ flowchart TD
    - **FFT 互相關演算法原理**：程式自動提取基準機（CAM1）與各目標機（CAM2 至 CAMn）的音訊，利用快速傅立葉變換（Fast Fourier Transform）將時域訊號轉換至頻域計算互相關函數（Cross-Correlation），透過尋找互相關能量峰值，精確計算出各機位開始錄製的物理時間偏差 $\Delta t$（精確至毫秒），並自動校正與修剪起跑時間差。
 2. **EBU R128 (-14 LUFS) 全集音量標準化 (符合 YouTube 官方建議標準)**：
    - **符合 YouTube 播放規範**：YouTube 平台採用 **-14.0 LUFS** 作為標準響度基準。若影片音量過大（高於 -14 LUFS），YouTube 後台會啟動強制壓縮衰減導致動態範圍受損；若音量過小則影響手機與平板觀眾的聆聽體驗。
-   - **雙遍（Two-Pass）分析與濾鏡**：
-     - 第一遍：透過 FFmpeg `ebur128` 濾鏡精確量測整段音訊的整合響度（Integrated Loudness, `I`）、響度範圍（Loudness Range, `LRA` = 11.0 LU）與真實峰值（True Peak, `TP` = -1.5 dBTP）。
-     - 第二遍：將實際測得參數帶入 `loudnorm` 濾鏡進行線性增益調整，確保全片各機位音量完全一致，且絕不發生數位削波破音（True Peak Clipping Prevention）。
-3. **全集同步母帶並行導出 (`*_synced.mp4`)**：
-   - 依據 $\Delta t$ 多執行緒並行裁切並導出全長對齊、音量標準化的母帶影片，專供 Step 3A 剪輯時間線直接引用。
+   - **雙次通過（Two-Pass）線性標準化**：
+     - 第一遍 (Pass 1 - 聲學測量)：音訊極速解碼至空裝置（null sink）進行即時聲學分析，精確量測整段音訊的整合響度（Integrated Loudness, `I`）、響度範圍（Loudness Range, `LRA` = 11.0 LU）、真實峰值（True Peak, `TP` = -1.5 dBTP）與目標增益偏移（`target_offset`）。
+     - 第二遍 (Pass 2 - 線性增益正規化)：啟用 `linear=true` 將實際測得參數帶入 `loudnorm` 濾鏡進行全片純線性增益平移，徹底根除單次通過（Single-pass）動態壓縮產生的「聲音抽吸感 (Volume Pumping Artifacts)」，確保全片各機位音量 100% 精準鎖定 -14.0 LUFS，且絕不發生數位削波破音（True Peak Clipping Prevention）。
+3. **全集同步母帶幀精確並行導出 (`*_synced.mp4`)**：
+   - **預設幀精確重新編碼 (Frame-Accurate Re-encode)**：採用 Apple Silicon 硬體加速編碼器（`h264_videotoolbox`，非 Mac 環境自動回退 `libx264 -crf 18`），徹底解決串流複製 (`-c copy`) 只能在關鍵幀（I-frame）切割所造成的毫秒級聲學對齊漂移、片頭黑幀與畫面卡頓問題，確保各機位母帶影格毫秒級物理絕對對齊。
+   - **極速模式支援**：可選傳入 `--stream-copy` 啟用無損串流複製，適合極速粗剪。
 4. **零切分全集多合一緊湊網格畫面合成 (`multicam_merged_full.mp4`)**：
    - 自動依機位數排版（2機左右並排、3 至 4 機田字格、5 至 6 機六宮格），保證總畫幅 $\le 1920 \times 1080$、每機 $\ge 640 \times 480$，供 Agentic Video 一次性全文理解，免除章節分割的人工切口。
 
@@ -198,6 +199,7 @@ flowchart TD
    - **文字語意與聲學時間徹底解耦**：Gemini 專注於口語語意自然斷句、排版標點淨化與同音錯字修正。
    - **子句微聲學錨定 (Micro-Acoustic Sub-clause Snapping)**：長句拆分為分句時，自動結合 Whisper 物理詞級時間戳 `all_words`，精確咬合口形發音的物理起迄點，拒絕均分比例導致的口形微偏差。
    - **日語發音與漢字音字同步規範**：講者口述唸出日文讀音時呈現「日文漢字（平假名）」（如 `改札（かいさつ）`）；純快速中文帶過未唸發音時呈現純漢字（如 `出改札`），並輔以括號剝離容錯比對演算法，杜絕聲學脫錨。
+   - **Gemini API 指數退避與隨機抖動重試機制 (Exponential Backoff & Jitter)**：面對併發請求或限流觸發 HTTP 429 (`RESOURCE_EXHAUSTED`)、503 / 500 等暫態錯誤時，自動進行最多 5 次指數退避重試（自動解析 `Retry-After` 並加上隨機 Jitter），防止並行 Worker 同時重打引發雷群效應，保證所有切塊字幕均能穩健完成審稿，不再輕易降級退回未校對的原始字幕。
    - **區塊級持久化快取 (Chunk-Level Persistent Cache)**：結合模型、提示詞、詞彙庫與切塊文本產生唯一雜湊，校對區塊即時寫入 `.<basename>_chunk_cache.json`。若中途遇網路波動中斷，重新執行 100% 接續進度，零重複 token 消耗。
    - **防閃爍微間隙熔接與自然呼吸留白**：說話微小空隙（$< 0.6\text{s}$）自動平滑熔接為 0s Gap 消除畫面黑閃；講者真實停頓處保留 $+0.4\text{s}$ 閱讀呼吸緩衝後乾淨清空畫面，且單向時間鎖定保證字幕絕不遮蔽下一句話的發音。
 
