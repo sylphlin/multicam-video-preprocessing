@@ -281,16 +281,77 @@ def call_openai_chat_completions(prompt, api_key, base_url="https://api.openai.c
             raise
 
 
-def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file_uri=None, audio_path=None, image_base64_list=None, temperature=0.1, max_tokens=8192, thinking_budget=None):
+def call_vertex_generate_content(prompt, project, location="us-central1", model="gemini-3.7-flash",
+                                 gcs_uri=None, audio_path=None, temperature=0.1, max_tokens=8192,
+                                 thinking_budget=None, max_retries=5):
     """
-    Unified LLM router supporting Gemini, OpenAI-compatible, and Local Models.
+    Call Google Cloud Vertex AI Gemini API using Application Default Credentials (ADC).
+    Supports GCS URIs (gs://...) and local audio files (inline).
     """
-    resolved_key = resolve_api_key(api_key, base_url, model)
+    import google.genai as genai
+    from google.genai import types
 
-    # If base_url is specified or model is explicitly non-gemini (e.g. gpt-5.6-luna, gemma4:e4b)
+    client = genai.Client(vertexai=True, project=project, location=location)
+
+    contents = []
+    if gcs_uri:
+        mime = "video/mp4" if gcs_uri.endswith(".mp4") else ("audio/mp3" if gcs_uri.endswith(".mp3") else "audio/wav")
+        contents.append(types.Part.from_uri(file_uri=gcs_uri, mime_type=mime))
+    if audio_path and os.path.isfile(audio_path):
+        with open(audio_path, "rb") as f_aud:
+            aud_bytes = f_aud.read()
+        mime = "audio/mp3" if audio_path.endswith(".mp3") else "audio/wav"
+        contents.append(types.Part.from_bytes(data=aud_bytes, mime_type=mime))
+    contents.append(prompt)
+
+    config_params = {"temperature": temperature, "max_output_tokens": max_tokens}
+    if thinking_budget is not None and "3.7" in model:
+        config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
+    config = types.GenerateContentConfig(**config_params)
+
+    for attempt in range(max_retries):
+        try:
+            resp = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
+            )
+            return resp.text.strip() if resp.text else ""
+        except Exception as e:
+            err_str = str(e)
+            is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+            is_server_err = any(code in err_str for code in ("500", "502", "503", "504", "UNAVAILABLE"))
+            if (is_rate_limit or is_server_err) and attempt < max_retries - 1:
+                sleep_sec = min(60.0, 2.0 * (2 ** attempt)) + random.uniform(0.5, 2.0)
+                status_label = "Rate Limit (429)" if is_rate_limit else "Server Error"
+                print(f"\n  ⚠️ Vertex AI {status_label} hit, retrying in {sleep_sec:.1f}s (Attempt {attempt + 1}/{max_retries})...", file=sys.stderr)
+                time.sleep(sleep_sec)
+                continue
+            raise
+
+
+def call_llm(prompt, model="gemini-3.7-flash", backend="vertex", project=None, location=None,
+             gcs_bucket=None, fallback_studio=False, base_url=None, api_key=None,
+             file_uri=None, gcs_uri=None, audio_path=None, image_base64_list=None,
+             temperature=0.1, max_tokens=8192, thinking_budget=None):
+    """
+    Unified LLM router:
+    - Primary: Google Cloud Vertex AI (ADC + GCS) when backend="vertex".
+    - Secondary: Google AI Studio (API Key) when backend="studio" or via fallback_studio=True.
+    - Third: OpenAI-Compatible REST endpoints.
+    """
+    try:
+        from .gcp_client import resolve_gcp_config
+    except ImportError:
+        try:
+            from modules.gcp_client import resolve_gcp_config
+        except ImportError:
+            from scripts.modules.gcp_client import resolve_gcp_config
+
+    # Route to OpenAI-Compatible if custom base_url or explicit non-gemini model
     is_openai_compatible = bool(base_url) or not ("gemini" in model.lower())
-
     if is_openai_compatible:
+        resolved_key = resolve_api_key(api_key, base_url, model)
         effective_base = base_url or "https://api.openai.com/v1"
         return call_openai_chat_completions(
             prompt=prompt,
@@ -301,10 +362,57 @@ def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file
             temperature=temperature,
             max_tokens=max_tokens
         )
-    else:
+
+    # Resolve GCP & AI Studio configurations
+    gcp_cfg = resolve_gcp_config(cli_project=project, cli_bucket=gcs_bucket, cli_location=location)
+    resolved_key = resolve_api_key(api_key, base_url, model)
+
+    target_backend = str(backend).lower() if backend else "vertex"
+
+    # Primary: Vertex AI (ADC)
+    if target_backend == "vertex":
+        if not gcp_cfg.get("project"):
+            if fallback_studio and resolved_key:
+                print(f"\n  ⚠️ No GCP Project configured. Falling back to Google AI Studio (API Key)...", file=sys.stderr)
+                return call_gemini_generate_content(
+                    prompt=prompt, api_key=resolved_key, model=model, file_uri=file_uri,
+                    audio_path=audio_path, temperature=temperature, max_tokens=max_tokens,
+                    thinking_budget=thinking_budget
+                )
+            raise ValueError(
+                "Missing Google Cloud Project ID for Vertex AI. Please pass --project, set GOOGLE_CLOUD_PROJECT in .env, or use --backend studio / --fallback-studio."
+            )
+
+        try:
+            return call_vertex_generate_content(
+                prompt=prompt,
+                project=gcp_cfg["project"],
+                location=gcp_cfg["location"],
+                model=model,
+                gcs_uri=gcs_uri,
+                audio_path=audio_path,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                thinking_budget=thinking_budget
+            )
+        except Exception as vertex_err:
+            if fallback_studio and resolved_key:
+                print(f"\n  ⚠️ Vertex AI call encountered: {vertex_err}. Falling back to Google AI Studio (API Key)...", file=sys.stderr)
+                return call_gemini_generate_content(
+                    prompt=prompt, api_key=resolved_key, model=model, file_uri=file_uri,
+                    audio_path=audio_path, temperature=temperature, max_tokens=max_tokens,
+                    thinking_budget=thinking_budget
+                )
+            raise RuntimeError(
+                f"Vertex AI API call failed on project '{gcp_cfg['project']}': {vertex_err}\n"
+                f"(Note: To permit automatic fallback to Google AI Studio, pass --fallback-studio or run with --backend studio)"
+            )
+
+    # Secondary: AI Studio (API Key)
+    elif target_backend in ("studio", "ai_studio", "gemini"):
         if not resolved_key:
             raise ValueError(
-                "Missing Gemini API Key. Please pass --api-key, export GEMINI_API_KEY, or add GEMINI_API_KEY=YOUR_KEY in a .env file."
+                "Missing Gemini API Key for AI Studio. Please pass --api-key, export GEMINI_API_KEY, or add GEMINI_API_KEY=YOUR_KEY in a .env file."
             )
         return call_gemini_generate_content(
             prompt=prompt,
@@ -316,3 +424,6 @@ def call_llm(prompt, model="gemini-3.7-flash", base_url=None, api_key=None, file
             max_tokens=max_tokens,
             thinking_budget=thinking_budget
         )
+    else:
+        raise ValueError(f"Unknown LLM backend: '{backend}'. Supported backends: 'vertex', 'studio'")
+

@@ -37,13 +37,14 @@ multicam-video-preprocessing/
 ├── assets/                            # Prompt templates
 │   ├── edl_interview_template.md      # Gemini multimodal interview rough-cut rules
 │   └── subtitle_proofread_template.md # YouTube subtitle proofreading rules
+├── .env.example                       # Google Cloud Vertex AI & Gemini API configuration template
 ├── scripts/                           # Core execution toolset
 │   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, synced masters, full grid merge
-│   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash Agentic Video EDL generation (Zero-Split)
+│   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash Agentic Video EDL generation (Vertex AI / Studio)
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XML timeline export (Primary)
 │   ├── edl_to_video.py                # Step 3B: Single-pass hardware-accelerated video rendering (Secondary)
 │   ├── generate_subtitles.py          # Step 4: YouTube subtitles (Whisper + Gemini)
-│   └── modules/                       # Core acoustic and video algorithms
+│   └── modules/                       # Core acoustic, video, and cloud algorithms
 └── README.md
 ```
 
@@ -152,6 +153,20 @@ Simply prompt the Antigravity Agent in plain conversational language:
    - Uses goal-directed sparse temporal sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating chapter boundaries and boundary speech bisection.
 4. **Standardized Deliverables**:
    - Generates unified CSV decision table (`edl_full.csv`) and Markdown cutting analysis report (`edl_full_report.md`).
+5. **Dual-Backend Cloud Architecture (Vertex AI + GCS Primary, AI Studio Backup)**:
+   - **Primary Backend**: Google Cloud Vertex AI using Application Default Credentials (ADC via `gcloud auth application-default login`). Grid videos are uploaded to Google Cloud Storage (GCS) with local SHA-256 and file size caching, avoiding redundant re-uploads.
+   - **Backup Fallback**: Pass `--fallback-studio` to automatically fall back to Google AI Studio (`GEMINI_API_KEY`) if Vertex AI / GCS permissions, quotas, or credentials encounter issues.
+   - **CLI Examples**:
+     ```bash
+     # Primary: Google Cloud Vertex AI with ADC + GCS Caching (Default):
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # With automatic failover to Google AI Studio:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
+
+     # Direct Google AI Studio execution:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --backend studio
+     ```
 
 ---
 
@@ -222,8 +237,14 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 #### CLI Usage Examples:
 
 ```bash
-# Basic execution (fully automated global glossary + Whisper ASR + Gemini audio proofreading):
+# Basic execution (Google Cloud Vertex AI with ADC, Default):
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+
+# With automatic failover to Google AI Studio:
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
+
+# Direct Google AI Studio execution:
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --backend studio
 
 # Bias proper nouns with interview outline or topic notes (optional):
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Guest Name, Topic: Key Discussion Concepts, Entity Glossary"
@@ -246,9 +267,31 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh
 
 ---
 
-## 🛠️ Prerequisites
+## 🛠️ Prerequisites & Cloud Configuration
 
 - **Google Antigravity IDE / Agent Framework**
 - **FFmpeg** (with `h264_videotoolbox` hardware encoding and `loudnorm` filter)
-- **Python 3.8+**
-- **NumPy** (`pip install numpy`)
+- **Python 3.8+** with `numpy`, `google-genai`, `google-cloud-storage`
+
+### Cloud Credentials & Dual-Backend Setup
+
+The suite adopts a **Dual-Backend Architecture**:
+
+1. **Google Cloud Vertex AI (Primary, Recommended)**:
+   - Authenticate with Application Default Credentials (ADC):
+     ```bash
+     gcloud auth application-default login
+     ```
+   - Copy `.env.example` to `.env` and set your GCP Project, GCS Bucket, and Region:
+     ```bash
+     cp .env.example .env
+     ```
+     ```env
+     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
+     GCS_BUCKET=video-preprocessing-sylph-demo-505906
+     GOOGLE_CLOUD_LOCATION=us-central1
+     GEMINI_API_KEY=your_gemini_api_key_here
+     ```
+   - Features SHA-256 local hash caching so grid videos and large audio files are uploaded to GCS only once.
+2. **Google AI Studio (Backup / Standalone)**:
+   - Use `--backend studio` or pass `--fallback-studio` to allow seamless automatic failover using your `GEMINI_API_KEY`.

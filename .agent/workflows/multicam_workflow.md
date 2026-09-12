@@ -47,9 +47,19 @@ flowchart TD
 
 ### Stage 2: Gemini AI Multimodal Rough-Cut (Agentic Video EDL Generation)
 - **Goal**: Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`) dynamically inspects the full-length grid video using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste with Zero-Tolerance countdown purging & `[Start, Start+2.0s]` self-verification.
+- **Backend Architecture**:
+  - **Primary**: Google Cloud Vertex AI (ADC + GCS hash-cached upload). Configure `GOOGLE_CLOUD_PROJECT` and `GCS_BUCKET` in `.env` (or pass `--project` / `--gcs-bucket`).
+  - **Secondary / Backup**: Google AI Studio via `--backend studio` or automatic failover via `--fallback-studio` (`GEMINI_API_KEY`).
 - **Execution Command**:
   ```bash
+  # Primary (Google Cloud Vertex AI with ADC + GCS Caching, Default):
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4
+
+  # With Automatic Fallback to Google AI Studio if GCP credentials/bucket encounter errors:
+  python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4 --fallback-studio
+
+  # Direct Google AI Studio Execution:
+  python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4 --backend studio
   ```
 - **Exit Gate 2 Verification**:
   - [x] `<OUTPUT_DIR>/edl_full.csv` (or `edl.csv`) exists and size $> 0\text{ bytes}$ with valid timecodes and camera angles.
@@ -87,10 +97,19 @@ flowchart TD
 
 ### Stage 4: YouTube Subtitles Generation (📝 On-Demand / Subtitle Requests)
 - **Goal**: Three-Stage Golden Pipeline: Gemini 1M Context Global Audio Glossary Extraction + Local Whisper Zero-Drift Physical Timestamps + Multimodal Audio-Text Precision Proofreading.
+- **Backend Architecture**:
+  - **Primary**: Google Cloud Vertex AI (ADC + inline chunk audio / GCS for audio >20MB).
+  - **Secondary / Backup**: Google AI Studio via `--backend studio` or `--fallback-studio` (`GEMINI_API_KEY`).
 - **Execution Command**:
   ```bash
-  # Standard Execution (Auto-extracts glossary from full episode audio):
+  # Standard Execution (Google Cloud Vertex AI with ADC):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4
+
+  # With Automatic Fallback to Google AI Studio if GCP credentials encounter errors:
+  python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --fallback-studio
+
+  # Direct Google AI Studio Execution:
+  python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --backend studio
 
   # If user provided interview outline / guest notes (Optional Outline Injection):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --outline "<OUTLINE_TEXT_OR_FILE>"

@@ -20,6 +20,9 @@ __pycache__/
 .venv/
 venv/
 env/
+.env
+.env.*
+!.env.example
 
 # macOS
 .DS_Store

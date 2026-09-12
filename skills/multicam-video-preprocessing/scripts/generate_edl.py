@@ -30,9 +30,11 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from modules.llm_client import call_llm, resolve_api_key, get_ssl_context
+    from modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, ensure_gcs_bucket
     from modules.progress import LiveTicker
 except ImportError:
     from scripts.modules.llm_client import call_llm, resolve_api_key, get_ssl_context
+    from scripts.modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, ensure_gcs_bucket
     from scripts.modules.progress import LiveTicker
 
 
@@ -202,7 +204,7 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64, force_upload=F
     return file_uri, file_name_id
 
 
-def call_agentic_video_edl(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
+def call_agentic_video_edl(file_uri, prompt_text, client=None, api_key=None, model="gemini-3.7-flash"):
     """
     Call Gemini using Agentic Video Understanding (processing="agentic").
     Uses google.genai client.interactions.create with fallback to client.models.generate_content.
@@ -210,7 +212,8 @@ def call_agentic_video_edl(file_uri, prompt_text, api_key, model="gemini-3.7-fla
     import google.genai as genai
     from google.genai import types
 
-    client = genai.Client(api_key=api_key)
+    if client is None:
+        client = genai.Client(api_key=api_key)
     print(f"\n[Step 2/3] 🤖 Calling Agentic Video Understanding ({model}) ...")
     print(f"  • Video URI    : {file_uri}")
     print(f"  • Processing   : agentic (dynamic sparse sampling & sub-second retrieval)")
@@ -284,10 +287,39 @@ def call_agentic_video_edl(file_uri, prompt_text, api_key, model="gemini-3.7-fla
     return raw_output, usage_info, duration
 
 
-def generate_edl_content_standard(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
+def generate_edl_content_standard(file_uri, prompt_text, client=None, api_key=None, model="gemini-3.7-flash"):
     """Standard multimodal generateContent call (1fps video sampling fallback)."""
     print(f"\n[Step 2/3] 🤖 Calling Gemini model: {model} (Standard Mode) ...")
+    import google.genai as genai
+    from google.genai import types
 
+    if client is None:
+        client = genai.Client(api_key=api_key)
+
+    t0 = time.time()
+    with LiveTicker(f"Gemini ({model}) analyzing video & computing EDL cuts"):
+        part = types.Part(file_data=types.FileData(file_uri=file_uri, mime_type="video/mp4"))
+        response = client.models.generate_content(
+            model=model,
+            contents=[part, prompt_text],
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=8192
+            )
+        )
+    raw_output = response.text or ""
+    usage_info = {}
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        usage_info = {
+            "total_input_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
+            "total_output_tokens": getattr(response.usage_metadata, "candidates_token_count", 0),
+            "total_thought_tokens": getattr(response.usage_metadata, "thoughts_token_count", 0),
+            "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
+        }
+    duration = time.time() - t0
+    return raw_output, usage_info, duration
+
+def _legacy_generate_edl_content_standard_unused(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [
@@ -412,6 +444,16 @@ def main():
                         help="Video processing mode: 'agentic' (default, 99.7%% token savings, >1hr zero-split) or 'standard'")
     parser.add_argument("--base-url", default=None,
                         help="OpenAI-compatible base URL for custom model endpoints")
+    parser.add_argument("--backend", default="vertex", choices=["vertex", "studio"],
+                        help="LLM & Storage backend: 'vertex' (Google Cloud Vertex AI + GCS via ADC, default) or 'studio' (Google AI Studio via API Key)")
+    parser.add_argument("--project", default=None,
+                        help="Google Cloud Project ID for Vertex AI / GCS (or set GOOGLE_CLOUD_PROJECT in .env)")
+    parser.add_argument("--gcs-bucket", default=None,
+                        help="Google Cloud Storage Bucket for video assets (or set GCS_BUCKET in .env)")
+    parser.add_argument("--location", default=None,
+                        help="Google Cloud Location/Region for Vertex AI (default: us-central1)")
+    parser.add_argument("--fallback-studio", action="store_true",
+                        help="Allow automatic fallback to Google AI Studio (API Key) if Vertex AI / GCS execution fails")
     parser.add_argument("--api-key", default=None,
                         help="API Key (or set GEMINI_API_KEY environment variable or .env file)")
     parser.add_argument("--upload-chunk-size", type=int, default=64,
@@ -427,14 +469,11 @@ def main():
         print(f"[Error] Video file not found: {args.video}", file=sys.stderr)
         sys.exit(1)
 
+    gcp_cfg = resolve_gcp_config(args.project, args.gcs_bucket, args.location)
     api_key = resolve_api_key(args.api_key, args.base_url, args.model)
-    if not api_key:
-        print("\n[Error] Missing API Key!", file=sys.stderr)
-        print("  Please provide a valid API key via one of the following methods:", file=sys.stderr)
-        print("    1. CLI Argument : python3 scripts/generate_edl.py -v ... --api-key YOUR_KEY", file=sys.stderr)
-        print("    2. Environment  : export GEMINI_API_KEY=\"AIzaSy...\"", file=sys.stderr)
-        print("    3. Local File   : Add GEMINI_API_KEY=YOUR_KEY to .env or ~/.gemini/.env\n", file=sys.stderr)
-        sys.exit(1)
+
+    import google.genai as genai
+    from google.genai import types
 
     out_dir = args.output_dir or os.path.dirname(os.path.abspath(args.video)) or "."
     os.makedirs(out_dir, exist_ok=True)
@@ -465,7 +504,64 @@ def main():
     print(f"  • Architecture : {'Zero-Split Agentic Video (99.7% Token Reduction)' if args.processing == 'agentic' else 'Standard 1fps Multimodal'}")
     print(f"  • Target CSV   : {edl_csv_path}")
     print(f"  • Target Report: {report_path}")
-    print("-" * 78)
+
+    video_uri = None
+    file_name_id = None
+    genai_client = None
+    active_backend = args.backend
+
+    if active_backend == "vertex":
+        if not gcp_cfg.get("project") or not gcp_cfg.get("bucket"):
+            if args.fallback_studio and api_key:
+                print("\n  ⚠️ Incomplete GCP configuration (Project / Bucket). Falling back to Google AI Studio...", file=sys.stderr)
+                active_backend = "studio"
+            else:
+                print("\n[Error] Missing Google Cloud Project ID or GCS Bucket name!", file=sys.stderr)
+                print(f"  Project : '{gcp_cfg.get('project')}'", file=sys.stderr)
+                print(f"  Bucket  : '{gcp_cfg.get('bucket')}'", file=sys.stderr)
+                print("  Please configure GOOGLE_CLOUD_PROJECT and GCS_BUCKET in .env, pass --project/--gcs-bucket, or use --fallback-studio / --backend studio.", file=sys.stderr)
+                sys.exit(1)
+
+    if active_backend == "vertex":
+        try:
+            print(f"  • Active Backend : Google Cloud Vertex AI (Project: {gcp_cfg['project']}, Location: {gcp_cfg['location']})")
+            print(f"  • GCS Storage    : gs://{gcp_cfg['bucket']}")
+            print("-" * 78)
+            video_uri = upload_file_to_gcs_with_cache(
+                args.video,
+                bucket_name=gcp_cfg["bucket"],
+                project=gcp_cfg["project"],
+                location=gcp_cfg["location"]
+            )
+            genai_client = genai.Client(
+                vertexai=True,
+                project=gcp_cfg["project"],
+                location=gcp_cfg["location"]
+            )
+        except Exception as gcp_err:
+            if args.fallback_studio and api_key:
+                print(f"\n  ⚠️ Vertex AI / GCS preparation failed ({gcp_err}). Falling back to Google AI Studio...", file=sys.stderr)
+                active_backend = "studio"
+            else:
+                raise RuntimeError(
+                    f"Vertex AI / GCS operation failed on project '{gcp_cfg['project']}': {gcp_err}\n"
+                    f"(Note: To permit automatic fallback to Google AI Studio, pass --fallback-studio)"
+                )
+
+    if active_backend == "studio":
+        if not api_key:
+            print("\n[Error] Missing Gemini API Key for Google AI Studio!", file=sys.stderr)
+            print("  Please provide --api-key, export GEMINI_API_KEY, or set GEMINI_API_KEY in .env.", file=sys.stderr)
+            sys.exit(1)
+        print(f"  • Active Backend : Google AI Studio (API Key)")
+        print("-" * 78)
+        video_uri, file_name_id = upload_video_resumable(
+            video_path=args.video,
+            api_key=api_key,
+            chunk_size_mb=args.upload_chunk_size,
+            force_upload=args.force_upload
+        )
+        genai_client = genai.Client(api_key=api_key)
 
     prompt_text = load_prompt_template(args.template)
 
@@ -478,22 +574,21 @@ def main():
             "2. 請由開頭 Global_Start_Time 一路分析覆蓋至全片結束 Global_End_Time，全片無切分斷句。\n"
         )
 
-    file_uri, file_name_id = upload_video_resumable(
-        video_path=args.video,
-        api_key=api_key,
-        chunk_size_mb=args.upload_chunk_size,
-        force_upload=args.force_upload
-    )
-
     try:
         if args.processing == "agentic":
             try:
-                response_text, usage_info, duration = call_agentic_video_edl(file_uri, prompt_text, api_key, model=args.model)
+                response_text, usage_info, duration = call_agentic_video_edl(video_uri, prompt_text, client=genai_client, model=args.model)
             except Exception as e:
-                print(f"\n[Warning] Agentic processing failed ({e}). Falling back to standard generateContent...", file=sys.stderr)
-                response_text, usage_info, duration = generate_edl_content_standard(file_uri, prompt_text, api_key, model=args.model)
+                if active_backend == "vertex" and args.fallback_studio and api_key:
+                    print(f"\n  ⚠️ Vertex AI Agentic execution encountered: {e}. Falling back to Google AI Studio...", file=sys.stderr)
+                    s_uri, s_name = upload_video_resumable(args.video, api_key=api_key)
+                    s_client = genai.Client(api_key=api_key)
+                    response_text, usage_info, duration = call_agentic_video_edl(s_uri, prompt_text, client=s_client, model=args.model)
+                else:
+                    print(f"\n[Warning] Agentic processing failed ({e}). Falling back to standard generateContent...", file=sys.stderr)
+                    response_text, usage_info, duration = generate_edl_content_standard(video_uri, prompt_text, client=genai_client, model=args.model)
         else:
-            response_text, usage_info, duration = generate_edl_content_standard(file_uri, prompt_text, api_key, model=args.model)
+            response_text, usage_info, duration = generate_edl_content_standard(video_uri, prompt_text, client=genai_client, model=args.model)
 
         # Parse CSV & Report
         csv_rows, report_md = parse_edl_csv_and_report(response_text)

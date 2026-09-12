@@ -89,6 +89,17 @@ multicam-video-preprocessing/
    - 목표 지향적 동적 희소 샘플링을 통해 입력 토큰 소비를 **99.7% 절감**(약 1,000,000 토큰에서 약 3,000 토큰으로 감소). 챕터 경계로 인한 발화 단절 위험을 원천 차단.
 4. **표준 결과물 출력**:
    - 단일 표준 CSV 결정 목록(`edl_full.csv`) 및 Markdown 가편집 분석 보고서(`edl_full_report.md`) 출력.
+5. **듀얼 백엔드 클라우드 아키텍처 (Vertex AI + GCS 기본, AI Studio 백업)**:
+   - **기본 백엔드**: Google Cloud Vertex AI 및 Application Default Credentials(ADC, API 키 관리 불필요). 그리드 영상은 Google Cloud Storage(GCS)에 업로드되며, 로컬 SHA-256 및 파일 크기 캐시를 통해 중복 업로드를 완전히 방지합니다.
+   - **백업 폴백**: `--fallback-studio` 옵션을 추가하면 Vertex AI / GCS 권한 또는 할당량 문제 발생 시 자동으로 Google AI Studio(`GEMINI_API_KEY`)로 원활하게 전환되어 중단 없이 안전하게 작업을 완료합니다.
+   - **실행 명령 예시**:
+     ```bash
+     # 기본: Google Cloud Vertex AI (ADC + GCS 캐싱, 기본값):
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # Google AI Studio 자동 폴백 활성화:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
+     ```
 
 ### 3A단계: FCP7 XML 타임라인 내보내기 (`export_fcp7_xml.py`)
 - 전체 동기화 마스터 비디오와 `edl_full.csv`를 직접 링크하여 DaVinci Resolve / Premiere Pro / Final Cut Pro에 직접 로드 가능한 `final_cut_full.xml` 생성.
@@ -118,8 +129,11 @@ multicam-video-preprocessing/
   - **플리커 방지 미세 간격 결합**: $< 0.2\text{s}$ 간격을 0s로 평활화, $+0.4\text{s}$ 호흡 여백 확보.
 - **실행 명령어 예시**:
   ```bash
-  # 기본 실행 (용어집 자동 추출 + Whisper 전사 + Gemini 멀티모달 교정):
+  # 기본 실행 (Google Cloud Vertex AI & ADC 인증, 기본값):
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+
+  # Google AI Studio 자동 폴백 활성화:
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
 
   # 녹음 원고/대본을 전달하여 용어 및 문맥 최적화:
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
@@ -135,9 +149,31 @@ multicam-video-preprocessing/
 
 ---
 
-## 🛠️ 필요 환경
+## 🛠️ 환경 요구사항 및 클라우드 설정
 
 - **Google Antigravity IDE / Agent Framework**
 - **FFmpeg** (`h264_videotoolbox` 하드웨어 인코딩 및 `loudnorm` 지원)
-- **Python 3.8+**
-- **NumPy** (`pip install numpy`)
+- **Python 3.8+** (`numpy`, `google-genai`, `google-cloud-storage`)
+
+### 클라우드 인증 및 듀얼 백엔드 설정
+
+본 도구는 **듀얼 백엔드 클라우드 아키텍처**를 지원합니다:
+
+1. **Google Cloud Vertex AI (기본 백엔드, 권장)**:
+   - Google Cloud ADC를 통한 간편 인증 (API 키 노출 방지):
+     ```bash
+     gcloud auth application-default login
+     ```
+   - `.env.example`을 `.env`로 복사하여 프로젝트 ID와 GCS 버킷 설정:
+     ```bash
+     cp .env.example .env
+     ```
+     ```env
+     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
+     GCS_BUCKET=video-preprocessing-sylph-demo-505906
+     GOOGLE_CLOUD_LOCATION=us-central1
+     GEMINI_API_KEY=your_gemini_api_key_here
+     ```
+   - 스마트 SHA-256 로컬 해시 캐시로 대용량 비디오의 중복 업로드를 방지합니다.
+2. **Google AI Studio (백업 / 단독 사용)**:
+   - `--backend studio`를 지정하거나 `--fallback-studio`를 사용하여 Vertex AI 권한 부족 시 자동으로 Google AI Studio(`GEMINI_API_KEY`)로 전환합니다.

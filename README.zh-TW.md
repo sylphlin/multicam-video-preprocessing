@@ -152,6 +152,20 @@ flowchart TD
    - 採用目標導向稀疏時域取樣，將輸入 Token 消耗巨幅降低 **99.7%**（由約 1,000,000 Token 降至約 3,000 Token），徹底免除章節交界處話語被截斷的風險。
 4. **產出標準化結果**：
    - 輸出單一標準 CSV 決策表（`edl_full.csv`，亦相容 `edl.csv`）與 Markdown 裁切分析報告（`edl_full_report.md`）。
+5. **雙後端雲端架構 (Vertex AI + GCS 主要後端，AI Studio 備用)**：
+   - **主要後端**：Google Cloud Vertex AI 搭配 Application Default Credentials（ADC，免管 API Key）。網格影片上傳至 Google Cloud Storage（GCS），並內建 SHA-256 與檔案大小快取，跨次執行免重複上傳。
+   - **備用容錯**：加上 `--fallback-studio` 參數，若 Vertex AI / GCS 出現權限或配額錯誤時，自動無縫容錯切換至 Google AI Studio（`GEMINI_API_KEY`），確保流程不中斷。
+   - **執行指令範例**：
+     ```bash
+     # 主要 Vertex AI + GCS 執行（預設，讀取 .env / ADC）：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # 啟用 AI Studio 自動容錯降級：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
+
+     # 直接指定 Google AI Studio 執行：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --backend studio
+     ```
 
 ---
 
@@ -221,8 +235,14 @@ flowchart TD
 #### 執行指令範例：
 
 ```bash
-# 基本執行（全自動全片聽音抽取詞彙庫 + Whisper 物理轉錄 + Gemini 多模態音訊審稿）：
+# 基本執行（Google Cloud Vertex AI 與 ADC 認證，預設）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
+
+# 啟用 AI Studio 自動容錯降級：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
+
+# 直接指定 Google AI Studio 執行：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --backend studio
 
 # 提供訪綱或重點筆記偏置專有名詞（可選）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "講者: 來賓名稱, 主題: 核心議題、專有名詞列表"
@@ -245,9 +265,31 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh
 
 ---
 
-## 🛠️ 環境需求
+## 🛠️ 環境需求與雲端配置
 
 - **Google Antigravity IDE / Agent Framework**
 - **FFmpeg**（支援 `h264_videotoolbox` 硬體編碼與 `loudnorm` 濾鏡）
-- **Python 3.8+**
-- **NumPy** (`pip install numpy`)
+- **Python 3.8+**（依賴 `numpy`、`google-genai`、`google-cloud-storage`）
+
+### 雲端認證與雙後端設定
+
+本工具套件採用**雙後端雲端架構**：
+
+1. **Google Cloud Vertex AI（主要後端，推薦）**：
+   - 透過 Google Cloud ADC 登入認證（免管 API Key）：
+     ```bash
+     gcloud auth application-default login
+     ```
+   - 複製 `.env.example` 為 `.env` 並填寫專案與儲存桶名稱：
+     ```bash
+     cp .env.example .env
+     ```
+     ```env
+     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
+     GCS_BUCKET=video-preprocessing-sylph-demo-505906
+     GOOGLE_CLOUD_LOCATION=us-central1
+     GEMINI_API_KEY=your_gemini_api_key_here
+     ```
+   - 具備智慧型 SHA-256 本機雜湊快取，大型影片上傳一次即可重複引用。
+2. **Google AI Studio（備用後端 / 輕量模式）**：
+   - 指定 `--backend studio` 或加上 `--fallback-studio`，系統在 Vertex AI / GCS 權限不足時自動切換至 Google AI Studio（使用 `GEMINI_API_KEY`）。
