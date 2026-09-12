@@ -194,8 +194,9 @@ multicam-video-preprocessing/
   # 녹음 원고/대본을 전달하여 용어 및 문맥 최적화:
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
 
-  # 자막 한 줄 최대 글자 수 조정 (예: 영어 42자, CJK 15자):
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
+  # 자막 한 줄 최대 글자 수 조정 (기본값: 영어 42자, 한/중/일: CJK 15자, 한국어 16자):
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
+    --language en --max-chars-latin 42 --max-chars-cjk 15 --max-chars-korean 16
   ```
 - **출력 파일**:
   - `final_cut_full.srt`: YouTube 표준 SubRip 자막 파일.

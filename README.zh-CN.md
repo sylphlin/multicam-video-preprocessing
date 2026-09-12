@@ -307,8 +307,9 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manu
 # 指定语言与 Whisper 模型大小：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh-CN --whisper-model small
 
-# 自定义字幕单行字数限制（例如英文行宽 42 字符、中文 15 字）：
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
+# 自定义字幕单行字数上限（默认：英文 42 字符、中文/日文 15 字、韩文 16 字）：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
+  --language en --max-chars-latin 42 --max-chars-cjk 15 --max-chars-korean 16
 ```
 
 4. **输出文件**：

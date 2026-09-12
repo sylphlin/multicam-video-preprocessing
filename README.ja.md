@@ -194,8 +194,9 @@ multicam-video-preprocessing/
   # 台本／収録原稿を渡して用語と文脈を最適化：
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
 
-  # 字幕の行幅上限をカスタマイズ（例：英語 42 文字、CJK 15 文字）：
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
+  # 字幕の行幅上限をカスタマイズ（デフォルト：英語 42 文字、日中 15 文字、韓国語 16 文字）：
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
+    --language en --max-chars-latin 42 --max-chars-cjk 15 --max-chars-korean 16
   ```
 - **出力**：
   - `final_cut_full.srt`：YouTube 標準 SubRip 字幕ファイル。

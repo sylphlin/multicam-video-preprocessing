@@ -310,8 +310,9 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manu
 # Specify language and Whisper model size:
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh-TW --whisper-model small
 
-# Custom subtitle character limits (e.g. English 42 CPL, CJK 15 chars):
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
+# Custom subtitle character limits per line (defaults: Latin 42 CPL, CJK 15 chars, Korean 16 chars):
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
+  --language en --max-chars-latin 42 --max-chars-cjk 15 --max-chars-korean 16
 ```
 
 4. **Outputs**:
