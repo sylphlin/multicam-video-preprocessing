@@ -17,11 +17,17 @@ Architecture:
 import concurrent.futures
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import wave
 import numpy as np
+
+# BBC standard confidence thresholds (Single Source of Truth)
+SCORE_HIGH = 12.0  # BBC High confidence threshold (Fast ladder qualification)
+SCORE_LOW = 7.0   # BBC Medium/Low boundary (Fallback to raw waveform & low warning)
+
 
 
 def probe_media_duration(media_path):
@@ -418,8 +424,8 @@ def sync_single_target(ref_info, target_video, tmpdir, sr=8000, max_dur=None, fu
                 m_ref_fast, m_tgt_fast, hop_length=hop_length, sr=sr
             )
 
-            # Check BBC High confidence threshold (>= 12.0) and plausible offset within 120s
-            if fast_stats["peak_z_score"] >= 12.0 and abs(fast_offset) < 110.0:
+            # Check BBC High confidence threshold (>= SCORE_HIGH) and plausible offset within 120s
+            if fast_stats["peak_z_score"] >= SCORE_HIGH and abs(fast_offset) < 110.0:
                 offset_sec = fast_offset
                 stats = fast_stats
                 tier_used = "fast_120s"
@@ -446,8 +452,8 @@ def sync_single_target(ref_info, target_video, tmpdir, sr=8000, max_dur=None, fu
             f_ref_cache=f_ref_cache, lock=cache_lock
         )
 
-        # Check if Tier 2 meets medium confidence (>= 7.0)
-        if stats["peak_z_score"] >= 7.0:
+        # Check if Tier 2 meets medium confidence (>= SCORE_LOW)
+        if stats["peak_z_score"] >= SCORE_LOW:
             tier_used = "full_mfcc"
             if refine_subframe:
                 offset_sec = refine_offset_subframe(s_ref, s_target, offset_sec, sr=sr)
@@ -523,7 +529,29 @@ def sync_all_targets(ref_video, target_videos, sr=8000, sample_dur=None, workers
             for fut in concurrent.futures.as_completed(futures):
                 res = fut.result()
                 results.append(res)
-                print(f"    ✓ Aligned {res['target_basename']} (Δt: {res['offset_sec']:+.3f}s | Conf: {res['confidence']:.1f}% | Score: {res['peak_z_score']:.1f}) in {res['total_time']:.2f}s")
+                score = res["peak_z_score"]
+                if score >= SCORE_HIGH:
+                    marker = "✓"
+                    verb = "Aligned"
+                elif score >= SCORE_LOW:
+                    marker = "ℹ"
+                    verb = "Aligned (marginal)"
+                else:
+                    marker = "⚠️"
+                    verb = "LOW CONFIDENCE"
+
+                print(f"    {marker} {verb} {res['target_basename']} (Δt: {res['offset_sec']:+.3f}s | Conf: {res['confidence']:.1f}% | Score: {res['peak_z_score']:.1f}) in {res['total_time']:.2f}s")
+
+                if score < SCORE_LOW:
+                    sys.stderr.write(
+                        f"[Warning] {res['target_basename']}: audio alignment confidence is low (score {res['peak_z_score']:.1f}, {res['confidence']:.1f}%).\n"
+                        f"The computed offset of {res['offset_sec']:+.3f}s may be wrong. Common causes: the cameras\n"
+                        f"share no audible content, one recording is silent over the analysed range,\n"
+                        f"or --sample-dur covers only a silent section.\n"
+                        f"Consider re-running with --full-scan, or set the range manually with\n"
+                        f"--ref-start / --ref-end.\n"
+                    )
+                    sys.stderr.flush()
 
     results.sort(key=lambda r: target_videos.index(r["target_video"]))
     return ref_info, results

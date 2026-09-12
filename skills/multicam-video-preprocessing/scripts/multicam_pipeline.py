@@ -33,7 +33,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from modules.time_utils import parse_time_to_seconds, format_seconds
-from modules.audio_sync import sync_all_targets, compute_common_overlap_range
+from modules.audio_sync import sync_all_targets, compute_common_overlap_range, SCORE_LOW
 from modules.audio_normalizer import normalize_all_audio_tracks
 from modules.video_composer import (
     compute_grid_spec, compose_multicam_video, cut_single_clip
@@ -83,6 +83,7 @@ def main():
     parser.add_argument("--workers", type=int, default=4, help="Parallel worker threads (default: 4)")
     parser.add_argument("--full-scan", action="store_true", help="Force full-length MFCC scan (skip fast 120s search ladder)")
     parser.add_argument("--no-subframe-refine", action="store_true", help="Disable sub-frame refinement (stay at hop-level MFCC resolution)")
+    parser.add_argument("--strict-sync", action="store_true", help="Abort and exit non-zero if any camera audio alignment confidence is low (score < 7.0)")
 
     args = parser.parse_args()
 
@@ -138,6 +139,45 @@ def main():
     }
 
     print_sync_table(ref_info, target_results, trim_info=trim_info if has_manual_trim else None)
+
+    # Summary Gate: verify audio alignment confidence across all target cameras
+    low_conf_targets = [r for r in target_results if r.get("peak_z_score", 0.0) < SCORE_LOW]
+    if low_conf_targets:
+        delim = "=" * 78
+        sub_delim = "-" * 78
+        lines = [
+            f"\n{delim}",
+            f"⚠️  WARNING: LOW CONFIDENCE AUDIO ALIGNMENT DETECTED ({len(low_conf_targets)} camera(s) affected)",
+            sub_delim,
+        ]
+        for r in low_conf_targets:
+            lines.append(
+                f"  • {r['target_basename']}: Score {r['peak_z_score']:.1f}, "
+                f"Confidence {r['confidence']:.1f}%, Offset {r['offset_sec']:+.3f}s"
+            )
+        lines.extend([
+            "",
+            "The exported masters, merged grid video, and subsequent AI EDL/subtitles",
+            "will inherit this misalignment!",
+            "Common causes:",
+            "  - Cameras share no audible content or one recording is silent.",
+            "  - --sample-dur covers only a silent section.",
+            "Possible remedies:",
+            "  - Re-run with --full-scan to analyze the full recordings.",
+            "  - Set the active range manually using --ref-start / --ref-end.",
+            f"{delim}\n"
+        ])
+        warning_block = "\n".join(lines)
+        print(warning_block)
+        sys.stderr.write(warning_block)
+        sys.stderr.flush()
+
+        if args.strict_sync:
+            print(
+                f"[Error] Aborting pipeline due to --strict-sync: {len(low_conf_targets)} camera(s) failed confidence threshold (score < {SCORE_LOW:.1f}).\n",
+                file=sys.stderr
+            )
+            sys.exit(1)
 
     # ---------------------------------------------------------
     # Step 2: Global EBU R128 Audio Normalization
