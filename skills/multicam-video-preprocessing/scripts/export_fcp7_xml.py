@@ -41,6 +41,35 @@ AUDIO_SAMPLE_RATE = 48000
 AUDIO_DEPTH = 16
 
 
+def resolve_fps_characteristics(fps):
+    """
+    Map float fps to FCP7 integer timebase and ntsc boolean flag according to Apple FCP7 XML specifications.
+    Supports standard NTSC fractional frame rates (23.976, 29.97, 59.94) and broadcast film rates.
+    """
+    fps_f = float(fps)
+    KNOWN_RATES = [
+        (23.976, 24, True),
+        (23.98,  24, True),
+        (24.0,   24, False),
+        (25.0,   25, False),
+        (29.97,  30, True),
+        (30.0,   30, False),
+        (50.0,   50, False),
+        (59.94,  60, True),
+        (60.0,   60, False),
+    ]
+    for target, tb, is_ntsc in KNOWN_RATES:
+        if abs(fps_f - target) < 0.01:
+            return tb, is_ntsc
+
+    tb = int(round(fps_f))
+    sys.stderr.write(
+        f"[Warning] Unrecognised frame rate {fps}. Setting FCP7 XML timebase={tb}, ntsc=FALSE.\n"
+    )
+    sys.stderr.flush()
+    return tb, False
+
+
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", str(s))]
 
@@ -203,20 +232,21 @@ def probe_media_duration_frames(file_path, fps=DEFAULT_FPS):
         return 200000
 
 
-def create_file_node(file_id, filename, file_url, fps, duration, width, height):
+def create_file_node(file_id, filename, file_url, timebase, duration, width, height, drop_frame=False):
     """Generate standard FCP7 XML <file> node with Reel name matching reference implementation."""
     reel_name = os.path.splitext(filename)[0]
+    display_format = "DF" if drop_frame else "NDF"
     return f"""
                     <file id="{file_id}">
                         <name>{filename}</name>
                         <pathurl>{file_url}</pathurl>
-                        <rate><timebase>{fps}</timebase></rate>
+                        <rate><timebase>{timebase}</timebase></rate>
                         <duration>{duration}</duration>
                         <timecode>
-                            <rate><timebase>{fps}</timebase></rate>
+                            <rate><timebase>{timebase}</timebase></rate>
                             <string>00:00:00:00</string>
                             <frame>0</frame>
-                            <displayformat>NDF</displayformat>
+                            <displayformat>{display_format}</displayformat>
                             <reel>
                                 <name>{reel_name}</name>
                             </reel>
@@ -224,7 +254,7 @@ def create_file_node(file_id, filename, file_url, fps, duration, width, height):
                         <media>
                             <video>
                                 <samplecharacteristics>
-                                    <rate><timebase>{fps}</timebase></rate>
+                                    <rate><timebase>{timebase}</timebase></rate>
                                     <width>{width}</width>
                                     <height>{height}</height>
                                     <pixelaspectratio>square</pixelaspectratio>
@@ -242,12 +272,15 @@ def create_file_node(file_id, filename, file_url, fps, duration, width, height):
 
 
 def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="final_cut_full",
-                            fps=DEFAULT_FPS, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT):
+                            fps=DEFAULT_FPS, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
+                            drop_frame=False):
     """
     Construct standard Final Cut Pro 7 XML (xmeml version 4) content matching working reference.
     """
     total_timeline_duration = all_part_clips[-1]["timeline_end"] if all_part_clips else 0
-    is_ntsc = "TRUE" if fps % 30 == 0 or fps == 24 else "FALSE"
+    timebase, is_ntsc = resolve_fps_characteristics(fps)
+    ntsc_str = "TRUE" if is_ntsc else "FALSE"
+    display_format = "DF" if drop_frame else "NDF"
 
     xml_header = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
@@ -256,14 +289,23 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
     <name>{seq_name}</name>
     <duration>{total_timeline_duration}</duration>
     <rate>
-        <timebase>{fps}</timebase>
-        <ntsc>{is_ntsc}</ntsc>
+        <timebase>{timebase}</timebase>
+        <ntsc>{ntsc_str}</ntsc>
     </rate>
+    <timecode>
+        <rate>
+            <timebase>{timebase}</timebase>
+            <ntsc>{ntsc_str}</ntsc>
+        </rate>
+        <string>00:00:00:00</string>
+        <frame>0</frame>
+        <displayformat>{display_format}</displayformat>
+    </timecode>
     <media>
         <video>
             <format>
                 <samplecharacteristics>
-                    <rate><timebase>{fps}</timebase></rate>
+                    <rate><timebase>{timebase}</timebase></rate>
                     <width>{width}</width>
                     <height>{height}</height>
                     <pixelaspectratio>square</pixelaspectratio>
@@ -289,7 +331,7 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
         clip_id = f"video-item-{i}"
         clip_dur = clip["source_out"] - clip["source_in"]
 
-        file_node = create_file_node(master_file_id, filename, file_url, fps, total_timeline_duration + 50000, width, height)
+        file_node = create_file_node(master_file_id, filename, file_url, timebase, total_timeline_duration + 50000, width, height, drop_frame=drop_frame)
 
         marker_color = "(255,0,0)" if "[強制]" in clip["rule"] else "(0,0,255)"
         clean_rule = clip["rule"].replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
@@ -300,7 +342,7 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
                     <name>{cam_key}</name>
                     <enabled>TRUE</enabled>
                     <duration>{clip_dur}</duration>
-                    <rate><timebase>{fps}</timebase></rate>
+                    <rate><timebase>{timebase}</timebase></rate>
                     <start>{clip['timeline_start']}</start>
                     <end>{clip['timeline_end']}</end>
                     <in>{clip['source_in']}</in>
@@ -336,14 +378,14 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
                 a_clip_id = f"audio-track{track_idx}-item{a_idx}"
                 a_dur_frames = a_part["end_frame"] - a_part["start_frame"]
 
-                a_file_node = create_file_node(a_master_id, a_fname, a_url, fps, total_timeline_duration + 50000, width, height)
+                a_file_node = create_file_node(a_master_id, a_fname, a_url, timebase, total_timeline_duration + 50000, width, height, drop_frame=drop_frame)
 
                 tracks_xml += f"""
                 <clipitem id="{a_clip_id}">
                     <name>CAM1 Audio</name>
                     <enabled>TRUE</enabled>
                     <duration>{a_dur_frames}</duration>
-                    <rate><timebase>{fps}</timebase></rate>
+                    <rate><timebase>{timebase}</timebase></rate>
                     <start>{a_part['start_frame']}</start>
                     <end>{a_part['end_frame']}</end>
                     <in>{a_part['source_in']}</in>
@@ -366,12 +408,18 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
 
 def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_json=None,
                              fps=DEFAULT_FPS, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
-                             use_raw_media=False):
+                             use_raw_media=False, drop_frame=False):
     """
     Main pipeline to convert sequential EDL CSVs into a continuous FCP7 XML sequence.
     """
     if not edl_files:
         raise ValueError("No EDL CSV files provided for XML export.")
+
+    fps = float(fps)
+    timebase, is_ntsc = resolve_fps_characteristics(fps)
+    if drop_frame and not is_ntsc:
+        print(f"[Error] --drop-frame is only valid for NTSC frame rates (23.976, 29.97, 59.94). Specified rate: {fps}", file=sys.stderr)
+        sys.exit(1)
 
     edl_files = sorted(edl_files, key=natural_sort_key)
     num_edls = len(edl_files)
@@ -502,7 +550,8 @@ def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_j
         seq_name=seq_name,
         fps=fps,
         width=width,
-        height=height
+        height=height,
+        drop_frame=drop_frame
     )
 
     out_dir = os.path.dirname(os.path.abspath(output_path))
@@ -538,7 +587,8 @@ def main():
     parser.add_argument("-s", "--sync-json", default=None, help="Path to multicam_sync.json for raw camera offset resolution")
     parser.add_argument("--use-raw-media", action="store_true", help="Link to original raw camera footage instead of synchronized camera masters")
 
-    parser.add_argument("--fps", type=int, default=DEFAULT_FPS, help="Sequence frame rate (default: 30)")
+    parser.add_argument("--fps", type=float, default=float(DEFAULT_FPS), help="Sequence frame rate (default: 30)")
+    parser.add_argument("--drop-frame", action="store_true", help="Enable drop-frame timecode (DF) for NTSC sequences (default: NDF)")
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Sequence width (default: 1920)")
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Sequence height (default: 1080)")
 
@@ -579,7 +629,8 @@ def main():
             fps=args.fps,
             width=args.width,
             height=args.height,
-            use_raw_media=args.use_raw_media
+            use_raw_media=args.use_raw_media,
+            drop_frame=args.drop_frame
         )
     except Exception as e:
         print(f"\n[Error] FCP7 XML export failed: {e}", file=sys.stderr)
