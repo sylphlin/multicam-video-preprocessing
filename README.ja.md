@@ -80,7 +80,11 @@ multicam-video-preprocessing/
      2. *全編 MFCC スキャン*：初期スコア $< 12.0$ または `--full-scan` 指定時に全編スキャンを実行。
      3. *生波形 FFT フォールバック*：全編 MFCC スコアが低い場合（$Z < 7.0$）、従来のハイパス生波形 1D FFT 相互相関へ自動フォールバック。
    - **サブフレーム物理音響微調整 (<0.125ms)**：両カメラの重複領域内で最大エネルギーの 5 秒間を特定し、$\pm 32\text{ms}$ の探索範囲内で時間領域相互相関を実行。精度を単一音声サンプル単位（**8kHz で 0.125ms の物理音響精度**）まで引き上げます。
-   - **BBC 放送基準信頼度スコア**：相関ピークとノイズフロアの標準偏差比により評価（$Z \ge 12.0$ 高信頼度、$7.0 \le Z < 12.0$ 中信頼度、$Z < 7.0$ 低信頼度）。
+   - **BBC 放送基準信頼度スコア＆低スコア即時警告**：相関ピークとノイズフロアの標準偏差比により評価：
+     - $Z \ge 12.0$ 高信頼度：`✓ Aligned` と表示。
+     - $7.0 \le Z < 12.0$ 中信頼度：`ℹ Aligned (marginal)` と表示。
+     - $Z < 7.0$ 低信頼度：`⚠️ LOW CONFIDENCE` と表示し、即時に stderr 警告と原因診断ヒントを出力。
+   - **Summary Gate 警告ボックス＆ `--strict-sync` 安全停止**：Step 1 終了時に低信頼度カメラが存在する場合、警告ボックスを端末に表示。`--strict-sync` 指定時は終了コード 1 で即時停止し、自動処理でのズレ事故を防止。
    - **コンテナ実再生時間の自動検出（`--sample-dur` 早期打ち切りバグの修正）**：`ffprobe` により動画コンテナの真の長さを取得し、テストモード時でもマスター出力と重複区間が全編維持されるよう保証。
 2. **EBU R128 (-14 LUFS) 2-Pass リニア音量正規化**：Pass 1 で null sink を用いて高速音響測定（`I`, `LRA`, `TP`, `target_offset`）。Pass 2 で `linear=true` を適用し、ダイナミックポンピング（音量息継ぎ感）を完全根絶して -14.0 LUFS に 100% 精密固定。
 3. **同期マスター動画のフレーム精度並列書き出し (`*_synced.mp4`)**：キーフレーム（I-frame）吸着によるミリ秒ズレや黒画面カクつきを防ぐため、デフォルトでフレーム精度のハードウェア再エンコード（`h264_videotoolbox` / `libx264 -crf 18`）を採用。高速粗編集用の `--stream-copy` もサポート。
@@ -102,6 +106,11 @@ multicam-video-preprocessing/
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
     --full-scan --normalize --merge -o output/
+
+  # 厳格同期検証モード（信頼度スコア 7.0 未満で即時エラー停止）：
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --strict-sync --normalize --merge -o output/
 
   # 高速ストリームコピーモード（-c copy、キーフレーム吸着）：
   python3 scripts/multicam_pipeline.py \
@@ -134,9 +143,16 @@ multicam-video-preprocessing/
 
 ### ステップ 3A：FCP7 XML タイムラインエクスポート (`export_fcp7_xml.py`)
 - 全編同期マスター動画と `edl_full.csv` を直接リンクし、DaVinci Resolve / Premiere Pro / Final Cut Pro に直接読み込める `final_cut_full.xml` を生成。
+- **NTSC 浮動小数点フレームレート (29.97 / 23.976 / 59.94) & Drop-Frame (`--drop-frame`) 完全対応**：
+  - `--fps` 浮動小数点入力に対応し、FCP7 XML 仕様に準拠した整数 `<timebase>` と `<ntsc>TRUE</ntsc>` を自動出力。タイムコード計算は浮動小数点を用い、長尺動画でのフレーム累積ズレを完全解消。
+  - `--drop-frame` により `<displayformat>DF</displayformat>` の出力に対応。
 - **実行コマンド例**：
   ```bash
+  # 標準 30 fps XML 書き出し：
   python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+
+  # 放送用 29.97 fps NTSC Drop-Frame XML 書き出し：
+  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ### ステップ 3B：ワンパス動画直接レンダリング (`edl_to_video.py`)
@@ -158,9 +174,10 @@ multicam-video-preprocessing/
      - **チャンク単位の永続キャッシュ (Chunk-Level Persistent Cache)**：モデル・プロンプト・用語集・テキストから一意のハッシュを生成し、`.<basename>_chunk_cache.json` に即時保存。中断時もトークン消費ゼロで 100% 再開可能。
      - **フリッカー防止微小ギャップ結合**：微小な空隙（$< 0.6\text{s}$）を 0s に平滑化、真のポーズ時は $+0.4\text{s}$ の呼吸余白を付与して画面をクリーンにクリア。
 - **🎯 Netflix / YouTube 配信標準字幕品質監査エンジン（8大監査項目）**：
-  - **1行文字数・表示幅制限**：日本語/中国語 $\le 15$ 字、韓国語 $\le 16$ 字、英語 $\le 37$ CPL（長文は文節で自動分割）。
+  - **1行文字数・表示幅制限**：日本語/中国語 $\le 15$ 字、韓国語 $\le 16$ 字、英語 $\le 42$ CPL（業界標準）。`--max-chars-cjk`、`--max-chars-korean`、`--max-chars-latin` で自由にカスタマイズ可能。
   - **読取速度監視 (CPS)**：日本語 $\le 6.0$ CPS、英語 $\le 20.0$ CPS。全編の平均 CPS とピーク CPS を算出し、Netflix 基準超過を警告リストへ登録。
-  - **行末記号の完全除去**：行末の「。」「、」「；」を 100% 除去し、極めてクリーンなレイアウトを実現。
+  - **言語別最適化句読点ポリシー**：CJK（日本語/中国語/韓国語）は読点を空白化し行末句読点を完全除去。Latin（英語/フランス語/ドイツ語など）は文節のカンマ、ピリオド、コロン、セミコロン、発言遮断ダッシュ `—`、余韻三点リーダー `...` を正確に保持。
+  - **多言語フォールバック機構**：`zh-TW`, `zh-CN`, `ja`, `ko`, `en` の5言語で専用語彙プロンプトを提供。未対応言語は英語ルールへ安全にフォールバック（初回のみ stderr 通知）。
   - **タイポグラフィ・書式クレンジング**：全角 `（）`、`【】`、`《》`、`「」` および半角括弧の整合性検証、漏洩した Markdown タグ（`**`、`_`、`` ` ``）の自動消去。
   - **長時間無音・無対話区間検出**：10 秒以上の無音区間（Gap $\ge 10.0\text{s}$）を検出し、B-roll、BGM、または ASR 脱落の確認用に前後のテキストとタイムコードを記録。
   - **音声開始 0 秒完全同期**：Whisper 物理音響開始点に厳格固定（0.000s）し、字幕のネタバレを防止。
@@ -176,6 +193,9 @@ multicam-video-preprocessing/
 
   # 台本／収録原稿を渡して用語と文脈を最適化：
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
+
+  # 字幕の行幅上限をカスタマイズ（例：英語 42 文字、CJK 15 文字）：
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
   ```
 - **出力**：
   - `final_cut_full.srt`：YouTube 標準 SubRip 字幕ファイル。

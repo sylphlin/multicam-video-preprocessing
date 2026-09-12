@@ -131,7 +131,11 @@ flowchart TD
      2. *全集 MFCC 掃描*：若初始分數 $< 12.0$ 或使用者指定 `--full-scan`，則啟動全片 MFCC 特徵掃描。
      3. *原始波形 FFT 降級機制*：若全集 MFCC 分數依舊較低（$Z < 7.0$），系統無縫自動回退至原始高通濾波波形 1D FFT 互相關作為保底。
    - **子幀物理聲學微調 (<0.125ms)**：在兩機重疊活躍區內動態定位最高能量的 5 秒語音片段，於 $\pm 32\text{ms}$ 搜尋半徑內進行時域互相關精修，將 MFCC 步幅精度躍升至**單個音訊取樣點（8kHz 下精確至 0.125ms 物理聲學精度）**。
-   - **BBC 廣播級置信度統計**：依據互相關峰值與噪聲底限的標準差比值評估（$Z \ge 12.0$ 高置信度、$7.0 \le Z < 12.0$ 中置信度、$Z < 7.0$ 低置信度）。
+   - **BBC 廣播級置信度統計與低分即時警告**：依據互相關峰值與噪聲底限的標準差比值評估：
+     - $Z \ge 12.0$ 高置信度：標記 `✓ Aligned`。
+     - $7.0 \le Z < 12.0$ 中置信度：標記 `ℹ Aligned (marginal)`。
+     - $Z < 7.0$ 低置信度：標記 `⚠️ LOW CONFIDENCE` 並即時輸出 stderr 警告與可能原因。
+   - **Summary Gate 警告邊框與 `--strict-sync` 防呆中斷**：Step 1 結束時若存在低置信度相機，自動在終端輸出醒目警告區塊；若傳入 `--strict-sync` 則直接非零退出中斷管線，防止在批次自動化中生成錯位成片。
    - **容器時間自動探測 (修復 `--sample-dur` 截斷問題)**：整合 `ffprobe` 提取真實影片容器時長，保證快速測試模式下導出的母帶與對齊區間維持全片長度。
 2. **EBU R128 (-14 LUFS) 全集音量標準化 (符合 YouTube 官方建議標準)**：
    - **符合 YouTube 播放規範**：YouTube 平台採用 **-14.0 LUFS** 作為標準響度基準。若影片音量過大（高於 -14 LUFS），YouTube 後台會啟動強制壓縮衰減導致動態範圍受損；若音量過小則影響手機與平板觀眾的聆聽體驗。
@@ -160,6 +164,11 @@ flowchart TD
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
     --full-scan --normalize --merge -o output/
+
+  # 嚴格對齊檢查模式（對齊信賴度低於 7.0 即刻報錯中斷）：
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --strict-sync --normalize --merge -o output/
 
   # 極速串流複製模式（-c copy，關鍵幀吸附切割）：
   python3 scripts/multicam_pipeline.py \
@@ -208,9 +217,16 @@ flowchart TD
 3. **建立連續主音軌與規則 Marker 注入**：
    - 建立全片連續的 CAM1 主收音軌道；
    - 將 AI 的剪輯規則與決策理由轉化為時間線上的紅藍 Marker 標記，方便剪輯師檢視。
+4. **NTSC 浮點幀率 (29.97 / 23.976) 與 Drop-Frame (DF) 完整支援**：
+   - `--fps` 支援浮點輸入（`29.97`, `23.976`, `59.94`），自動合規輸出 FCP7 XML 整數 `<timebase>` 與 `<ntsc>TRUE</ntsc>`，所有時間碼換算皆以浮點運算，杜絕長序列影格累積漂移。
+   - 支援 `--drop-frame` 參數設定 `<displayformat>DF</displayformat>`（非 NTSC 幀率自動防呆拒絕）。
 - **執行指令範例**：
   ```bash
+  # 標準 30 fps XML 匯出：
   python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+
+  # 廣播級 29.97 fps NTSC Drop-Frame 時間線匯出：
+  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ---
@@ -260,9 +276,10 @@ flowchart TD
 
 | 檢驗項目 | 標準規範 | 優化與工程處理邏輯 |
 | :--- | :--- | :--- |
-| **單行字數寬度限制** | CJK $\le 15$ 字 / EN $\le 37$ CPL | 依各語系設定字寬上限（中文/日文 $\le 15$ 字、韓文 $\le 16$ 字、英文 $\le 37$ 字元）。長句自動在子句邊界平滑拆分，防止小螢幕折行。 |
+| **單行字數寬度限制** | CJK $\le 15$ 字 / EN $\le 42$ CPL | 依各語系設定字寬上限（中文/日文 $\le 15$ 字、韓文 $\le 16$ 字、英文 $\le 42$ 字元業界標準）。可透過 `--max-chars-cjk`、`--max-chars-korean`、`--max-chars-latin` 自由微調。 |
 | **閱聽速率監控 (CPS)** | CJK $\le 6.0$ CPS / EN $\le 20.0$ CPS | 計算全片平均 CPS 與峰值 CPS，過促語句（如短促高密度字）自動警示並列入待複查清單。 |
-| **行尾標點與版面淨化** | 100% 消除行尾 `。`、`，`、`；` | 清除無視覺意義的行尾符號；行內逗號轉換為自然空格，中英文/數字間距自動標準化，版面極致清爽。 |
+| **多語言專屬標點策略** | CJK 淨化 / 英文保留語意 | CJK（繁中/簡中/日/韓）行內逗號轉空格並清除行尾句逗；Latin（英文/法/德/西等）完整保留行內逗號、行尾句號、未完子句逗號、冒號分號、話語中斷破折號 `—` 與語氣延續刪節號 `...`。 |
+| **多語言 Fallback 機制** | 預設 Fallback 至 `en` | 內建支援 `zh-TW`, `zh-CN`, `ja`, `ko`, `en` 五種專屬詞彙前綴與模板。未支援語言預設安全 fallback 至英文排版並發出單次 stderr 警告（泰文、阿語、梵文目前作為近似排版支援）。 |
 | **字元排版與語法潔淨** | 括號成對閉合 / 嚴禁殘留 Markdown | 檢驗全形 `（）`、`【】`、`《》`、`「」` 及半形括號成對閉合；自動清洗 `**`粗體、`_`斜體、`` ` ``代碼標記等 LLM 洩漏標籤。 |
 | **長時間無對白/靜音檢驗** | 停頓 Gap $\ge 10.0\text{s}$ 警示 | 檢測全片超過 10 秒之空白間隔，記錄前後句與時間碼，供剪輯師快速確認為 B-roll 空景、轉場音樂或 ASR/VAD 語音切除遺漏。 |
 | **聲學起點 0 劇透** | 0.000s 物理對齊 | 字幕出現時間嚴格鎖定 Whisper 物理聲學起點，絕對不比聲音先出，避免劇透觀影體驗。 |
@@ -289,6 +306,9 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manu
 
 # 指定語言與 Whisper 模型大小：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh-TW --whisper-model small
+
+# 自訂字幕單行字數限制（例如英文行寬 42 字元、中文 15 字）：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
 ```
 
 4. **輸出檔案**：

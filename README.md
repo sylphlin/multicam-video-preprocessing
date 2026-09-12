@@ -132,7 +132,11 @@ Simply prompt the Antigravity Agent in plain conversational language:
      2. *Full MFCC Scan*: Scans full recording if initial score $< 12.0$ or `--full-scan` is set.
      3. *Raw Waveform Fallback*: Automatically falls back to full-length raw waveform 1D FFT cross-correlation if MFCC confidence is low ($Z < 7.0$).
    - **Sub-Frame Refinement to 0.125ms**: Locates the maximum-energy 5s speech window in the mutual active range and performs localized time-domain acoustic correlation over a $\pm 32\text{ms}$ search radius, refining coarse MFCC hop precision down to a **single audio sample (0.125ms physical precision at 8kHz)**.
-   - **BBC Standard Confidence Score**: Evaluates correlation peak against noise floor ($Z \ge 12.0$ High Confidence, $7.0 \le Z < 12.0$ Medium Confidence, $Z < 7.0$ Low Confidence).
+   - **BBC Standard Confidence Score & Live Warnings**: Evaluates correlation peak against noise floor:
+     - $Z \ge 12.0$ High Confidence: Tagged `✓ Aligned`.
+     - $7.0 \le Z < 12.0$ Marginal Confidence: Tagged `ℹ Aligned (marginal)`.
+     - $Z < 7.0$ Low Confidence: Tagged `⚠️ LOW CONFIDENCE` and immediately emits stderr warning with diagnostic hints.
+   - **Summary Gate Box & `--strict-sync` Safeguard**: Displays an eye-catching warning box at the conclusion of Step 1 if any target has low confidence. Passing `--strict-sync` immediately halts pipeline execution with exit code 1 to prevent misaligned batch renders.
    - **Container Duration Probing**: Uses `ffprobe` to query true media duration, ensuring `--sample-dur` test slices never truncate the final master cut timeline.
 2. **EBU R128 (-14 LUFS) Loudness Normalization (YouTube Broadcast Standard)**:
    - **YouTube Compliance**: YouTube enforces **-14.0 LUFS** as its target integrated loudness standard. Overly loud audio triggers harsh backend compression, while low audio reduces mobile playback clarity.
@@ -161,6 +165,11 @@ Simply prompt the Antigravity Agent in plain conversational language:
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
     --full-scan --normalize --merge -o output/
+
+  # Strict sync mode (aborts with code 1 if confidence score < 7.0):
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --strict-sync --normalize --merge -o output/
 
   # Fast lossy stream-copy mode (-c copy, keyframe snapped):
   python3 scripts/multicam_pipeline.py \
@@ -209,9 +218,17 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 3. **Continuous Master Audio & Decision Markers**:
    - Creates a continuous master audio track.
    - Converts AI cut rules and rationale into red/blue color timeline markers for review.
+4. **NTSC Fractional Frame Rate (29.97 / 23.976 / 59.94) & Drop-Frame (DF) Support**:
+   - Accepts float `--fps` values (`29.97`, `23.976`, `59.94`). Automatically maps to integer `<timebase>` (`30`, `24`, `60`) and sets `<ntsc>TRUE</ntsc>` per FCP7 XML specification.
+   - All timecode and duration calculations use exact floating-point framerates to eliminate cumulative frame drift.
+   - Optional `--drop-frame` flag configures `<displayformat>DF</displayformat>` (NDF default; strictly validated against non-NTSC frame rates).
 - **CLI Usage Example**:
   ```bash
+  # Standard 30 fps XML export:
   python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+
+  # Broadcast 29.97 fps NTSC Drop-Frame XML:
+  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ---
@@ -262,9 +279,10 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 
 | Dimension | Standard Specification | Engineering & Optimization Logic |
 | :--- | :--- | :--- |
-| **Character Length & Display Width** | CJK $\le 15$ chars / EN $\le 37$ CPL | Enforces strict width limits per language locale (CJK $\le 15$, Korean $\le 16$, English $\le 37$). Overlength clauses are smoothly split at natural syntactic pauses. |
+| **Character Length & Display Width** | CJK $\le 15$ chars / EN $\le 42$ CPL | Enforces strict width limits per language locale (CJK $\le 15$, Korean $\le 16$, English $\le 42$ industry standard). Fully configurable via `--max-chars-cjk`, `--max-chars-korean`, and `--max-chars-latin`. |
 | **Reading Speed Monitoring (CPS)** | CJK $\le 6.0$ CPS / EN $\le 20.0$ CPS | Computes full-video Mean CPS and Peak CPS against Netflix thresholds; rushed segments are flagged for review. |
-| **Line-Ending Punctuation Cleanup** | 100% clean line-endings | Strips trailing `。`, `，`, `；`. In-line Chinese commas convert to natural single spaces; spacing around alphanumeric tokens is normalized. |
+| **Language-Aware Punctuation Policy** | CJK Purged / Latin Preserved | CJK (zh-TW, zh-CN, ja, ko) converts commas to spaces and strips trailing punctuation. Latin (English, French, German, Spanish, etc.) preserves in-line commas, trailing periods, semicolons, colons, interruption dashes `—`, and continuation ellipses `...`. |
+| **Multilingual Fallback Mechanism** | Safe Fallback to `en` | Features dedicated initial prompt vocabularies and templates for `zh-TW`, `zh-CN`, `ja`, `ko`, and `en`. Non-dedicated locales safely fall back to English guidelines with a one-time stderr notice (Thai, Arabic, Devanagari supported as approximations). |
 | **Typography & Formatting Hygiene** | Paired brackets / Zero residual Markdown | Verifies full-width `（）`, `【】`, `《》`, `「」` and ASCII `()` pairing; purges leaked LLM tags (`**`, `_`, `` ` ``). |
 | **Prolonged Silence Audit** | Gap $\ge 10.0\text{s}$ alerts | Scans for gaps $\ge 10\text{s}$, recording timestamps and surrounding text to verify B-roll, music beds, or speech drops. |
 | **Zero-Lead Acoustic Alignment** | 0.000s acoustic lock | Timestamps strictly align with physical speech onset (Whisper waveform), eliminating subtitle spoiler artifacts. |
@@ -291,6 +309,9 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manu
 
 # Specify language and Whisper model size:
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language zh-TW --whisper-model small
+
+# Custom subtitle character limits (e.g. English 42 CPL, CJK 15 chars):
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
 ```
 
 4. **Outputs**:

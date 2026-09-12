@@ -80,7 +80,11 @@ multicam-video-preprocessing/
      2. *전체 MFCC 스캔*: 초기 점수 $< 12.0$ 또는 `--full-scan` 지정 시 전체 구간 스캔 실행.
      3. *원본 파형 FFT 폴백*: 전체 MFCC 점수가 낮을 경우($Z < 7.0$), 기존 하이패스 원본 파형 1D FFT 상호상관으로 자동 안전 전환.
    - **서브프레임 물리 음향 미세 정렬 (<0.125ms)**: 두 카메라의 중첩 활성 구간 내에서 최대 에너지의 5초 음성을 탐색하고, $\pm 32\text{ms}$ 탐색 반경 내에서 시간 영역 상호상관을 수행하여 단일 오디오 샘플 수준(**8kHz 기준 0.125ms 물리 음향 정밀도**)으로 정확도를 끌어올림.
-   - **BBC 방송 표준 신뢰도 점수**: 상관 피크와 노이즈 플로어의 표준편차 비율로 평가($Z \ge 12.0$ 높은 신뢰도, $7.0 \le Z < 12.0$ 중간 신뢰도, $Z < 7.0$ 낮은 신뢰도).
+   - **BBC 방송 표준 신뢰도 점수 및 저신뢰도 즉각 경고**: 상관 피크와 노이즈 플로어의 표준편차 비율로 평가:
+     - $Z \ge 12.0$ 높은 신뢰도: `✓ Aligned` 표시.
+     - $7.0 \le Z < 12.0$ 중간 신뢰도: `ℹ Aligned (marginal)` 표시.
+     - $Z < 7.0$ 낮은 신뢰도: `⚠️ LOW CONFIDENCE` 표시 및 stderr 경고와 원인 진단 힌트 즉각 출력.
+   - **Summary Gate 경고 박스 및 `--strict-sync` 안전 중단**: 1단계 완료 시 저신뢰도 카메라가 감지되면 눈에 띄는 경고 박스를 터미널에 출력하며, `--strict-sync` 플래그 지정 시 종료 코드 1로 즉시 중단되어 오정렬 자동 렌더링을 미연에 방지.
    - **컨테이너 실제 재생 시간 자동 탐지 (`--sample-dur` 조기 절단 버그 수정)**: `ffprobe`를 통해 영상 컨테이너의 실제 길이를 조회하여, 샘플 테스트 모드에서도 마스터 출력 및 중첩 구간이 전체 길이로 온전히 유지되도록 보장.
 2. **EBU R128 (-14 LUFS) 2-Pass 선형 음량 표준화**: Pass 1에서 null sink를 통한 초고속 음향 측정(`I`, `LRA`, `TP`, `target_offset`), Pass 2에서 `linear=true`를 적용하여 다이내믹 펌핑(음량 들쑥날쑥 현상)을 완전 근절하고 -14.0 LUFS로 100% 정밀 고정.
 3. **동기화 마스터 비디오 프레임 단위 정밀 병렬 출력 (`*_synced.mp4`)**: 키프레임(I-frame) 흡착으로 인한 밀리초 단위 밀림 및 검은 화면 끊김을 방지하기 위해 기본적으로 프레임 정밀 하드웨어 재인코딩(`h264_videotoolbox` / `libx264 -crf 18`) 채택. 초고속 무손실 가편집을 위한 `--stream-copy`도 지원.
@@ -102,6 +106,11 @@ multicam-video-preprocessing/
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
     --full-scan --normalize --merge -o output/
+
+  # 엄격 동기화 검증 모드 (신뢰도 7.0 미만 시 즉시 에러 중단):
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --strict-sync --normalize --merge -o output/
 
   # 초고속 스트림 복사 모드 (-c copy, 키프레임 흡착):
   python3 scripts/multicam_pipeline.py \
@@ -134,9 +143,16 @@ multicam-video-preprocessing/
 
 ### 3A단계: FCP7 XML 타임라인 내보내기 (`export_fcp7_xml.py`)
 - 전체 동기화 마스터 비디오와 `edl_full.csv`를 직접 링크하여 DaVinci Resolve / Premiere Pro / Final Cut Pro에 직접 로드 가능한 `final_cut_full.xml` 생성.
+- **NTSC 부동소수점 프레임레이트 (29.97 / 23.976 / 59.94) 및 Drop-Frame (`--drop-frame`) 완벽 지원**:
+  - `--fps` 부동소수점 입력을 지원하여 FCP7 XML 규격에 맞는 정수 `<timebase>` 및 `<ntsc>TRUE</ntsc>`를 자동 생성. 모든 타임코드 계산은 부동소수점을 사용하여 장편 타임라인 프레임 누적 오차를 원천 차단.
+  - `--drop-frame` 지정 시 `<displayformat>DF</displayformat>` 설정 지원.
 - **실행 명령어 예시**:
   ```bash
+  # 표준 30 fps XML 내보내기:
   python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+
+  # 방송용 29.97 fps NTSC Drop-Frame XML 내보내기:
+  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ### 3B단계: 원패스 직접 렌더링 (`edl_to_video.py`)
@@ -158,9 +174,10 @@ multicam-video-preprocessing/
      - **청크 단위 영구 캐시 (Chunk-Level Persistent Cache)**: 모델, 프롬프트, 용어집, 텍스트 청크로부터 고유 해시를 생성하여 `.<basename>_chunk_cache.json`에 즉시 저장. 중단 시에도 토큰 낭비 없이 100% 재개 가능.
      - **플리커 방지 미세 간격 결합**: 미세한 간격($< 0.6\text{s}$)을 0s로 평활화, 진정한 휴지 시 $+0.4\text{s}$ 호흡 여백 후 화면을 깔끔히 클리어.
 - **🎯 Netflix / YouTube 방송 표준 자막 품질 감사 엔진 (8대 핵심 검증 항목)**:
-  - **1줄 글자 수 및 너비 제한**: 한국어 $\le 16$자, 중국어/일본어 $\le 15$자, 영어 $\le 37$ CPL (긴 문장은 구문 단위로 자동 분할).
+  - **1줄 글자 수 및 너비 제한**: 한국어 $\le 16$자, 중국어/일본어 $\le 15$자, 영어 $\le 42$ CPL (업계 표준). `--max-chars-cjk`, `--max-chars-korean`, `--max-chars-latin`으로 자유롭게 조정 가능.
   - **가독 속도 모니터링 (CPS)**: CJK $\le 6.0$ CPS, 영어 $\le 20.0$ CPS. 전체 평균 CPS 및 피크 CPS를 산출하고 Netflix 기준 초과 항목을 경고 목록에 등록.
-  - **문장 끝 불필요 문장부호 100% 제거**: 문장 끝의 `。`, `，`, `；`를 완전 제거하여 깔끔한 화면 구성.
+  - **언어별 맞춤형 문장부호 정책**: CJK(한국어/중국어/일본어)는 쉼표를 공백으로 변환하고 문장 끝 부호를 100% 제거. Latin(영어/프랑스어/독일어 등)은 구문 내 쉼표, 마침표, 콜론, 세미콜론, 발화 중단 대시 `—`, 여운 말줄임표 `...`를 완벽 보존.
+  - **다국어 폴백 메커니즘**: `zh-TW`, `zh-CN`, `ja`, `ko`, `en` 5대 언어 전용 어휘 프롬프트 제공. 미지원 언어는 영어 규칙으로 안전하게 폴백 (최초 1회 stderr 알림).
   - **타이포그래피 및 서식 정제**: 전각 `（）`, `【】`, `《》`, `「」` 및 반각 괄호 쌍 검증, 누출된 Markdown 태그(`**`, `_`, `` ` ``) 자동 제거.
   - **장시간 무음/무대화 구간 검사**: 10초 이상의 무음 구간(Gap $\ge 10.0\text{s}$)을 검출하여 B-roll, BGM 또는 ASR 음성 누락 확인용 전후 문맥 및 타임코드 기록.
   - **음성 시작 0.000초 물리 동기화**: Whisper 음향 파형 시작점에 엄격 고정(0.000s)하여 스포일러 방지.
@@ -176,6 +193,9 @@ multicam-video-preprocessing/
 
   # 녹음 원고/대본을 전달하여 용어 및 문맥 최적화:
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
+
+  # 자막 한 줄 최대 글자 수 조정 (예: 영어 42자, CJK 15자):
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --language en --max-chars-latin 42
   ```
 - **출력 파일**:
   - `final_cut_full.srt`: YouTube 표준 SubRip 자막 파일.

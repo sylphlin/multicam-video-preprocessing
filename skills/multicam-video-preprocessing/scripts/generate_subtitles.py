@@ -333,7 +333,7 @@ def load_proofread_template(language="zh-TW"):
 
     return (
         "You are an expert subtitle proofreader for YouTube.\n"
-        "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 15 chars for CJK, 37 chars for English) with acoustic timestamp fusion.\n"
+        "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 15 chars for CJK, 16 for Korean, 42 for Latin/English) with acoustic timestamp fusion.\n"
         "Output ONLY the corrected SRT inside ```srt ... ``` code block."
     ), "builtin_fallback"
 
@@ -1326,7 +1326,8 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_s
     return sanitized_srt, overall_alignment_stats
 
 
-def audit_subtitles_quality(srt_content, language="zh-TW", global_glossary=None, alignment_stats=None):
+def audit_subtitles_quality(srt_content, language="zh-TW", global_glossary=None, alignment_stats=None,
+                            max_chars_cjk=15, max_chars_korean=16, max_chars_latin=42):
     """
     Perform a comprehensive Netflix & YouTube Standard Subtitle Quality, Pacing & Acoustic Audit.
     Returns: (metrics_dict, console_summary_str, markdown_report_str)
@@ -1395,13 +1396,13 @@ def audit_subtitles_quality(srt_content, language="zh-TW", global_glossary=None,
 
     # 2. Layout & Character Length Metrics
     if norm_lang in ["zh-TW", "zh-CN", "ja"]:
-        max_char_limit = 15
+        max_char_limit = max_chars_cjk
         cps_limit = 6.0  # Netflix CJK limit (comfortable: 4.0~5.5)
     elif norm_lang == "ko":
-        max_char_limit = 16
+        max_char_limit = max_chars_korean
         cps_limit = 6.5
     else:
-        max_char_limit = 37
+        max_char_limit = max_chars_latin
         cps_limit = 20.0 # Netflix English limit (17~20 CPS)
 
     overlength_lines = []
@@ -2039,7 +2040,10 @@ def main():
             final_srt,
             language=effective_lang,
             global_glossary=global_glossary,
-            alignment_stats=alignment_stats
+            alignment_stats=alignment_stats,
+            max_chars_cjk=args.max_chars_cjk,
+            max_chars_korean=args.max_chars_korean,
+            max_chars_latin=args.max_chars_latin
         )
 
         with open(report_json_path, "w", encoding="utf-8") as f:
