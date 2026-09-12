@@ -679,7 +679,8 @@ def align_split_clauses_with_words(final_parts, t_start, t_end, all_words=None):
 
 def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, audio_wav,
                            api_key=None, base_url=None, model="gemini-3.8-flash", user_script=None,
-                           backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False):
+                           backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False,
+                           max_chars_cjk=15, max_chars_korean=16, max_chars_latin=42):
     """Worker function to proofread a single chunk of SRT blocks with local audio slice and optional reference script."""
     chunk_text = "\n\n".join(chunk_slice)
     glossary_section = f"\n=== 全片權威專有名詞對照表 (Global Consistency Glossary) ===\n{global_glossary}\n============================================================\n" if global_glossary else ""
@@ -721,7 +722,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
         f"{script_section}\n"
         f"--- 待校對與重整之原始 SRT 碎字幕（區塊 {c_idx + 1}/{num_chunks}）---\n"
         f"```srt\n{chunk_text}\n```\n\n"
-        f"請邊聽附帶的音訊錄音、依據全片對照表與語意段落規範，進行自然斷句重整（中文/日文 <= 15 字，英文 <= 37 字元）、時間軸物理聲學熔接與同音錯字校正，輸出重整後的完整 SRT："
+        f"請邊聽附帶的音訊錄音、依據全片對照表與語意段落規範，進行自然斷句重整（中文/日文 <= {max_chars_cjk} 字，韓文 <= {max_chars_korean} 字，英文 <= {max_chars_latin} 字元）、時間軸物理聲學熔接與同音錯字校正，輸出重整後的完整 SRT："
     )
 
     try:
@@ -765,11 +766,17 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
 def clean_subtitle_text(text, language="zh-TW"):
     """
     Netflix & YouTube Standard Subtitle Text Cleaner & Formatter:
-    1. Strip trailing periods/commas: removes [。，、；:;,.—-] from line end (preserves ？!……).
-    2. Convert in-line Chinese commas to clean single spaces (e.g. '哈囉，歡迎' -> '哈囉 歡迎').
-    3. Normalize Chinese-English & Chinese-Number spacing (e.g. '用AI寫10倍Code' -> '用 AI 寫 10 倍 Code').
-    4. Strip residual Markdown formatting markers (**, __, `, ##).
-    5. Collapse multiple consecutive whitespace to single space and trim.
+    1. CJK Policy (zh-TW, zh-CN, ja, ko):
+       - Converts inline commas to clean single spaces.
+       - Normalizes Chinese-English & Chinese-Number spacing.
+       - Strips trailing punctuation [。，、；:;,.—-] (preserves ？!……).
+    2. Latin Policy (en and fallback locales):
+       - Preserves inline commas.
+       - Preserves trailing full stop (.), comma (,), colon (:), semicolon (;),
+         ellipsis (... / …), em dash (— / --), and questions/exclamations (? / !).
+       - Strips only trailing whitespace and stray isolated ASCII hyphen (-).
+    3. Strips residual Markdown formatting markers (**, __, `, ##).
+    4. Collapses multiple consecutive whitespace to single space and trims.
     """
     norm_lang = normalize_language_tag(language)
     lines = text.strip().splitlines()
@@ -789,12 +796,16 @@ def clean_subtitle_text(text, language="zh-TW"):
             # Chinese-English / Chinese-Number spacing
             line = re.sub(r"([\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af])([A-Za-z0-9])", r"\1 \2", line)
             line = re.sub(r"([A-Za-z0-9])([\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af])", r"\1 \2", line)
-        
-        # Collapse multiple spaces
-        line = re.sub(r"[ \t]+", " ", line)
-
-        # Strip trailing punctuation: periods, commas, colons, semicolons, dashes (preserve ？!……)
-        line = re.sub(r"[\s。，、；:;,.—-]+$", "", line).strip()
+            # Collapse multiple spaces
+            line = re.sub(r"[ \t]+", " ", line)
+            # Strip trailing punctuation: periods, commas, colons, semicolons, dashes (preserve ？!……)
+            line = re.sub(r"[\s。，、；:;,.—-]+$", "", line).strip()
+        else:
+            # Latin Policy: en and fallback locales
+            # Collapse multiple spaces
+            line = re.sub(r"[ \t]+", " ", line).strip()
+            # Strip only trailing whitespace and stray isolated ASCII hyphen (avoids stripping em dash —, en dash –, or --)
+            line = re.sub(r"(?<!-)-\s*$", "", line).strip()
 
         cleaned_lines.append(line)
 
@@ -1044,7 +1055,9 @@ def realign_subtitles_to_words(proofread_srt, all_words, language="zh-TW", is_vi
     return "\n\n".join(out_blocks).strip() + "\n", alignment_stats
 
 
-def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_duration=6.0, post_tail_buffer=0.4, min_gap_threshold=0.2, language="zh-TW"):
+def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_duration=6.0,
+                             post_tail_buffer=0.4, min_gap_threshold=0.2, language="zh-TW",
+                             max_chars_cjk=15, max_chars_korean=16, max_chars_latin=42):
     """
     Automated Professional Rhythm & Pacing Sanitizer for Subtitles:
     1. Zero-Lead Protection: Subtitles never lead before voice onset (Start >= speech onset).
@@ -1057,7 +1070,12 @@ def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_dur
     8. Netflix & YouTube Punctuation, Spacing, and Max Character Length Normalization.
     """
     norm_lang = normalize_language_tag(language)
-    max_w = 15.0 if norm_lang in ["zh-TW", "zh-CN", "ja"] else (16.0 if norm_lang == "ko" else 37.0)
+    if norm_lang in ["zh-TW", "zh-CN", "ja"]:
+        max_w = float(max_chars_cjk)
+    elif norm_lang == "ko":
+        max_w = float(max_chars_korean)
+    else:
+        max_w = float(max_chars_latin)
 
     blocks = [b.strip() for b in raw_srt.strip().split("\n\n") if b.strip()]
     items = []
@@ -1176,7 +1194,8 @@ def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_dur
 def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_script=None,
                            api_key=None, base_url=None, model="gemini-3.8-flash", chunk_size=80,
                            max_workers=5, language="zh-TW", all_words=None, cache_path=None,
-                           backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False):
+                           backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False,
+                           max_chars_cjk=15, max_chars_korean=16, max_chars_latin=42):
     """
     Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary and Reference Script.
     Slices local audio chunks and proofreads subtitles against actual audio acoustics,
@@ -1237,7 +1256,8 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_s
                     template, global_glossary, audio_wav,
                     api_key=api_key, base_url=base_url, model=model, user_script=user_script,
                     backend=backend, project=project, location=location,
-                    gcs_bucket=gcs_bucket, fallback_studio=fallback_studio
+                    gcs_bucket=gcs_bucket, fallback_studio=fallback_studio,
+                    max_chars_cjk=max_chars_cjk, max_chars_korean=max_chars_korean, max_chars_latin=max_chars_latin
                 ): c_idx
                 for c_idx in uncached_indices
             }
@@ -1299,7 +1319,10 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_s
 
     raw_combined = "\n\n".join(realigned_chunks).strip()
     # Step B: Professional rhythm & pacing sanitizer (flicker bridging, +0.4s breathing buffer)
-    sanitized_srt = sanitize_subtitle_timings(raw_combined, all_words=all_words, language=language)
+    sanitized_srt = sanitize_subtitle_timings(
+        raw_combined, all_words=all_words, language=language,
+        max_chars_cjk=max_chars_cjk, max_chars_korean=max_chars_korean, max_chars_latin=max_chars_latin
+    )
     return sanitized_srt, overall_alignment_stats
 
 
@@ -1783,6 +1806,12 @@ def main():
     parser.add_argument("--workers", type=int, default=5, help="Concurrent workers for parallel proofreading (default: 5)")
     parser.add_argument("--force", action="store_true", help="Force re-running Whisper transcription and Gemini proofreading (bypasses acoustic baseline cache)")
     parser.add_argument("--force-glossary", action="store_true", help="Force re-extracting global glossary from scratch")
+    parser.add_argument("--max-chars-cjk", type=int, default=15,
+                        help="Maximum characters per line for CJK (zh-TW, zh-CN, ja) (default: 15)")
+    parser.add_argument("--max-chars-korean", type=int, default=16,
+                        help="Maximum characters per line for Korean (ko) (default: 16)")
+    parser.add_argument("--max-chars-latin", type=int, default=42,
+                        help="Maximum characters per line for Latin script (en and fallback) (default: 42)")
 
     args = parser.parse_args()
 
@@ -1962,7 +1991,12 @@ def main():
         if not has_llm:
             print(f"\n[Stage 3/3] ℹ️  No LLM credentials (Vertex AI ADC / GEMINI_API_KEY / OPENAI_API_KEY) configured.")
             print(f"            Saving raw Whisper acoustic transcription directly as final SRT/VTT.")
-            final_srt = sanitize_subtitle_timings(raw_srt, all_words=all_words, language=effective_lang)
+            final_srt = sanitize_subtitle_timings(
+                raw_srt, all_words=all_words, language=effective_lang,
+                max_chars_cjk=args.max_chars_cjk,
+                max_chars_korean=args.max_chars_korean,
+                max_chars_latin=args.max_chars_latin
+            )
             alignment_stats = {"total": len(segments), "locked": len(segments), "fallback": 0, "fallback_indices": []}
         else:
             # Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading
@@ -1983,7 +2017,10 @@ def main():
                 project=gcp_cfg.get("project"),
                 location=gcp_cfg.get("location"),
                 gcs_bucket=gcp_cfg.get("bucket"),
-                fallback_studio=args.fallback_studio
+                fallback_studio=args.fallback_studio,
+                max_chars_cjk=args.max_chars_cjk,
+                max_chars_korean=args.max_chars_korean,
+                max_chars_latin=args.max_chars_latin
             )
 
         # Write Final SRT
