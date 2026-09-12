@@ -304,7 +304,8 @@ def normalize_language_tag(lang_str):
     return FALLBACK_LOCALE
 
 
-def load_proofread_template(language="zh-TW"):
+def load_proofread_template(language="zh-TW", max_chars_cjk=15,
+                            max_chars_korean=16, max_chars_latin=42):
     """Load subtitle proofreading prompt template based on language locale."""
     norm_lang = normalize_language_tag(language)
 
@@ -333,7 +334,7 @@ def load_proofread_template(language="zh-TW"):
 
     return (
         "You are an expert subtitle proofreader for YouTube.\n"
-        "Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max 15 chars for CJK, 16 for Korean, 42 for Latin/English) with acoustic timestamp fusion.\n"
+        f"Your task: Re-segment and proofread subtitles into natural, fluent semantic clauses (max {max_chars_cjk} chars for CJK, {max_chars_korean} for Korean, {max_chars_latin} for Latin/English) with acoustic timestamp fusion.\n"
         "Output ONLY the corrected SRT inside ```srt ... ``` code block."
     ), "builtin_fallback"
 
@@ -1201,7 +1202,12 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_s
     Slices local audio chunks and proofreads subtitles against actual audio acoustics,
     guaranteeing 100% physical timestamp preservation.
     """
-    template, tmpl_file = load_proofread_template(language=language)
+    template, tmpl_file = load_proofread_template(
+        language=language,
+        max_chars_cjk=max_chars_cjk,
+        max_chars_korean=max_chars_korean,
+        max_chars_latin=max_chars_latin
+    )
     print(f"\n[Stage 3/3] ⚡ Running Multimodal Audio-Text LLM Proofreading (Model: {model}, Chunk: {chunk_size}, Workers: {max_workers})...")
     print(f"  • Template Loaded: {tmpl_file} (Locale: {normalize_language_tag(language)})")
     if user_script:
