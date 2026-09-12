@@ -58,7 +58,7 @@ def print_sync_table(ref_info, target_results, trim_info=None):
     print("-" * 78)
 
 
-def export_sync_json(filepath, ref_info, target_results, trim_info=None, part_segments=None):
+def export_sync_json(filepath, ref_info, target_results, trim_info=None):
     """
     Export structured JSON metadata.
     """
@@ -89,9 +89,6 @@ def export_sync_json(filepath, ref_info, target_results, trim_info=None, part_se
             "ref_start": trim_info.get("start_str"),
             "ref_end": trim_info.get("end_str")
         }
-
-    if part_segments:
-        data["parts"] = part_segments
 
     with open(filepath, "w", encoding="utf-8") as jf:
         json.dump(data, jf, ensure_ascii=False, indent=2)

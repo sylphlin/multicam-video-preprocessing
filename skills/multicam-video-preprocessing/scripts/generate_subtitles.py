@@ -9,7 +9,7 @@ Three-Stage Golden Standard Pipeline:
            Optionally merges user-provided interview outlines (--outline).
   Stage 2: Zero-Drift Acoustic Transcription via Whisper (mlx-whisper / faster-whisper).
            Produces frame-locked, physical acoustic millisecond timestamps (0.000s drift).
-  Stage 3: Multimodal Audio-Text Chunked Precision Proofreading (Gemini 3.7 Flash).
+  Stage 3: Multimodal Audio-Text Chunked Precision Proofreading (Gemini 3.8 Flash).
            Slices local audio chunks and proofreads subtitles against both the local acoustic waveform and the Global Glossary,
            strictly preserving 100% of Whisper's millisecond timestamps and line indices.
 
@@ -375,7 +375,7 @@ def extract_whisper_prompt(glossary_text, max_chars=145, language="zh-TW"):
 
 
 def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, user_script=None,
-                            api_key=None, base_url=None, model="gemini-3.7-flash",
+                            api_key=None, base_url=None, model="gemini-3.8-flash",
                             backend="vertex", project=None, gcs_bucket=None, location=None, fallback_studio=False):
     """
     Stage 1: Global Audio Context & Consistency Glossary Extraction (Gemini 1M Context Scan).
@@ -627,7 +627,7 @@ def align_split_clauses_with_words(final_parts, t_start, t_end, all_words=None):
 
 
 def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, audio_wav,
-                           api_key=None, base_url=None, model="gemini-3.7-flash", user_script=None,
+                           api_key=None, base_url=None, model="gemini-3.8-flash", user_script=None,
                            backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False):
     """Worker function to proofread a single chunk of SRT blocks with local audio slice and optional reference script."""
     chunk_text = "\n\n".join(chunk_slice)
@@ -1123,7 +1123,7 @@ def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_dur
 
 
 def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_script=None,
-                           api_key=None, base_url=None, model="gemini-3.7-flash", chunk_size=80,
+                           api_key=None, base_url=None, model="gemini-3.8-flash", chunk_size=80,
                            max_workers=5, language="zh-TW", all_words=None, cache_path=None,
                            backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False):
     """
@@ -1710,8 +1710,8 @@ def main():
     parser.add_argument("--script", default=None, help="Path to full recording script, manuscript, or spoken draft to anchor terminology and phrasing")
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
                         help="Whisper model size for Stage 2 acoustic transcription (default: base)")
-    parser.add_argument("--model", default="gemini-3.7-flash",
-                        help="LLM model for Stage 1 & 3 proofreading (e.g. gemini-3.7-flash, gpt-5.6-luna, gemma4:e4b)")
+    parser.add_argument("--model", default="gemini-3.8-flash",
+                        help="LLM model for Stage 1 & 3 proofreading (e.g. gemini-3.8-flash, gpt-5.6-luna, gemma4:e4b)")
     parser.add_argument("--base-url", default=None,
                         help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
     parser.add_argument("--backend", default="vertex", choices=["vertex", "studio"],

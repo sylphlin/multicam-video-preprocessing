@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity 네이티브 스킬 & 워크플로우**  
-> 본 툴킷은 **Google Antigravity Agent 프레임워크(Gemini 3.7 Flash 1M 멀티모달 컨텍스트)** 및 전문 NLE 편집 소프트웨어(DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro)를 위해 설계된 멀티카메라(2~6대) 지능형 전처리 파이프라인입니다.
+> 본 툴킷은 **Google Antigravity Agent 프레임워크(Gemini 3.8 Flash 1M 멀티모달 컨텍스트)** 및 전문 NLE 편집 소프트웨어(DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro)를 위해 설계된 멀티카메라(2~6대) 지능형 전처리 파이프라인입니다.
 
 ---
 
@@ -37,7 +37,7 @@ multicam-video-preprocessing/
 │   └── subtitle_proofread_template.md # YouTube 자막 교정 템플릿
 ├── scripts/                           # 핵심 실행 도구 라이브러리
 │   ├── multicam_pipeline.py           # 1단계: 멀티캠 동기화, 음량 표준화, 마스터 출력, 전체 그리드 합성
-│   ├── generate_edl.py                # 2단계: Gemini 3.7 Flash Agentic Video 무분할 가편집 결정
+│   ├── generate_edl.py                # 2단계: Gemini 3.8 Flash Agentic Video 무분할 가편집 결정
 │   ├── export_fcp7_xml.py             # 3A단계: FCP7 XML 타임라인 내보내기 (추천)
 │   ├── edl_to_video.py                # 3B단계: 원패스 하드웨어 가속 직접 렌더링
 │   ├── generate_subtitles.py          # 4단계: YouTube 자막 생성 (Whisper + Gemini)
@@ -109,14 +109,14 @@ multicam-video-preprocessing/
     --stream-copy --normalize --merge -o output/
   ```
 
-### 2단계: Gemini 3.7 Flash Agentic Video 가편집 결정 (`generate_edl.py`)
+### 2단계: Gemini 3.8 Flash Agentic Video 가편집 결정 (`generate_edl.py`)
 1. **프롬프트 템플릿 로드**: `assets/edl_interview_template.md`를 통한 방송 품질 기준의 엄격한 가편집 규칙 적용.
 2. **Phase 0: 앞뒤 불필요 구간 및 현장 카운트다운 완전 배제 (무관용 원칙 및 비대칭 안전 마진)**:
    - **현장 카운트다운 완전 배제**: 장비 점검, 잡담, 슬레이트, 현장 스태프 카운트다운("5, 4, 3, 2, 1", "3, 2, 1" 등)을 시스템적으로 감지하여 제거.
    - **비대칭 안전 마진 (`[Start, Start+2s]` 자체 검증)**: `Global_Start_Time`은 반드시 마지막 카운트다운 음성이 완전히 종료된 이후로 설정. 컷 시작 직후 첫 2초 구간(`[Global_Start_Time, Global_Start_Time + 2.0s]`)에서 사고 사슬(Chain-of-Thought) 자체 검증을 수행하여 카운트다운이 남아있을 경우 시작점을 뒤로 이동시켜 본편 첫 단어에 완벽히 정렬.
    - **종료 후 미정지 구간 배제**: 인터뷰 종료 인사를 식별하여 녹화 종료 후 잡담, 썸네일 촬영 등 불필요한 영상(`Global_End_Time`)을 배제.
 3. **차세대 아키텍처: Agentic Video Understanding (분할 불필요 전체 편집)**:
-   - Gemini 3.7 Flash의 Agentic Video 기능(`processing="agentic"`)을 통해 1시간 이상의 무분할 그리드 영상을 직접 평가.
+   - Gemini 3.8 Flash의 Agentic Video 기능(`processing="agentic"`)을 통해 1시간 이상의 무분할 그리드 영상을 직접 평가.
    - 목표 지향적 동적 희소 샘플링을 통해 입력 토큰 소비를 **99.7% 절감**(약 1,000,000 토큰에서 약 3,000 토큰으로 감소). 챕터 경계로 인한 발화 단절 위험을 원천 차단.
 4. **표준 결과물 출력**:
    - 단일 표준 CSV 결정 목록(`edl_full.csv`) 및 Markdown 가편집 분석 보고서(`edl_full_report.md`) 출력.
@@ -148,7 +148,7 @@ multicam-video-preprocessing/
 
 ### 4단계: YouTube 자막 생성 (`generate_subtitles.py`)
 - **3단계 골든 자막 생성 파이프라인 (Three-Stage Pipeline)**:
-  1. **전체 오디오 매크로 이해, 듀얼 트랙 용어집 및 Whisper Initial Prompt 추출**: Gemini 3.7 Flash(1M Context)로 전체 에피소드 오디오를 청취(인터뷰 개요 `--outline` 또는 녹음 원고/대본 `--script` 지원). Gemini 교정용 Markdown 용어집(`final_cut_full_glossary.md`)과 함께, 상단에 200 토큰(약 100~140자) 이내 고밀도 핵심 키워드 목록(`> **Whisper Initial Prompt**: ...`)을 자동 생성.
+  1. **전체 오디오 매크로 이해, 듀얼 트랙 용어집 및 Whisper Initial Prompt 추출**: Gemini 3.8 Flash(1M Context)로 전체 에피소드 오디오를 청취(인터뷰 개요 `--outline` 또는 녹음 원고/대본 `--script` 지원). Gemini 교정용 Markdown 용어집(`final_cut_full_glossary.md`)과 함께, 상단에 200 토큰(약 100~140자) 이내 고밀도 핵심 키워드 목록(`> **Whisper Initial Prompt**: ...`)을 자동 생성.
   2. **Whisper 물리 음향 타임코드 및 프롬프트 바이어스 주입**: 1단계의 `initial_prompt`를 로컬 Whisper(`mlx-whisper` / `faster-whisper`)에 주입하여 고유명사의 초동 인식률을 대폭 향상. 단어 수준 물리 음향 파형을 측정(`word_timestamps=True`)하여 0.000초 오차 없는 기준 타임라인 및 단어 캐시(`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`)를 생성 (재실행 시 수초 내 로드).
   3. **무음 감지 시맨틱 청킹, 마이크로 음향 스냅 및 멀티모달 오디오 교정**:
      - **무음 감지 시맨틱 청킹 (Silence-Aware Semantic Chunking)**: 고정 행 수 기계적 분할을 폐지하고, 자연스러운 호흡 휴지(Gap $\ge 0.4\text{s}$) 및 문장 종결 부호/어미에서 안전하게 분할.

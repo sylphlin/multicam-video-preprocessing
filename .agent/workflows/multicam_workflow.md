@@ -1,12 +1,12 @@
 ---
-description: "Universal 4-stage gated execution runbook for 2 to 6 camera audio sync, Gemini 3.7 Flash Agentic Video zero-split rough-cut, NLE XML export, and subtitles."
+description: "Universal 4-stage gated execution runbook for 2 to 6 camera audio sync, Gemini 3.8 Flash Agentic Video zero-split rough-cut, NLE XML export, and subtitles."
 ---
 
 # Multi-Camera AI Preprocessing & Video Editing Workflow (Zero-Split Agentic Architecture)
 
 This runbook defines the exact execution sequence, stage gates, CLI commands, and verification criteria for processing multi-camera video footage in Antigravity.
 
-Powered by **Gemini 3.7 Flash Agentic Video Understanding**, footage of any length (>1 hour) is processed end-to-end as a unified full-length timeline without requiring chapter segmentation (Zero-Split Pipeline), eliminating boundary speech bisection and slashing token consumption by 99.7%.
+Powered by **Gemini 3.8 Flash Agentic Video Understanding**, footage of any length (>1 hour) is processed end-to-end as a unified full-length timeline without requiring chapter segmentation (Zero-Split Pipeline), eliminating boundary speech bisection and slashing token consumption by 99.7%.
 
 ---
 
@@ -46,7 +46,7 @@ flowchart TD
 ---
 
 ### Stage 2: Gemini AI Multimodal Rough-Cut (Agentic Video EDL Generation)
-- **Goal**: Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`) dynamically inspects the full-length grid video using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste with Zero-Tolerance countdown purging & `[Start, Start+2.0s]` self-verification.
+- **Goal**: Gemini 3.8 Flash Agentic Video Understanding (`processing="agentic"`) dynamically inspects the full-length grid video using `assets/edl_interview_template.md` prompt rules. Eliminates pre/post-roll waste with Zero-Tolerance countdown purging & `[Start, Start+2.0s]` self-verification.
 - **Backend Architecture**:
   - **Primary**: Google Cloud Vertex AI (ADC + GCS hash-cached upload). Configure `GOOGLE_CLOUD_PROJECT` and `GCS_BUCKET` in `.env` (or pass `--project` / `--gcs-bucket`).
   - **Secondary / Backup**: Google AI Studio via `--backend studio` or automatic failover via `--fallback-studio` (`GEMINI_API_KEY`).

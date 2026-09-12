@@ -12,16 +12,16 @@ Supported CSV Columns (Case-insensitive):
 Usage Examples:
   # Example 1: Basic CSV EDL Rendering with Camera Mapping
   python3 scripts/edl_to_video.py \
-    --edl part1/1.csv \
-    --media-dir ./part1/ \
-    --camera-map "CAM1=C6036_1080P_part1.mp4,CAM2=C6051_1080P_part1.mp4" \
-    --output ./part1/final_edit.mp4
+    --edl edl_full.csv \
+    --media-dir ./output/ \
+    --camera-map "CAM1=CAM1_synced.mp4,CAM2=CAM2_synced.mp4" \
+    --output ./output/final_cut_full.mp4
 
   # Example 2: Auto-detect Media Files in Directory
   python3 scripts/edl_to_video.py \
-    --edl 1.csv \
-    --media-dir ./raw_footage/ \
-    --output ./final_cut.mp4
+    --edl edl_full.csv \
+    --media-dir ./output/ \
+    --output ./output/final_cut_full.mp4
 """
 
 import argparse
@@ -202,10 +202,10 @@ def load_edl_csv(csv_path):
     return segments
 
 
-def auto_discover_camera_files(media_dir, part_tag=None):
+def auto_discover_camera_files(media_dir):
     """
-    Auto-discover camera video files in media_dir with Part-awareness.
-    If part_tag is provided (e.g., 'part1'), prioritizes matching '*_part1.mp4' footage.
+    Auto-discover camera video files in media_dir.
+    Prioritizes full synchronized camera masters (*_synced.mp4).
     Maps CAM1 -> 1st camera, CAM2 -> 2nd camera, etc.
     """
     if not media_dir or not os.path.exists(media_dir):
@@ -215,26 +215,16 @@ def auto_discover_camera_files(media_dir, part_tag=None):
     all_files = sorted(os.listdir(media_dir))
     candidates = []
 
-    # 1. First attempt: filter by part_tag if specified
-    if part_tag:
-        pt_lower = part_tag.lower()
-        for f in all_files:
-            if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v")):
-                if "merged" not in f.lower() and "final" not in f.lower() and "seg_" not in f.lower():
-                    if pt_lower in f.lower():
-                        candidates.append(f)
+    # 1. Prioritize full synchronized camera masters (*_synced.mp4)
+    synced_files = [
+        f for f in all_files
+        if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v"))
+        and "synced" in f.lower() and "merged" not in f.lower() and "final" not in f.lower() and "seg_" not in f.lower()
+    ]
+    if synced_files:
+        candidates = synced_files
 
-    # 2. Prioritize full synchronized camera masters (*_synced.mp4) for full cuts
-    if not candidates:
-        synced_files = [
-            f for f in all_files
-            if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v"))
-            and "synced" in f.lower() and "merged" not in f.lower() and "final" not in f.lower() and "seg_" not in f.lower()
-        ]
-        if synced_files:
-            candidates = synced_files
-
-    # 3. Fallback: all non-intermediate video files
+    # 2. Fallback: all non-intermediate video files
     if not candidates:
         for f in all_files:
             if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v")):
@@ -251,7 +241,7 @@ def auto_discover_camera_files(media_dir, part_tag=None):
     return mapping
 
 
-def resolve_media_file(camera_identifier, media_dir=None, camera_map=None, part_tag=None):
+def resolve_media_file(camera_identifier, media_dir=None, camera_map=None):
     """
     Resolve camera string (e.g. CAM1, CAM2, or filename) to an actual video file path.
     """
@@ -288,8 +278,8 @@ def resolve_media_file(camera_identifier, media_dir=None, camera_map=None, part_
             if os.path.exists(candidate):
                 return os.path.abspath(candidate)
 
-        # Auto-discovery with Part awareness
-        discovered = auto_discover_camera_files(media_dir, part_tag=part_tag)
+        # Auto-discovery
+        discovered = auto_discover_camera_files(media_dir)
         if cam_upper in discovered:
             target = os.path.join(media_dir, discovered[cam_upper])
             if os.path.exists(target):
@@ -387,16 +377,12 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
     if not segments:
         raise ValueError(f"No valid segments found in EDL file: {edl_path}")
 
-    # Extract part tag from EDL filename (e.g. edl_part1.csv -> part1)
     edl_basename = os.path.basename(edl_path)
     edl_dir = os.path.dirname(os.path.abspath(edl_path))
-    part_match = re.search(r"(part\d+)", edl_basename, re.IGNORECASE)
-    part_tag = part_match.group(1).lower() if part_match else None
 
-    # Derive output_path if not provided (e.g. edl_part1.csv -> final_cut_part1.mp4)
+    # Derive output_path if not provided (default: final_cut_full.mp4)
     if not output_path:
-        out_suffix = f"_{part_tag}" if part_tag else ""
-        output_path = os.path.join(edl_dir, f"final_cut{out_suffix}.mp4")
+        output_path = os.path.join(edl_dir, "final_cut_full.mp4")
 
     # Media directory defaults to EDL directory if not provided
     media_dir = media_dir or edl_dir
@@ -404,9 +390,9 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
     total_segments = len(segments)
     cam_mapping = parse_camera_map(camera_map)
 
-    # Auto-discover cameras from media_dir with part awareness if not specified
+    # Auto-discover cameras from media_dir if not specified
     if not cam_mapping and media_dir:
-        cam_mapping = auto_discover_camera_files(media_dir, part_tag=part_tag)
+        cam_mapping = auto_discover_camera_files(media_dir)
 
     out_dir = os.path.dirname(os.path.abspath(output_path))
     if out_dir:
@@ -422,7 +408,6 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
     print(f"  • EDL CSV File : {edl_path}")
     print(f"  • Output Target: {output_path}")
     print(f"  • Media Dir    : {media_dir}")
-    print(f"  • Part Tag     : {part_tag or 'N/A'}")
     print(f"  • Cutting Mode : {'Frame-Accurate Re-encode (' + encoder + ')' if re_encode else 'Lossless Stream Copy (-c copy)'}")
     print(f"  • Concurrency  : {workers} workers")
     print("-" * 78)
@@ -444,7 +429,7 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
         else:
             seg_dur = 0.0
 
-        src_file = resolve_media_file(cam_id, media_dir=media_dir, camera_map=cam_mapping, part_tag=part_tag)
+        src_file = resolve_media_file(cam_id, media_dir=media_dir, camera_map=cam_mapping)
         seg_out = os.path.join(work_temp_dir, f"seg_{idx:04d}.mp4")
 
         resolved_tasks.append({
@@ -530,10 +515,10 @@ def main():
         description="EDL CSV to Video Renderer: Convert an Edit Decision List (CSV format like 1.csv) into a final edited video.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument("--edl", required=True, help="Path to input EDL CSV file (e.g. edl_part1.csv)")
-    parser.add_argument("-o", "--output", default=None, help="Path to output video file (default: auto-derived final_cut_partX.mp4)")
+    parser.add_argument("--edl", required=True, help="Path to input EDL CSV file (e.g. edl_full.csv)")
+    parser.add_argument("-o", "--output", default=None, help="Path to output video file (default: final_cut_full.mp4)")
     parser.add_argument("--media-dir", default=None, help="Directory containing source camera video files")
-    parser.add_argument("--camera-map", default=None, help="Camera name to file mapping (e.g. CAM1=CAM1_part1.mp4,CAM2=CAM2_part1.mp4)")
+    parser.add_argument("--camera-map", default=None, help="Camera name to file mapping (e.g. CAM1=CAM1_synced.mp4,CAM2=CAM2_synced.mp4)")
 
     # Encoding options
     parser.add_argument("--stream-copy", action="store_true", help="Force raw stream-copy without re-encoding (may cause non-keyframe glitches)")

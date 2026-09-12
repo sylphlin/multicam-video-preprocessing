@@ -6,7 +6,7 @@ Constraints:
   - Native 16:9 cell aspect ratio preservation across all camera setups (540P for 2-4 CAMs, 360P for 5-6 CAMs)
   - Pixel format normalization (yuv420p) & setsar=1
   - Automatic CAM1..CAMn text labeling with robust fallback
-  - Purpose: Drastically reduces token consumption for multimodal LLMs (e.g. Gemini 3.7 Flash Agentic Video).
+  - Purpose: Drastically reduces token consumption for multimodal LLMs (e.g. Gemini 3.8 Flash Agentic Video).
 """
 
 import math

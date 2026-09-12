@@ -2,7 +2,7 @@
 """
 Multi-Camera Video Pipeline CLI Tool (Universal Pipeline Engine).
 Supports 2 to 6+ Cameras with Guaranteed Compact Canvas (Max <= 1920x1080, Min >= 640x360/CAM).
-Zero-Split Architecture for Gemini 3.7 Flash Agentic Video Understanding.
+Zero-Split Architecture for Gemini 3.8 Flash Agentic Video Understanding.
 Modular Architecture:
   1. Global Audio Time Alignment (modules.audio_sync)
   2. Full-Length EBU R128 Audio Loudness Normalization (modules.audio_normalizer)

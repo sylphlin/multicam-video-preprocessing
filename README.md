@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity Native Skill & Workflow**  
-> This toolkit is an exclusive native skill and workflow suite tailored for the **Google Antigravity Agent Framework (powered by Gemini 3.7 Flash 1M Multimodal Context)** and professional NLE software (DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro).
+> This toolkit is an exclusive native skill and workflow suite tailored for the **Google Antigravity Agent Framework (powered by Gemini 3.8 Flash 1M Multimodal Context)** and professional NLE software (DaVinci Resolve, Adobe Premiere Pro, Final Cut Pro).
 
 ---
 
@@ -40,7 +40,7 @@ multicam-video-preprocessing/
 ├── .env.example                       # Google Cloud Vertex AI & Gemini API configuration template
 ├── scripts/                           # Core execution toolset
 │   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, synced masters, full grid merge
-│   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash Agentic Video EDL generation (Vertex AI / Studio)
+│   ├── generate_edl.py                # Step 2: Gemini 3.8 Flash Agentic Video EDL generation (Vertex AI / Studio)
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XML timeline export (Primary)
 │   ├── edl_to_video.py                # Step 3B: Single-pass hardware-accelerated video rendering (Secondary)
 │   ├── generate_subtitles.py          # Step 4: YouTube subtitles (Whisper + Gemini)
@@ -61,7 +61,7 @@ flowchart TD
         S1_3 --> S1_4["1.4 Multi-in-One Full Grid Composition (multicam_merged_full.mp4)"]
     end
 
-    S1_4 --> S2["Step 2: Gemini 3.7 Flash Agentic Video Rough-Cut<br/>(generate_edl.py / 99.7% Token Reduction)"]
+    S1_4 --> S2["Step 2: Gemini 3.8 Flash Agentic Video Rough-Cut<br/>(generate_edl.py / 99.7% Token Reduction)"]
     S2 --> EDL["Single Unified EDL (edl_full.csv)"]
 
     subgraph S3A["Primary Path: Professional NLE Timeline (90%)"]
@@ -170,7 +170,7 @@ Simply prompt the Antigravity Agent in plain conversational language:
 
 ---
 
-### Step 2: Gemini 3.7 Flash Agentic Video Rough-Cut (`generate_edl.py`)
+### Step 2: Gemini 3.8 Flash Agentic Video Rough-Cut (`generate_edl.py`)
 1. **Prompt Template Assets**:
    - Loads `assets/edl_interview_template.md` containing strict broadcast-grade interview cutting rules.
 2. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:
@@ -178,7 +178,7 @@ Simply prompt the Antigravity Agent in plain conversational language:
    - **Asymmetric Safety Margin (`[Start, Start+2s]` Self-Verification)**: Mandates that `Global_Start_Time` must occur strictly after the final countdown sound has ended. The model executes self-verification over the first 2 seconds of the cut (`[Global_Start_Time, Global_Start_Time + 2.0s]`), automatically pushing the cut point forward until countdown residue is 100% eliminated.
    - **Post-roll Trimming**: Identifies farewell dialogues and trims post-show casual chatter and environment noise (`Global_End_Time`).
 3. **Agentic Video Understanding (Zero-Split Full-Length Pipeline)**:
-   - Evaluates uncut >1hr multicam grid videos end-to-end via Gemini 3.7 Flash Agentic Video (`processing="agentic"`).
+   - Evaluates uncut >1hr multicam grid videos end-to-end via Gemini 3.8 Flash Agentic Video (`processing="agentic"`).
    - Uses goal-directed sparse temporal sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating chapter boundaries and boundary speech bisection.
 4. **Standardized Deliverables**:
    - Generates unified CSV decision table (`edl_full.csv`) and Markdown cutting analysis report (`edl_full_report.md`).
@@ -242,7 +242,7 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 
 #### Three-Stage Execution Flow:
 1. **Stage 1 (Global Audio Macro Understanding, Dual-Track Glossary & Whisper Initial Prompt Extraction)**:
-   - Gemini 3.7 Flash (1M Context) scans the full-length episode audio, optionally incorporating user interview outline (`--outline`) or recording draft/manuscript (`--script`).
+   - Gemini 3.8 Flash (1M Context) scans the full-length episode audio, optionally incorporating user interview outline (`--outline`) or recording draft/manuscript (`--script`).
    - **Dual-Track Output**: Generates both an extensive Markdown glossary (`final_cut_full_glossary.md`) for Gemini proofreading and an auto-extracted, high-density keyword list (`> **Whisper Initial Prompt**: ...`) constrained within 200 tokens (~100–140 characters) at the top of the file.
 2. **Stage 2 (Whisper Physical Acoustic Baseline & Prompt Biasing)**:
    - Injects the Stage 1 `initial_prompt` into local `mlx-whisper`, `faster-whisper`, or `openai-whisper`, drastically cutting down first-pass ASR errors on specialized proper nouns.

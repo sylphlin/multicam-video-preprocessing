@@ -10,7 +10,7 @@ This file defines the highest-priority always-on operational rules for the Googl
    - All tasks MUST be executed through the standard scripts in `scripts/`. Writing temporary Python scripts, ad-hoc algorithms, or custom synchronization code is **STRICTLY FORBIDDEN**.
 2. **Mandatory Workflow Adherence (Zero-Split Agentic Architecture)**:
    - The Agent MUST execute multi-camera tasks strictly following the 4-Stage Gated Workflow defined in [multicam_workflow.md](file:///.agent/workflows/multicam_workflow.md).
-   - The primary pipeline uses Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`), executing on the full-length grid video (`multicam_merged_full.mp4`) without chapter splitting.
+   - The primary pipeline uses Gemini 3.8 Flash Agentic Video Understanding (`processing="agentic"`), executing on the full-length grid video (`multicam_merged_full.mp4`) without chapter splitting.
 3. **Verification Before Completion**:
    - Do NOT declare task completion until all exit criteria for Step 3A (`final_cut_full.xml`) or Step 3B (`final_cut_full.mp4`) and Step 4 (`final_cut_full.srt` / `.vtt`) have passed verification.
 

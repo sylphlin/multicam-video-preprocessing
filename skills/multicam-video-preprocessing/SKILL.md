@@ -4,14 +4,14 @@ description: >
   Universal multi-camera video preprocessing and AI editing suite for 2 to 6 camera setups.
   Executes MFCC acoustic time alignment with subframe refinement (<0.125ms), EBU R128 two-pass linear loudness normalization (-14 LUFS),
   synchronized full-length camera master exporting (frame-accurate hardware re-encoding), Multi-in-One compact grid composition (canvas <= 1920x1080, min >= 640x480/CAM),
-  zero-split Gemini 3.7 Flash Agentic Video EDL generation (Vertex AI / GCS Primary, AI Studio Backup), FCP7 XML timeline export (Primary), direct video rendering (Secondary),
+  zero-split Gemini 3.8 Flash Agentic Video EDL generation (Vertex AI / GCS Primary, AI Studio Backup), FCP7 XML timeline export (Primary), direct video rendering (Secondary),
   and 3-stage YouTube subtitles generation (Whisper + Gemini 1M Proofreading).
   Keywords: multicam, multi-camera, dual-cam, 4-cam, 6-cam, time alignment, audio sync, loudness normalization, video preprocessing, multicam pipeline, multi-in-one, token optimization, fcp7 xml, subtitles, agentic video.
 ---
 
 # Multi-Camera Video Pipeline & AI Editing Suite (Antigravity Native Skill)
 
-Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras), AI-assisted long-form video editing (Gemini 3.7 Flash 1M Token Context), and professional NLE timeline export (DaVinci Resolve / Adobe Premiere Pro / Final Cut Pro).
+Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras), AI-assisted long-form video editing (Gemini 3.8 Flash 1M Token Context), and professional NLE timeline export (DaVinci Resolve / Adobe Premiere Pro / Final Cut Pro).
 
 ---
 
@@ -29,7 +29,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | Step | Script | Core Module (`scripts/modules/`) | Function |
 | :--- | :--- | :--- | :--- |
 | **Step 1** | `scripts/multicam_pipeline.py` | `audio_sync.py`, `audio_normalizer.py`, `video_composer.py` | MFCC Acoustic Sync + Subframe Refinement (0.125ms), EBU R128 (-14 LUFS), Synced Masters, Multi-in-One Full Grid (`multicam_merged_full.mp4`) |
-| **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `gcp_client.py`, `progress.py`, `assets/edl_interview_template.md` | Gemini 3.7 Flash Agentic Video Understanding (Vertex AI / GCS Primary, AI Studio Backup) -> `edl_full.csv` + Report |
+| **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `gcp_client.py`, `progress.py`, `assets/edl_interview_template.md` | Gemini 3.8 Flash Agentic Video Understanding (Vertex AI / GCS Primary, AI Studio Backup) -> `edl_full.csv` + Report |
 | **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Full-length EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere |
 | **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting directly from synced masters -> `final_cut_full.mp4` |
 | **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `gcp_client.py`, `progress.py`, `assets/subtitle_proofread_template.*.md` | Whisper Word Timestamps + Chunk-Scoped Acoustic Reprojection + Gemini 1M Proofreading (Vertex AI / GCS / Studio) -> `.srt` / `.vtt` |
@@ -43,7 +43,7 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 2. **EBU R128 Two-Pass Linear Loudness Normalization**:
    - Audio tracks are normalized to $-14.0\text{ LUFS}$ ($LRA=11.0\text{ LU}$, $TP=-1.5\text{ dBTP}$) compliant with YouTube broadcast standards. Uses two-pass analysis: Pass 1 null-sink acoustic measurement, Pass 2 linear gain offset (`linear=true`) to eliminate dynamic pumping artifacts.
 3. **Zero-Split Agentic Video Architecture (No Chapter Slicing Required)**:
-   - Evaluates full-length multicam footage (>1 hour) end-to-end via Gemini 3.7 Flash Agentic Video Understanding (`processing="agentic"`). Goal-directed sparse sampling reduces token usage by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating sentence bisection and multi-part complexity.
+   - Evaluates full-length multicam footage (>1 hour) end-to-end via Gemini 3.8 Flash Agentic Video Understanding (`processing="agentic"`). Goal-directed sparse sampling reduces token usage by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating sentence bisection and multi-part complexity.
 4. **Token-Optimized Compact Grid Composition**:
    - Merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), reducing AI multimodal token consumption by **50% to 83%**.
 5. **Universal Pre-roll & Countdown Elimination (Zero-Tolerance & Asymmetric Safety Margin)**:

@@ -99,7 +99,7 @@ def resolve_api_key(cli_key=None, base_url=None, model=None):
     return None
 
 
-def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file_uri=None, audio_path=None, temperature=0.1, max_tokens=8192, thinking_budget=None, max_retries=5):
+def call_gemini_generate_content(prompt, api_key, model="gemini-3.8-flash", file_uri=None, audio_path=None, temperature=0.1, max_tokens=8192, thinking_budget=None, max_retries=5):
     """
     Call Google Gemini generateContent REST API with optional video file_uri or audio_path.
     Includes robust exponential backoff with jitter for HTTP 429 (rate limits) and 5xx errors.
@@ -118,7 +118,7 @@ def call_gemini_generate_content(prompt, api_key, model="gemini-3.7-flash", file
     parts.append({"text": prompt})
 
     gen_config = {"temperature": temperature, "maxOutputTokens": max_tokens}
-    if thinking_budget is not None and "3.7" in model:
+    if thinking_budget is not None and ("3.7" in model or "3.8" in model):
         gen_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
 
     payload = {
@@ -281,7 +281,7 @@ def call_openai_chat_completions(prompt, api_key, base_url="https://api.openai.c
             raise
 
 
-def call_vertex_generate_content(prompt, project, location="us-central1", model="gemini-3.7-flash",
+def call_vertex_generate_content(prompt, project, location="us-central1", model="gemini-3.8-flash",
                                  gcs_uri=None, audio_path=None, temperature=0.1, max_tokens=8192,
                                  thinking_budget=None, max_retries=5):
     """
@@ -305,7 +305,7 @@ def call_vertex_generate_content(prompt, project, location="us-central1", model=
     contents.append(prompt)
 
     config_params = {"temperature": temperature, "max_output_tokens": max_tokens}
-    if thinking_budget is not None and "3.7" in model:
+    if thinking_budget is not None and ("3.7" in model or "3.8" in model):
         config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
     config = types.GenerateContentConfig(**config_params)
 
@@ -330,7 +330,7 @@ def call_vertex_generate_content(prompt, project, location="us-central1", model=
             raise
 
 
-def call_llm(prompt, model="gemini-3.7-flash", backend="vertex", project=None, location=None,
+def call_llm(prompt, model="gemini-3.8-flash", backend="vertex", project=None, location=None,
              gcs_bucket=None, fallback_studio=False, base_url=None, api_key=None,
              file_uri=None, gcs_uri=None, audio_path=None, image_base64_list=None,
              temperature=0.1, max_tokens=8192, thinking_budget=None):

@@ -6,7 +6,7 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity ネイティブスキル＆ワークフロー**  
-> 本ツールキットは、**Google Antigravity Agent（Gemini 3.7 Flash 1M マルチモーダル長コンテキスト）** とプロフェッショナル向けノンリニア編集ソフト（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）のために設計されたマルチカメラ（2〜6台）スマート前処理パイプラインです。
+> 本ツールキットは、**Google Antigravity Agent（Gemini 3.8 Flash 1M マルチモーダル長コンテキスト）** とプロフェッショナル向けノンリニア編集ソフト（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）のために設計されたマルチカメラ（2〜6台）スマート前処理パイプラインです。
 
 ---
 
@@ -37,7 +37,7 @@ multicam-video-preprocessing/
 │   └── subtitle_proofread_template.md # YouTube 字幕校正プロンプト
 ├── scripts/                           # コア実行ツールセット
 │   ├── multicam_pipeline.py           # Step 1: 音声同期・音量正規化・マスター出力・全編グリッド合成
-│   ├── generate_edl.py                # Step 2: Gemini 3.7 Flash Agentic Video 分割不要粗編集決定
+│   ├── generate_edl.py                # Step 2: Gemini 3.8 Flash Agentic Video 分割不要粗編集決定
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XMLタイムラインエクスポート (推奨)
 │   ├── edl_to_video.py                # Step 3B: ワンパス直接動画レンダリング (プレビュー)
 │   ├── generate_subtitles.py          # Step 4: YouTube字幕生成 (Whisper + Gemini)
@@ -109,14 +109,14 @@ multicam-video-preprocessing/
     --stream-copy --normalize --merge -o output/
   ```
 
-### ステップ 2：Gemini 3.7 Flash Agentic Video 粗編集決定 (`generate_edl.py`)
+### ステップ 2：Gemini 3.8 Flash Agentic Video 粗編集決定 (`generate_edl.py`)
 1. **プロンプトテンプレートの読み込み**：`assets/edl_interview_template.md` による放送基準の厳格な編集ルールを適用。
 2. **Phase 0：前後の無駄・現場カウントダウンの完全排除（ゼロトレランスと非対称セーフティマージン）**：
    - **現場カウントダウンの完全排除**：機材確認、雑談、カチンコ、現場のカウントダウン（「5, 4, 3, 2, 1」「3, 2, 1」など）を完全検知・除外。
    - **非対称セーフティマージン（`[Start, Start+2s]` 自己検証）**：`Global_Start_Time` は必ず最後のカウントダウン音が完全に終了した後に設定。カット開始後の最初の2秒間（`[Global_Start_Time, Global_Start_Time + 2.0s]`）で思考チェーンによる自己検証を行い、カウントダウンが残っている場合は開始点を後ろに移動させ、本編最初の単語に完璧にアライン。
    - **終了後未停止区間の除外**：インタビュー終了の挨拶を識別し、収録後の雑談やサムネイル撮影などの無駄な映像（`Global_End_Time`）を除外。
 3. **次世代アーキテクチャ：Agentic Video Understanding（分割不要の全編編集）**：
-   - Gemini 3.7 Flash の Agentic Video 機能（`processing="agentic"`）により、1時間以上のノーカットグリッド映像を直接評価。
+   - Gemini 3.8 Flash の Agentic Video 機能（`processing="agentic"`）により、1時間以上のノーカットグリッド映像を直接評価。
    - 目的指向の動的スパースサンプリングにより、入力トークン消費を **99.7% 削減**（約 100 万トークンから約 3,000 トークンへ激減）。チャプター境界による発言分断を完全に解消。
 4. **標準出力**：
    - 単一の標準 CSV 決定リスト（`edl_full.csv`）および Markdown 編集レポート（`edl_full_report.md`）を出力。
@@ -148,7 +148,7 @@ multicam-video-preprocessing/
 
 ### ステップ 4：YouTube 字幕生成 (`generate_subtitles.py`)
 - **3段階ゴールデン字幕生成パイプライン（Three-Stage Pipeline）**：
-  1. **全編音声マクロ理解、2系統用語集＆Whisper Initial Prompt 抽出**：Gemini 3.7 Flash（1M Context）で全編音声を聴取（インタビュー構成案 `--outline` や収録台本／原稿 `--script` の注入に対応）。Gemini 校正用の Markdown 用語集（`final_cut_full_glossary.md`）に加え、ファイル先頭に 200 token（約 100〜140 文字）以内の高密度キーワード列（`> **Whisper Initial Prompt**: ...`）を自動生成。
+  1. **全編音声マクロ理解、2系統用語集＆Whisper Initial Prompt 抽出**：Gemini 3.8 Flash（1M Context）で全編音声を聴取（インタビュー構成案 `--outline` や収録台本／原稿 `--script` の注入に対応）。Gemini 校正用の Markdown 用語集（`final_cut_full_glossary.md`）に加え、ファイル先頭に 200 token（約 100〜140 文字）以内の高密度キーワード列（`> **Whisper Initial Prompt**: ...`）を自動生成。
   2. **Whisper 物理音響タイムコード＆用語バイアス注入**：Stage 1 の `initial_prompt` をローカル Whisper（`mlx-whisper` / `faster-whisper`）に注入して専門用語の初回認識率を大幅向上。各単語の物理音声波形を測定（`word_timestamps=True`）し、ズレ累積 0.000 秒の基準タイムラインと単語キャッシュ（`final_cut_full_raw_whisper.srt` & `final_cut_full_words.json`）を生成（再実行時は秒単位でロード可能）。
   3. **無音感知セマンティック分割、マイクロ音響スナップ＆マルチモーダル校正**：
      - **無音感知セマンティック分割 (Silence-Aware Semantic Chunking)**：固定行数での機械的切断を廃止し、自然な呼吸ポーズ（Gap $\ge 0.4\text{s}$）や文末助詞・句読点で安全に分割。

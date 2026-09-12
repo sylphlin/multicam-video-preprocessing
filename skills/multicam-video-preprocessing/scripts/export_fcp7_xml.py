@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
 """
 FCP7 XML Exporter CLI Tool (export_fcp7_xml.py).
-Converts multi-camera EDL CSV files (e.g. edl_part1.csv, edl_part2.csv) into a seamless Final Cut Pro 7 XML (xmeml version 4)
+Converts multi-camera EDL CSV files (e.g. edl_full.csv) into a seamless Final Cut Pro 7 XML (xmeml version 4)
 timeline file for professional NLEs (DaVinci Resolve, Premiere Pro, Final Cut Pro).
 
 Features:
-  - Multi-Part Timeline Continuity: Seamlessly chains multiple sequential chapter EDLs (part1, part2...) with frame-accurate timeline offset accumulation.
+  - Full Timeline Continuity: Translates agentic video EDL decisions into frame-accurate NLE timelines.
   - Dual Media Reference Modes:
-      1. Part Clip Linking (Default): References cut chapter media files (*_part1.mp4, *_part2.mp4).
+      1. Synchronized Camera Masters (Default): References aligned camera master files (*_synced.mp4).
       2. Raw Original Camera Linking (--use-raw-media): Uses multicam_sync.json global sync offsets to link directly to full un-sliced camera originals.
   - Rich Timeline Markers: Color-coded markers for editing rules ([強制] -> Red, [一般] -> Blue) with full reason comments.
   - Multi-Track Audio Mapping: Synchronized master host audio tracks (CAM1) across the entire sequence timeline.
   - Safe URI Path Encoding: Robust path cleaning and URL-encoding (file://localhost/...) for cross-platform NLE relinking.
 
 Usage Examples:
-  # Example 1: Auto-discover all parts in directory and export unified full timeline XML
-  python3 scripts/export_fcp7_xml.py -d ./test/full_pipeline_output/
+  # Example 1: Auto-discover full EDL in directory and export XML
+  python3 scripts/export_fcp7_xml.py -d ./output/ -o ./output/final_cut_full.xml
 
-  # Example 2: Export specific EDL CSV files into unified XML
+  # Example 2: Export specific EDL CSV file
   python3 scripts/export_fcp7_xml.py \
-    -e edl_part1.csv edl_part2.csv \
+    -e edl_full.csv \
     -o final_cut_full.xml
-
-  # Example 3: Export single part XML
-  python3 scripts/export_fcp7_xml.py \
-    -e edl_part1.csv \
-    -o final_cut_part1.xml
 """
 
 import argparse
@@ -99,10 +94,10 @@ def format_path_for_xml(system_path):
     return f"file://localhost{encoded_path}"
 
 
-def auto_discover_camera_files(media_dir, part_tag=None):
+def auto_discover_camera_files(media_dir):
     """
     Discover camera files in media_dir.
-    Prioritizes full synchronized master files (*_synced.mp4), then part files if part_tag is given.
+    Prioritizes full synchronized master files (*_synced.mp4), followed by camera video files.
     """
     if not media_dir or not os.path.exists(media_dir):
         return {}
@@ -119,16 +114,7 @@ def auto_discover_camera_files(media_dir, part_tag=None):
     if synced_files:
         candidates = synced_files
 
-    # 2. Second priority: filter by part_tag if specified
-    if not candidates and part_tag:
-        pt_lower = part_tag.lower()
-        for f in all_files:
-            if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v")):
-                if "merged" not in f.lower() and "final" not in f.lower() and "seg_" not in f.lower():
-                    if pt_lower in f.lower():
-                        candidates.append(os.path.join(media_dir, f))
-
-    # 3. Fallback: any valid camera video files
+    # 2. Fallback: any valid camera video files
     if not candidates:
         for f in all_files:
             if any(f.lower().endswith(ext) for ext in (".mp4", ".mov", ".mkv", ".m4v")):
@@ -295,7 +281,7 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
         file_url = format_path_for_xml(real_file_path)
         filename = Path(real_file_path).name
 
-        lookup_key = cam_key if "synced" in real_file_path.lower() else f"{clip.get('part_tag', '')}_{cam_key}"
+        lookup_key = cam_key
         if lookup_key not in file_id_map:
             file_id_map[lookup_key] = f"masterclip-{lookup_key}"
 
@@ -335,7 +321,7 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
         </video>
 """
 
-    # Audio Track Section: Aligned across parts or continuous
+    # Audio Track Section: Master host audio (CAM1)
     part_audio_list = part_audio_list or []
     if part_audio_list:
         tracks_xml = ""
@@ -346,9 +332,8 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
                 a_fpath = a_part["audio_path"]
                 a_url = format_path_for_xml(a_fpath)
                 a_fname = Path(a_fpath).name
-                a_lookup = "CAM1" if "synced" in a_fpath.lower() else f"{a_part['part_tag']}-CAM1"
-                a_master_id = f"masterclip-{a_lookup}"
-                a_clip_id = f"audio-track{track_idx}-part{a_idx}"
+                a_master_id = "masterclip-CAM1-Audio"
+                a_clip_id = f"audio-track{track_idx}-item{a_idx}"
                 a_dur_frames = a_part["end_frame"] - a_part["start_frame"]
 
                 a_file_node = create_file_node(a_master_id, a_fname, a_url, fps, total_timeline_duration + 50000, width, height)
@@ -389,12 +374,12 @@ def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_j
         raise ValueError("No EDL CSV files provided for XML export.")
 
     edl_files = sorted(edl_files, key=natural_sort_key)
-    num_parts = len(edl_files)
+    num_edls = len(edl_files)
 
     # Resolve output XML path
     if not output_path:
         first_dir = os.path.dirname(os.path.abspath(edl_files[0]))
-        if num_parts == 1:
+        if num_edls == 1:
             base_name = os.path.splitext(os.path.basename(edl_files[0]))[0]
             output_path = os.path.join(first_dir, f"{base_name.replace('edl_', 'final_cut_')}.xml")
         else:
@@ -412,129 +397,103 @@ def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_j
             sync_metadata = json.load(f)
 
     print("\n" + "=" * 78)
-    print(f"🎬  FCP7 XML Exporter: Converting {num_parts} EDL Part(s) to Final Cut Pro 7 XML")
+    print(f"🎬  FCP7 XML Exporter: Converting {num_edls} EDL File(s) to Final Cut Pro 7 XML")
     print("=" * 78)
     print(f"  • Target XML Output : {output_path}")
     print(f"  • Media Directory   : {media_dir}")
     print(f"  • Sequence Rate     : {fps} fps ({width}x{height})")
-    print(f"  • Media Source Mode : {'Original Raw Camera Footage' if use_raw_media else 'Chapter Part Video Clips'}")
+    print(f"  • Media Source Mode : {'Original Raw Camera Footage' if use_raw_media else 'Synchronized Camera Masters (*_synced.mp4)'}")
     print("-" * 78)
 
+    # Auto-discover camera files in media directory
+    cam_map = auto_discover_camera_files(media_dir)
+
+    # Prepare raw camera map & global trim offsets if use_raw_media is requested
+    raw_cam_map = {}
+    raw_offset_map = {}
+    if use_raw_media and sync_metadata:
+        trim_meta = sync_metadata.get("trim") or {}
+        ref_start_str = trim_meta.get("ref_start") or "0"
+        t_ref_start_sec = time_str_to_frames(ref_start_str, fps) / fps if ref_start_str else 0.0
+
+        cams_info = sync_metadata.get("cameras", [])
+        for c_idx, c_info in enumerate(cams_info, start=1):
+            c_key = f"CAM{c_idx}"
+            c_name = c_info.get("camera", "")
+            if c_info.get("is_ref"):
+                c_offset = t_ref_start_sec
+                raw_fpath = sync_metadata.get("ref_video") or c_name
+            else:
+                c_offset = t_ref_start_sec - c_info.get("offset_sec", 0.0)
+                raw_fpath = c_name
+
+            if not os.path.isabs(raw_fpath) and media_dir:
+                candidate_fpath = os.path.join(media_dir, raw_fpath)
+                if os.path.exists(candidate_fpath):
+                    raw_fpath = candidate_fpath
+
+            raw_cam_map[c_key] = os.path.abspath(raw_fpath)
+            raw_offset_map[c_key] = c_offset
+
     all_timeline_clips = []
-    accumulated_part_offset = 0
-    part_audio_list = []
+    accumulated_offset = 0
 
-    for part_idx, edl_path in enumerate(edl_files, start=1):
+    for edl_idx, edl_path in enumerate(edl_files, start=1):
         edl_bname = os.path.basename(edl_path)
-        part_match = re.search(r"(part\d+)", edl_bname, re.IGNORECASE)
-        part_tag = part_match.group(1).lower() if part_match else f"part{part_idx}"
-
         records = load_edl_csv_records(edl_path)
         if not records:
             print(f"  [Warning] No valid records in {edl_bname}, skipping...")
             continue
 
-        # Auto-discover media for this specific part
-        cam_map = auto_discover_camera_files(media_dir, part_tag=part_tag)
-
-        # Raw media lookup if use_raw_media is requested
-        part_sync_info = None
-        if sync_metadata and "parts" in sync_metadata:
-            part_sync_info = next((p for p in sync_metadata["parts"] if p.get("part_name") == part_tag or p.get("part_index") == part_idx), None)
-
-        part_clip_count = len(records)
-        part_max_out_frame = 0
+        edl_clip_count = len(records)
+        edl_max_out_frame = 0
 
         for rec in records:
             in_frame = time_str_to_frames(rec["start_str"], fps)
             out_frame = time_str_to_frames(rec["end_str"], fps)
-            clip_dur = max(1, out_frame - in_frame)
-            if out_frame > part_max_out_frame:
-                part_max_out_frame = out_frame
+            if out_frame > edl_max_out_frame:
+                edl_max_out_frame = out_frame
 
             cam_name = rec["camera"].strip()
             cam_upper = cam_name.upper()
 
-            # Resolve file path
-            if use_raw_media and part_sync_info:
-                # Calculate global offset inside original raw camera file
-                cam_num_match = re.search(r"\d+", cam_upper)
-                cam_order = int(cam_num_match.group(0)) - 1 if cam_num_match else 0
-                c_list = part_sync_info.get("cameras", [])
-                cam_sync = c_list[cam_order] if 0 <= cam_order < len(c_list) else None
-
-                if cam_sync:
-                    raw_start_sec = cam_sync.get("start_sec", 0.0)
-                    global_offset_frames = int(round(raw_start_sec * fps))
-                    source_in = global_offset_frames + in_frame
-                    source_out = global_offset_frames + out_frame
-                    fpath = os.path.abspath(cam_sync.get("camera_path")) if cam_sync.get("camera_path") else cam_map.get(cam_upper)
-                else:
-                    source_in = in_frame
-                    source_out = out_frame
-                    fpath = cam_map.get(cam_upper) or cam_map.get(cam_name)
+            # Resolve file path and frame points
+            if use_raw_media and cam_upper in raw_offset_map:
+                raw_start_sec = raw_offset_map[cam_upper]
+                global_offset_frames = int(round(raw_start_sec * fps))
+                source_in = global_offset_frames + in_frame
+                source_out = global_offset_frames + out_frame
+                fpath = raw_cam_map.get(cam_upper) or cam_map.get(cam_upper)
             else:
                 fpath = cam_map.get(cam_upper) or cam_map.get(cam_name)
-                # If using full synced master footage, offset source in/out by accumulated part offset
-                if fpath and "synced" in fpath.lower():
-                    source_in = accumulated_part_offset + in_frame
-                    source_out = accumulated_part_offset + out_frame
-                else:
-                    source_in = in_frame
-                    source_out = out_frame
+                source_in = in_frame
+                source_out = out_frame
 
             all_timeline_clips.append({
-                "part_tag": part_tag,
                 "camera": cam_name,
                 "file_path": fpath,
                 "source_in": source_in,
                 "source_out": source_out,
-                "timeline_start": accumulated_part_offset + in_frame,
-                "timeline_end": accumulated_part_offset + out_frame,
+                "timeline_start": accumulated_offset + in_frame,
+                "timeline_end": accumulated_offset + out_frame,
                 "rule": rec["rule"],
                 "reason": rec["reason"]
             })
 
-        # Calculate part duration for offset accumulation
-        if part_sync_info and "duration_sec" in part_sync_info:
-            part_actual_dur = int(round(part_sync_info["duration_sec"] * fps))
-        else:
-            part_actual_dur = part_max_out_frame
+        edl_dur_sec = edl_max_out_frame / fps
+        print(f"  [EDL {edl_idx}/{num_edls}] {edl_bname:<20} | {edl_clip_count} cuts | Duration: {edl_dur_sec:.2f}s")
+        accumulated_offset += edl_max_out_frame
 
-        part_dur_sec = part_actual_dur / fps
-        print(f"  [Part {part_idx}/{num_parts}] {edl_bname:<20} | {part_clip_count} cuts | Part Duration: {part_dur_sec:.2f}s -> Next Part Offset: {accumulated_part_offset + part_actual_dur} frames ({(accumulated_part_offset + part_actual_dur)/fps:.2f}s)")
-        accumulated_part_offset += part_actual_dur
-
-    # Construct audio tracks
+    # Construct single continuous master host audio track (CAM1)
     part_audio_list = []
-    cam1_synced = auto_discover_camera_files(media_dir).get("CAM1")
-    if cam1_synced and "synced" in cam1_synced.lower():
-        # Single continuous master host audio track
+    cam1_audio = cam_map.get("CAM1")
+    if cam1_audio:
         part_audio_list.append({
-            "part_tag": "full",
-            "audio_path": cam1_synced,
+            "audio_path": cam1_audio,
             "start_frame": 0,
-            "end_frame": accumulated_part_offset,
+            "end_frame": accumulated_offset,
             "source_in": 0
         })
-    else:
-        # Sequential audio tracks per part
-        acc_offset = 0
-        for p_idx, edl_path in enumerate(edl_files, start=1):
-            p_bname = os.path.basename(edl_path)
-            p_match = re.search(r"(part\d+)", p_bname, re.IGNORECASE)
-            p_tag = p_match.group(1).lower() if p_match else f"part{p_idx}"
-            p_cam1 = auto_discover_camera_files(media_dir, part_tag=p_tag).get("CAM1") or auto_discover_camera_files(media_dir).get("CAM1")
-            p_dur = probe_media_duration_frames(p_cam1, fps=fps) if p_cam1 else 0
-            if p_cam1:
-                part_audio_list.append({
-                    "part_tag": p_tag,
-                    "audio_path": p_cam1,
-                    "start_frame": acc_offset,
-                    "end_frame": acc_offset + p_dur,
-                    "source_in": 0
-                })
-            acc_offset += p_dur
 
     seq_name = os.path.splitext(os.path.basename(output_path))[0]
     xml_content = build_fcp7_xml_sequence(
@@ -553,15 +512,15 @@ def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_j
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(xml_content)
 
-    total_sec = accumulated_part_offset / fps
+    total_sec = accumulated_offset / fps
     total_min = total_sec / 60.0
 
     print("\n" + "=" * 78)
     print("✅  FCP7 XML Export Completed Successfully!")
     print(f"  • Exported XML File: {output_path}")
-    print(f"  • Total Cuts       : {len(all_timeline_clips)} clips across {num_parts} parts")
+    print(f"  • Total Cuts       : {len(all_timeline_clips)} clips across {num_edls} EDL(s)")
     print(f"  • Total Duration   : {int(total_sec // 60):02d}:{total_sec % 60:06.3f} ({total_sec:.2f}s / {total_min:.1f} mins)")
-    print(f"  • Timeline Frames  : {accumulated_part_offset} frames @ {fps} fps")
+    print(f"  • Timeline Frames  : {accumulated_offset} frames @ {fps} fps")
     print("  ► Ready for import into DaVinci Resolve / Premiere Pro / Final Cut Pro!")
     print("=" * 78 + "\n")
     return output_path
@@ -572,12 +531,12 @@ def main():
         description="FCP7 XML Exporter CLI: Convert multi-camera EDL CSV files into Final Cut Pro 7 XML for DaVinci Resolve / Premiere Pro.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument("-e", "--edl", nargs="+", default=None, help="One or more EDL CSV files (e.g. edl_part1.csv edl_part2.csv)")
-    parser.add_argument("-d", "--dir", default=None, help="Directory containing EDL CSV files (auto-discovers edl_part*.csv)")
+    parser.add_argument("-e", "--edl", nargs="+", default=None, help="One or more EDL CSV files (e.g. edl_full.csv)")
+    parser.add_argument("-d", "--dir", default=None, help="Directory containing EDL CSV files (auto-discovers edl_full.csv)")
     parser.add_argument("-o", "--output", default=None, help="Path to output FCP7 XML file (default: final_cut_full.xml)")
     parser.add_argument("-m", "--media-dir", default=None, help="Directory containing camera media files (defaults to EDL directory)")
     parser.add_argument("-s", "--sync-json", default=None, help="Path to multicam_sync.json for raw camera offset resolution")
-    parser.add_argument("--use-raw-media", action="store_true", help="Link to original raw camera footage instead of chapter sub-clips")
+    parser.add_argument("--use-raw-media", action="store_true", help="Link to original raw camera footage instead of synchronized camera masters")
 
     parser.add_argument("--fps", type=int, default=DEFAULT_FPS, help="Sequence frame rate (default: 30)")
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Sequence width (default: 1920)")
@@ -600,7 +559,7 @@ def main():
             pat_fallback = os.path.join(args.dir, "**/*.csv")
             edl_files = [f for f in glob.glob(pat_fallback, recursive=True) if "sync" not in os.path.basename(f).lower()]
 
-        # If a unified full-length EDL exists, prioritize it over separate chapter parts
+        # If a unified full-length EDL exists, prioritize it
         if edl_files:
             full_edls = [f for f in edl_files if "full" in os.path.basename(f).lower()]
             if full_edls:

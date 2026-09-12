@@ -6,11 +6,11 @@
 
 > [!IMPORTANT]
 > **🚀 Google Antigravity 原生技能与工作流 (Antigravity Native Skill & Workflow)**  
-> 本工具套件是专为 **Google Antigravity Agent 架构（基于 Gemini 3.7 Flash 1M 多模态长上下文）** 与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）量身打造的原生多机位（2~6 机）智能处理管线与 AI 粗剪套件。
+> 本工具套件是专为 **Google Antigravity Agent 架构（基于 Gemini 3.8 Flash 1M 多模态长上下文）** 与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）量身打造的原生多机位（2~6 机）智能处理管线与 AI 粗剪套件。
 
 ---
 
-本专案为针对长上下文多模态模型（Gemini 3.7 Flash 1M Token Context）与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多机位（2 至 6 机）视频智能处理管线与 AI 粗剪套件。使用者无需手动输入底层终端机指令，只要在 Antigravity 聊天室中使用自然语言发出指示，Agent 就会自动执行完整的标准化处理流程。
+本专案为针对长上下文多模态模型（Gemini 3.8 Flash 1M Token Context）与专业剪辑软件（DaVinci Resolve、Adobe Premiere Pro、Final Cut Pro）打造的模块化多机位（2 至 6 机）视频智能处理管线与 AI 粗剪套件。使用者无需手动输入底层终端机指令，只要在 Antigravity 聊天室中使用自然语言发出指示，Agent 就会自动执行完整的标准化处理流程。
 
 ---
 
@@ -39,7 +39,7 @@ multicam-video-preprocessing/
 │   └── subtitle_proofread_template.md # YouTube 字幕语义校对模板
 ├── scripts/                           # 核心执行脚本与处理模块
 │   ├── multicam_pipeline.py           # 步骤 1: 多机时间同步、音量标准化、母带导出与全集网格合成
-│   ├── generate_edl.py                # 步骤 2: Gemini 3.7 Flash Agentic Video 零切分 AI 剪辑决策生成
+│   ├── generate_edl.py                # 步骤 2: Gemini 3.8 Flash Agentic Video 零切分 AI 剪辑决策生成
 │   ├── export_fcp7_xml.py             # 步骤 3A: 导出 FCP7 XML 时间线 (主路径)
 │   ├── edl_to_video.py                # 步骤 3B: 一步到位硬件加速成片直接渲染 (次路径)
 │   ├── generate_subtitles.py          # 步骤 4: 生成 YouTube 字幕 (Whisper+Gemini)
@@ -60,7 +60,7 @@ flowchart TD
         S1_3 --> S1_4["1.4 多合一全集网格画面合成 (multicam_merged_full.mp4)"]
     end
 
-    S1_4 --> S2["步骤 2：Gemini 3.7 Flash Agentic Video 智能粗剪<br/>(generate_edl.py / 节省 99.7% Token)"]
+    S1_4 --> S2["步骤 2：Gemini 3.8 Flash Agentic Video 智能粗剪<br/>(generate_edl.py / 节省 99.7% Token)"]
     S2 --> EDL["单一全片 EDL 剪辑决策表<br/>(edl_full.csv)"]
 
     subgraph S3A["主路径：专业剪辑 (90%)"]
@@ -169,7 +169,7 @@ flowchart TD
 
 ---
 
-### 步骤 2：Gemini 3.7 Flash Agentic Video 智能粗剪决策 (`generate_edl.py`)
+### 步骤 2：Gemini 3.8 Flash Agentic Video 智能粗剪决策 (`generate_edl.py`)
 1. **加载专属提示词资产**：
    - 读取 `assets/edl_interview_template.md` 广电级访谈剪辑规则模板。
 2. **Phase 0：头尾废料与现场倒数彻底裁切 (零容忍原则与不对称安全边界)**：
@@ -177,7 +177,7 @@ flowchart TD
    - **不对称安全边界 (`[Start, Start+2s]` 自我校验)**：强制要求 `Global_Start_Time` 必须严格落在最后一个倒数数字完全结束之后。模型在起剪后的首 2 秒区间（`[Global_Start_Time, Global_Start_Time + 2.0s]`）进行思维链自审，若仍有倒数残留则自动后移时间戳，确保成片首帧干净对齐第一句台词首字。
    - **结尾未关机裁切**：自动识别访谈结尾道别语句，切除收尾未关机闲聊、拍摄封面素材与环境杂音（标记 `Global_End_Time`）。
 3. **次世代架构：Agentic Video Understanding (零切分全长剪辑)**：
-   - 通过 Gemini 3.7 Flash Agentic Video 理解能力（`processing="agentic"`），直接评估 >1 小时未分段之完整多机网格视频。
+   - 通过 Gemini 3.8 Flash Agentic Video 理解能力（`processing="agentic"`），直接评估 >1 小时未分段之完整多机网格视频。
    - 采用目标导向稀疏时域采样，将输入 Token 消耗巨幅降低 **99.7%**（由约 1,000,000 Token 降至约 3,000 Token），彻底免除章节交界处话语被截断的风险。
 4. **产出标准化结果**：
    - 输出单一标准 CSV 决策表（`edl_full.csv`，亦兼容 `edl.csv`）与 Markdown 裁切分析报告（`edl_full_report.md`）。
@@ -240,7 +240,7 @@ flowchart TD
 
 #### 三阶段执行流程：
 1. **阶段一（全篇音频宏观理解、双轨专有名词库与 Whisper Initial Prompt 萃取）**：
-   - 提取全片音频，由 Gemini 3.7 Flash（1M Context）一次听完整集节目，可选注入访纲笔记（`--outline`）或录音完整讲稿／逐字稿（`--script`）。
+   - 提取全片音频，由 Gemini 3.8 Flash（1M Context）一次听完整集节目，可选注入访纲笔记（`--outline`）或录音完整讲稿／逐字稿（`--script`）。
    - **双轨解析产出**：不仅产出供 Gemini 审稿的完整 Markdown 词汇库（`final_cut_full_glossary.md`），更在文件顶部自动产出高密度、控制在 200 token（约 100～140 字符）内的 `> **Whisper Initial Prompt**: ...` 核心关键字列。
 2. **阶段二（Whisper 声学物理时间轴与专有名词偏置）**：
    - 自动将 Stage 1 萃取的 `initial_prompt` 注入本地 `mlx-whisper`、`faster-whisper` 或 `openai-whisper`，大幅降低专有名词首度声学识别错误率。

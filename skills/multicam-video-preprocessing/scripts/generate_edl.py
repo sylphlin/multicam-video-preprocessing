@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI Multimodal Video to EDL Decision Generator (generate_edl.py).
-Powered by Gemini 3.7 Flash Agentic Video Understanding (processing="agentic")
+Powered by Gemini 3.8 Flash Agentic Video Understanding (processing="agentic")
 for zero-split full-length multicam video editing (>1 hour in a single pass).
 
 Features:
@@ -204,7 +204,7 @@ def upload_video_resumable(video_path, api_key, chunk_size_mb=64, force_upload=F
     return file_uri, file_name_id
 
 
-def call_agentic_video_edl(file_uri, prompt_text, client=None, api_key=None, model="gemini-3.7-flash"):
+def call_agentic_video_edl(file_uri, prompt_text, client=None, api_key=None, model="gemini-3.8-flash"):
     """
     Call Gemini using Agentic Video Understanding (processing="agentic").
     Uses google.genai client.interactions.create with fallback to client.models.generate_content.
@@ -287,7 +287,7 @@ def call_agentic_video_edl(file_uri, prompt_text, client=None, api_key=None, mod
     return raw_output, usage_info, duration
 
 
-def generate_edl_content_standard(file_uri, prompt_text, client=None, api_key=None, model="gemini-3.7-flash"):
+def generate_edl_content_standard(file_uri, prompt_text, client=None, api_key=None, model="gemini-3.8-flash"):
     """Standard multimodal generateContent call (1fps video sampling fallback)."""
     print(f"\n[Step 2/3] 🤖 Calling Gemini model: {model} (Standard Mode) ...")
     import google.genai as genai
@@ -318,53 +318,6 @@ def generate_edl_content_standard(file_uri, prompt_text, client=None, api_key=No
         }
     duration = time.time() - t0
     return raw_output, usage_info, duration
-
-def _legacy_generate_edl_content_standard_unused(file_uri, prompt_text, api_key, model="gemini-3.7-flash"):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [
-                    {"file_data": {"mime_type": "video/mp4", "file_uri": file_uri}},
-                    {"text": prompt_text}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 8192
-        }
-    }
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
-    )
-
-    ctx = get_ssl_context()
-    t0 = time.time()
-    with LiveTicker(f"Gemini ({model}) analyzing video & computing EDL cuts"):
-        try:
-            with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                candidates = data.get("candidates", [])
-                output_text = ""
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    text_parts = [p.get("text", "") for p in parts if "text" in p]
-                    output_text = "".join(text_parts).strip()
-                usage_metadata = data.get("usageMetadata", {})
-                usage_info = {
-                    "total_input_tokens": usage_metadata.get("promptTokenCount", 0),
-                    "total_output_tokens": usage_metadata.get("candidatesTokenCount", 0),
-                    "total_tokens": usage_metadata.get("totalTokenCount", 0),
-                }
-                return output_text, usage_info, time.time() - t0
-        except urllib.error.HTTPError as e:
-            err = e.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"Gemini generateContent failed (HTTP {e.code}): {err}")
 
 
 def delete_remote_file(file_name_id, api_key):
@@ -425,7 +378,7 @@ def parse_edl_csv_and_report(raw_text):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AI Multimodal Video to EDL Decision Generator (Gemini 3.7 Flash Agentic Video Understanding).",
+        description="AI Multimodal Video to EDL Decision Generator (Gemini 3.8 Flash Agentic Video Understanding).",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-v", "--video", "-i", "--input", dest="video", required=True,
@@ -438,8 +391,8 @@ def main():
                         help="Custom destination path for analysis report markdown (optional)")
     parser.add_argument("-t", "--template", default=None,
                         help="Custom prompt template file path (defaults to assets/edl_interview_template.md)")
-    parser.add_argument("--model", default="gemini-3.7-flash",
-                        help="Multimodal model name (default: gemini-3.7-flash)")
+    parser.add_argument("--model", default="gemini-3.8-flash",
+                        help="Multimodal model name (default: gemini-3.8-flash)")
     parser.add_argument("--processing", choices=["agentic", "standard"], default="agentic",
                         help="Video processing mode: 'agentic' (default, 99.7%% token savings, >1hr zero-split) or 'standard'")
     parser.add_argument("--base-url", default=None,
@@ -478,24 +431,8 @@ def main():
     out_dir = args.output_dir or os.path.dirname(os.path.abspath(args.video)) or "."
     os.makedirs(out_dir, exist_ok=True)
 
-    video_basename = os.path.splitext(os.path.basename(args.video))[0]
-    part_match = re.search(r"(part\d+)", video_basename, re.IGNORECASE)
-    
-    if args.output_csv:
-        edl_csv_path = args.output_csv
-    elif part_match:
-        part_tag = f"_{part_match.group(1).lower()}"
-        edl_csv_path = os.path.join(out_dir, f"edl{part_tag}.csv")
-    else:
-        edl_csv_path = os.path.join(out_dir, "edl_full.csv")
-
-    if args.report:
-        report_path = args.report
-    elif part_match:
-        part_tag = f"_{part_match.group(1).lower()}"
-        report_path = os.path.join(out_dir, f"edl{part_tag}_report.md")
-    else:
-        report_path = os.path.join(out_dir, "edl_full_report.md")
+    edl_csv_path = args.output_csv or os.path.join(out_dir, "edl_full.csv")
+    report_path = args.report or os.path.join(out_dir, "edl_full_report.md")
 
     print("\n" + "=" * 78)
     print(f"🎬  Multimodal AI Video to EDL Generator (Model: {args.model} | Mode: {args.processing.upper()})")
@@ -565,14 +502,13 @@ def main():
 
     prompt_text = load_prompt_template(args.template)
 
-    # If full-length video, ensure model knows timecode format covers >1hr
-    if not part_match:
-        prompt_text += (
-            "\n\n---\n"
-            "### 額外時間碼與全片長度特別指示：\n"
-            "1. 本影片為完整全集錄影，時間碼格式請支援 `HH:MM:SS.000` 或 `MM:SS.000`（如 `01:02:15.000` 或 `62:15.000` 皆可）。\n"
-            "2. 請由開頭 Global_Start_Time 一路分析覆蓋至全片結束 Global_End_Time，全片無切分斷句。\n"
-        )
+    # Full-length video instruction: ensure model knows timecode format covers >1hr without slicing
+    prompt_text += (
+        "\n\n---\n"
+        "### 額外時間碼與全片長度特別指示：\n"
+        "1. 本影片為完整全集錄影，時間碼格式請支援 `HH:MM:SS.000` 或 `MM:SS.000`（如 `01:02:15.000` 或 `62:15.000` 皆可）。\n"
+        "2. 請由開頭 Global_Start_Time 一路分析覆蓋至全片結束 Global_End_Time，全片無切分斷句。\n"
+    )
 
     try:
         if args.processing == "agentic":
@@ -609,7 +545,7 @@ def main():
         print(f"  ✓ EDL Decision CSV : {edl_csv_path} ({len(csv_rows) - 1} shot cuts)")
 
         # Write alias edl.csv if this is full cut
-        if not part_match and not args.output_csv:
+        if not args.output_csv:
             alias_csv = os.path.join(out_dir, "edl.csv")
             try:
                 with open(alias_csv, "w", encoding="utf-8", newline="") as f:
