@@ -81,6 +81,8 @@ def main():
     parser.add_argument("--sr", type=int, default=8000, help="Audio sampling rate for FFT alignment in Hz (default: 8000)")
     parser.add_argument("--sample-dur", type=float, default=None, help="Limit sample duration in seconds for quick alignment test (default: full length)")
     parser.add_argument("--workers", type=int, default=4, help="Parallel worker threads (default: 4)")
+    parser.add_argument("--full-scan", action="store_true", help="Force full-length MFCC scan (skip fast 120s search ladder)")
+    parser.add_argument("--no-subframe-refine", action="store_true", help="Disable sub-frame refinement (stay at hop-level MFCC resolution)")
 
     args = parser.parse_args()
 
@@ -117,7 +119,8 @@ def main():
     print(f"\n[Step 1/4] ⚡ Executing global FFT audio time alignment (Sampling Rate: {args.sr} Hz)...")
     sync_t0 = time.time()
     ref_info, target_results = sync_all_targets(
-        args.ref, args.targets, sr=args.sr, sample_dur=args.sample_dur, workers=args.workers
+        args.ref, args.targets, sr=args.sr, sample_dur=args.sample_dur, workers=args.workers,
+        full_scan=args.full_scan, refine_subframe=not args.no_subframe_refine
     )
     sync_duration = time.time() - sync_t0
     print(f"  ✓ Time alignment complete! Processed {total_cams} cameras in {sync_duration:.2f}s\n")

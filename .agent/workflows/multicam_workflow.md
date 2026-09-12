@@ -30,7 +30,7 @@ flowchart TD
 ## 📋 Stage-by-Stage Execution Runbook
 
 ### Stage 1: Physical Preprocessing (Sync, Normalization, Master Export, Grid Merge)
-- **Goal**: Global 8kHz FFT time alignment, EBU R128 (-14 LUFS) broadcast two-pass linear audio normalization (`linear=true`), full-length frame-accurate synchronized camera masters export (`CAM*_synced.mp4`, hardware re-encoded by default; `--stream-copy` available), and compact multi-in-one grid composition (`multicam_merged_full.mp4`, max $\le 1920 \times 1080$, min $\ge 640 \times 480$/CAM).
+- **Goal**: Global MFCC acoustic time alignment with subframe refinement (<0.125ms), BBC standard confidence evaluation, EBU R128 (-14 LUFS) broadcast two-pass linear audio normalization (`linear=true`), full-length frame-accurate synchronized camera masters export (`CAM*_synced.mp4`, hardware re-encoded by default; `--stream-copy` available), and compact multi-in-one grid composition (`multicam_merged_full.mp4`, max $\le 1920 \times 1080$, min $\ge 640 \times 480$/CAM).
 - **Execution Command (Standard Zero-Split Flow)**:
   ```bash
   python3 scripts/multicam_pipeline.py \
