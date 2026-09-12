@@ -2,12 +2,11 @@
 name: multicam-video-preprocessing
 description: >
   Universal multi-camera video preprocessing and AI editing suite for 2 to 6 camera setups.
-  Executes global FFT acoustic time alignment, EBU R128 audio loudness normalization (-14 LUFS),
-  30-40 min natural pause chapter segmentation for 1M context AI video editing,
-  synchronized full-length camera master exporting, Multi-in-One grid composition (compact canvas <= 1920x1080, min >= 640x480/CAM),
-  Gemini multimodal EDL generation, FCP7 XML timeline export (Primary), direct video rendering (Secondary),
-  and YouTube subtitles generation (Whisper + Gemini Proofreading).
-  Keywords: multicam, multi-camera, dual-cam, 4-cam, 6-cam, time alignment, audio sync, loudness normalization, chapter splitting, auto split, video preprocessing, multicam pipeline, multi-in-one, token optimization, fcp7 xml, subtitles.
+  Executes MFCC acoustic time alignment with subframe refinement (<0.125ms), EBU R128 two-pass linear loudness normalization (-14 LUFS),
+  synchronized full-length camera master exporting (frame-accurate hardware re-encoding), Multi-in-One compact grid composition (canvas <= 1920x1080, min >= 640x480/CAM),
+  zero-split Gemini 3.7 Flash Agentic Video EDL generation (Vertex AI / GCS Primary, AI Studio Backup), FCP7 XML timeline export (Primary), direct video rendering (Secondary),
+  and 3-stage YouTube subtitles generation (Whisper + Gemini 1M Proofreading).
+  Keywords: multicam, multi-camera, dual-cam, 4-cam, 6-cam, time alignment, audio sync, loudness normalization, video preprocessing, multicam pipeline, multi-in-one, token optimization, fcp7 xml, subtitles, agentic video.
 ---
 
 # Multi-Camera Video Pipeline & AI Editing Suite (Antigravity Native Skill)

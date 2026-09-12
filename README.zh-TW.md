@@ -143,6 +143,29 @@ flowchart TD
    - **極速模式支援**：可選傳入 `--stream-copy` 啟用無損串流複製，適合極速粗剪。
 4. **零切分全集多合一緊湊網格畫面合成 (`multicam_merged_full.mp4`)**：
    - 自動依機位數排版（2機左右並排、3 至 4 機田字格、5 至 6 機六宮格），保證總畫幅 $\le 1920 \times 1080$、每機 $\ge 640 \times 480$，供 Agentic Video 一次性全文理解，免除章節分割的人工切口。
+- **執行指令範例**：
+  ```bash
+  # 標準 4 合 1 完整前處理（對齊、正規化、母帶重編碼、網格合成）：
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 \
+    --targets CAM2.mp4 CAM3.mp4 \
+    --normalize --merge -o output/
+
+  # 快速對齊取樣測試（僅截取前 60 秒音訊對齊，影片長度自動經由 ffprobe 探測保持全片長）：
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --sample-dur 60 --normalize --merge -o output/
+
+  # 強制全集 MFCC 掃描（跳過 120s 快速階梯）：
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --full-scan --normalize --merge -o output/
+
+  # 極速串流複製模式（-c copy，關鍵幀吸附切割）：
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --stream-copy --normalize --merge -o output/
+  ```
 
 ---
 
@@ -185,12 +208,20 @@ flowchart TD
 3. **建立連續主音軌與規則 Marker 注入**：
    - 建立全片連續的 CAM1 主收音軌道；
    - 將 AI 的剪輯規則與決策理由轉化為時間線上的紅藍 Marker 標記，方便剪輯師檢視。
+- **執行指令範例**：
+  ```bash
+  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+  ```
 
 ---
 
 ### 步驟 3B（次路徑）：一步到位成片直接渲染 (`edl_to_video.py`)
 1. **一步到位硬體加速成片渲染**：
    - 調用 Apple Silicon 硬體編碼器（`h264_videotoolbox`），直接讀取全集同步母帶與 `edl_full.csv` 渲染出完整成片 `final_cut_full.mp4`，無需產出中間章節分段或二次拼接。
+- **執行指令範例**：
+  ```bash
+  python3 scripts/edl_to_video.py -i output/edl_full.csv -o output/final_cut_full.mp4
+  ```
 
 ---
 

@@ -144,6 +144,29 @@ Simply prompt the Antigravity Agent in plain conversational language:
    - **Fast Mode Support**: Optional `--stream-copy` flag available for fast keyframe-snapped lossy cutting.
 4. **Zero-Split Full-Length Grid Composition (`multicam_merged_full.mp4`)**:
    - Automatically merges 2 to 6 camera angles into a single multi-view canvas ($\le 1920 \times 1080$, each CAM $\ge 640 \times 480$), ready for direct full-length AI inspection without slicing.
+- **CLI Usage Examples**:
+  ```bash
+  # Standard 4-in-1 pipeline execution (Sync, Normalize, Re-encode Masters, Grid Merge):
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 \
+    --targets CAM2.mp4 CAM3.mp4 \
+    --normalize --merge -o output/
+
+  # Fast alignment test (first 60s sample, container duration probed via ffprobe):
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --sample-dur 60 --normalize --merge -o output/
+
+  # Force full-length MFCC scan (bypassing 120s fast-ladder):
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --full-scan --normalize --merge -o output/
+
+  # Fast lossy stream-copy mode (-c copy, keyframe snapped):
+  python3 scripts/multicam_pipeline.py \
+    --ref CAM1.mp4 --targets CAM2.mp4 \
+    --stream-copy --normalize --merge -o output/
+  ```
 
 ---
 
@@ -186,6 +209,10 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 3. **Continuous Master Audio & Decision Markers**:
    - Creates a continuous master audio track.
    - Converts AI cut rules and rationale into red/blue color timeline markers for review.
+- **CLI Usage Example**:
+  ```bash
+  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+  ```
 
 ---
 
@@ -193,6 +220,10 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 1. **Single-Pass Hardware-Accelerated Rendering**:
    - Renders directly from synchronized camera masters into full episode `final_cut_full.mp4` in a single pass using Apple Silicon `h264_videotoolbox`.
    - Eliminates intermediate chapter files and multi-step concatenation.
+- **CLI Usage Example**:
+  ```bash
+  python3 scripts/edl_to_video.py -i output/edl_full.csv -o output/final_cut_full.mp4
+  ```
 
 ---
 
