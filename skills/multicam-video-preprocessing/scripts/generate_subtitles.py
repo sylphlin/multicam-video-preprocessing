@@ -23,6 +23,13 @@ Usage Examples:
   # OpenAI / Codex Cloud Endpoint (GPT-5.6 Luna)
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
     --base-url https://api.openai.com/v1 --model gpt-5.6-luna --api-key $OPENAI_API_KEY
+
+Language Support & Fallbacks:
+  Dedicated subtitle templates are provided for: zh-TW, zh-CN, ja, ko, en.
+  Any unsupported language code falls back to 'en' conventions (Latin script typography & line limits).
+  Known limitation: Falling back to 'en' is suitable for Latin-script languages (fr, de, es, pt, etc.),
+  but serves as an approximation for non-Latin scripts such as Thai (no word boundary spacing),
+  Arabic/Hebrew (right-to-left), and Devanagari.
 """
 
 import argparse
@@ -254,10 +261,25 @@ def build_srt_from_segments(segments):
     return "\n".join(blocks)
 
 
+DEDICATED_LOCALES = ("zh-TW", "zh-CN", "ja", "ko", "en")
+FALLBACK_LOCALE = "en"
+_WARNED_LANGUAGE_FALLBACK = set()
+
+
 def normalize_language_tag(lang_str):
     """Normalize language code to standardized locale code (e.g. zh-TW, en, ja, zh-CN, ko)."""
     if not lang_str:
-        return "zh-TW"
+        if "" not in _WARNED_LANGUAGE_FALLBACK:
+            _WARNED_LANGUAGE_FALLBACK.add("")
+            sys.stderr.write(
+                "[Warning] Language tag is empty or unspecified. Falling back to 'en'\n"
+                "conventions (Latin script typography and line limits). Subtitle\n"
+                "segmentation and punctuation may not match the norms of this language.\n"
+                "Supply --language explicitly to override.\n"
+            )
+            sys.stderr.flush()
+        return FALLBACK_LOCALE
+
     l = str(lang_str).lower().replace("_", "-").strip()
     if l in ("zh", "zh-tw", "zh-hant", "zh-hk", "zh-mo", "cmn-hant", "cmn-tw"):
         return "zh-TW"
@@ -269,7 +291,17 @@ def normalize_language_tag(lang_str):
         return "ja"
     if l.startswith("ko"):
         return "ko"
-    return "zh-TW"
+
+    if l not in _WARNED_LANGUAGE_FALLBACK:
+        _WARNED_LANGUAGE_FALLBACK.add(l)
+        sys.stderr.write(
+            f"[Warning] Language '{lang_str}' has no dedicated subtitle template. Falling back to 'en'\n"
+            f"conventions (Latin script typography and line limits). Subtitle\n"
+            f"segmentation and punctuation may not match the norms of this language.\n"
+            f"Supply --language explicitly to override.\n"
+        )
+        sys.stderr.flush()
+    return FALLBACK_LOCALE
 
 
 def load_proofread_template(language="zh-TW"):
@@ -351,18 +383,37 @@ def extract_whisper_prompt(glossary_text, max_chars=145, language="zh-TW"):
         return None
 
     norm_lang = normalize_language_tag(language)
-    if norm_lang == "en":
-        prefix = "The following is a video transcription containing terms: "
-        sep = ", "
-        suffix = "."
-    elif norm_lang == "ja":
-        prefix = "以下は日本語の対談字幕です。専門用語："
-        sep = "、"
-        suffix = "。"
-    else:
-        prefix = "以下為繁體中文對談字幕，專有名詞："
-        sep = "、"
-        suffix = "。"
+    locale_config = {
+        "zh-TW": {
+            "prefix": "以下為繁體中文對談字幕，專有名詞：",
+            "sep": "、",
+            "suffix": "。",
+        },
+        "zh-CN": {
+            "prefix": "以下为简体中文对谈字幕，专有名词：",
+            "sep": "、",
+            "suffix": "。",
+        },
+        "ja": {
+            "prefix": "以下は日本語の対談字幕です。専門用語：",
+            "sep": "、",
+            "suffix": "。",
+        },
+        "ko": {
+            "prefix": "다음은 한국어 대화 자막입니다. 전문 용어: ",
+            "sep": ", ",
+            "suffix": ".",
+        },
+        "en": {
+            "prefix": "The following is a video transcription containing terms: ",
+            "sep": ", ",
+            "suffix": ".",
+        },
+    }
+    cfg = locale_config.get(norm_lang, locale_config[FALLBACK_LOCALE])
+    prefix = cfg["prefix"]
+    sep = cfg["sep"]
+    suffix = cfg["suffix"]
 
     assembled = prefix
     for item in filtered:
