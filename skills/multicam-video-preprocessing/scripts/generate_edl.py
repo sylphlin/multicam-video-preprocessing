@@ -32,10 +32,12 @@ try:
     from modules.llm_client import call_llm, resolve_api_key, get_ssl_context
     from modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, ensure_gcs_bucket
     from modules.progress import LiveTicker
+    from modules.edl_validator import validate_edl_rows, format_validation_report
 except ImportError:
     from scripts.modules.llm_client import call_llm, resolve_api_key, get_ssl_context
     from scripts.modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, ensure_gcs_bucket
     from scripts.modules.progress import LiveTicker
+    from scripts.modules.edl_validator import validate_edl_rows, format_validation_report
 
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
@@ -415,6 +417,12 @@ def main():
                         help="Force re-upload of video file even if active cache exists")
     parser.add_argument("--keep-remote", action="store_true",
                         help="Keep uploaded video file on Gemini Files API")
+    parser.add_argument("--strict-edl", action="store_true",
+                        help="EDL 驗證出現 ERROR 時中斷執行（預設僅警告並繼續）")
+    parser.add_argument("--edl-max-gap-sec", type=float, default=0.05,
+                        help="EDL 鏡頭間隔容許門檻秒數 (預設: 0.05)")
+    parser.add_argument("--edl-known-cameras", default=None,
+                        help=r"EDL 預期已知相機列表，逗號分隔如 CAM1,CAM2 (預設: 自動推斷 ^CAM\d+$)")
 
     args = parser.parse_args()
 
@@ -537,6 +545,12 @@ def main():
             print(f"  • Raw model output saved to: {raw_debug_path}")
             sys.exit(1)
 
+        # Validate EDL semantics
+        known_cams = [c.strip() for c in args.edl_known_cameras.split(",") if c.strip()] if args.edl_known_cameras else None
+        validation_result = validate_edl_rows(csv_rows, known_cameras=known_cams, max_gap_sec=args.edl_max_gap_sec)
+        val_report_str = format_validation_report(validation_result)
+        print(f"\n{val_report_str}")
+
         # Write CSV
         with open(edl_csv_path, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
@@ -568,10 +582,18 @@ def main():
                 token_section += f"- **Thought Tokens**: `{usage_info.get('total_thought_tokens', 0):,}`\n"
             token_section += f"- **Total Tokens**: `{usage_info.get('total_tokens', 0):,}`\n"
 
-        final_report = report_md + token_section
+        validation_section = (
+            f"\n\n---\n## 🔍 EDL 驗證結果\n```\n{val_report_str}\n```\n"
+        )
+
+        final_report = report_md + token_section + validation_section
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(final_report)
         print(f"  ✓ Analysis Report  : {report_path}")
+
+        if validation_result.has_error and args.strict_edl:
+            print(f"\n[Error] EDL validation failed with errors under --strict-edl mode.", file=sys.stderr)
+            sys.exit(1)
 
     finally:
         if not args.keep_remote and file_name_id:

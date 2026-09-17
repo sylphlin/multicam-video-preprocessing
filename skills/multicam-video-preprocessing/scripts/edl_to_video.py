@@ -37,42 +37,20 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-def parse_time_to_seconds(t_val):
-    """
-    Parse time strings (MM:SS.mmm, HH:MM:SS.mmm, or float seconds) to float seconds.
-    Examples:
-      - 00:38.500 -> 38.5
-      - 02:21.000 -> 141.0
-      - 01:04:27.371 -> 3867.371
-    """
-    if t_val is None:
-        return 0.0
-    if isinstance(t_val, (int, float)):
-        return float(t_val)
-    t_str = str(t_val).strip().replace('"', '').replace("'", "")
-    if not t_str:
-        return 0.0
-    try:
-        return float(t_str)
-    except ValueError:
-        pass
-
-    parts = t_str.split(":")
-    try:
-        if len(parts) == 3:
-            h = float(parts[0])
-            m = float(parts[1])
-            s = float(parts[2])
-            return h * 3600 + m * 60 + s
-        elif len(parts) == 2:
-            m = float(parts[0])
-            s = float(parts[1])
-            return m * 60 + s
-        elif len(parts) == 1:
-            return float(parts[0])
-    except ValueError:
-        raise ValueError(f"Unable to parse time format: '{t_val}'")
-    raise ValueError(f"Unsupported time string: '{t_val}'")
+# Support internal modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from modules.edl_validator import (
+        parse_edl_time_to_seconds,
+        validate_edl_file,
+        format_validation_report,
+    )
+except ImportError:
+    from scripts.modules.edl_validator import (
+        parse_edl_time_to_seconds,
+        validate_edl_file,
+        format_validation_report,
+    )
 
 
 def format_seconds(sec):
@@ -185,8 +163,8 @@ def load_edl_csv(csv_path):
             rule_raw = row[rule_col] if rule_col != -1 and rule_col < len(row) else ""
             reason_raw = row[reason_col] if reason_col != -1 and reason_col < len(row) else ""
 
-            start_s = parse_time_to_seconds(start_raw)
-            end_s = parse_time_to_seconds(end_raw) if end_raw else None
+            start_s = parse_edl_time_to_seconds(start_raw)
+            end_s = parse_edl_time_to_seconds(end_raw) if end_raw else None
 
             segments.append({
                 "index": idx,
@@ -367,7 +345,8 @@ def concatenate_segments(segment_paths, output_path, concat_list_path=None):
 def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=None,
                         re_encode=True, encoder="h264_videotoolbox",
                         video_bitrate="8000k", audio_bitrate="192k",
-                        workers=4, keep_temp=False, temp_dir=None):
+                        workers=4, keep_temp=False, temp_dir=None,
+                        strict_edl=False):
     """
     Main pipeline to render an EDL CSV file into a final cut video.
     Default: Frame-accurate hardware-accelerated re-encoding with h264_videotoolbox.
@@ -393,6 +372,13 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
     # Auto-discover cameras from media_dir if not specified
     if not cam_mapping and media_dir:
         cam_mapping = auto_discover_camera_files(media_dir)
+
+    known_cams = list(cam_mapping.keys()) if cam_mapping else None
+    val_result = validate_edl_file(edl_path, known_cameras=known_cams)
+    print(f"\n{format_validation_report(val_result)}")
+    if val_result.has_error and strict_edl:
+        print(f"\n[Error] EDL validation failed with errors for {edl_basename} under --strict-edl mode.", file=sys.stderr)
+        sys.exit(1)
 
     out_dir = os.path.dirname(os.path.abspath(output_path))
     if out_dir:
@@ -530,6 +516,8 @@ def main():
     parser.add_argument("--workers", type=int, default=4, help="Parallel worker threads for segment extraction (default: 4)")
     parser.add_argument("--keep-temp", action="store_true", help="Keep temporary segment files for inspection")
     parser.add_argument("--temp-dir", default=None, help="Custom temporary directory for segments")
+    parser.add_argument("--strict-edl", action="store_true",
+                        help="EDL 驗證出現 ERROR 時中斷執行（預設僅警告並繼續）")
 
     args = parser.parse_args()
 
@@ -545,7 +533,8 @@ def main():
             audio_bitrate=args.audio_bitrate,
             workers=args.workers,
             keep_temp=args.keep_temp,
-            temp_dir=args.temp_dir
+            temp_dir=args.temp_dir,
+            strict_edl=args.strict_edl
         )
     except Exception as e:
         print(f"\n[Error] EDL rendering failed: {e}", file=sys.stderr)
