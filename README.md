@@ -47,17 +47,15 @@ chmod +x setup.sh
 ### 📁 Directory Structure
 ```text
 multicam-video-preprocessing/
-├── GEMINI.md                          # Antigravity always-on root workspace rules
+├── AGENTS.md                          # Workspace & repository development rules
+├── plugin.json                        # Agent Plugins 1.0 manifest
 ├── setup.sh                           # 100% native gcloud setup script (GCS bucket, Lifecycle, IAM & .env)
 ├── .env.example                       # Vertex AI (ADC) & GCS configuration template
-├── .agent/
-│   ├── rules/
-│   │   └── multicam_rules.md          # Always-on execution policies & constraints
-│   └── workflows/
-│       └── multicam_workflow.md       # Official 4-stage gated execution runbook
+├── rules/
+│   └── AGENTS.md                      # Plugin operational invariants for AI clients
 ├── skills/
 │   └── multicam-video-preprocessing/
-│       └── SKILL.md                   # Antigravity skill capability manifest
+│       └── SKILL.md                   # Antigravity skill capability manifest & 4-stage gated runbook
 ├── assets/                            # Prompt templates
 │   ├── edl_interview_template.md      # Gemini multimodal interview rough-cut rules
 │   └── subtitle_proofread_template.*.md # Multi-locale YouTube subtitle proofreading rules

@@ -59,7 +59,82 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 
 ---
 
-## 🚀 Execution Instructions
+## 🚦 4-Stage Gated Execution Runbook
 
-For step-by-step execution, CLI commands, and stage exit gate assertions, refer to the official workflow runbook:
-👉 **[multicam_workflow.md](file:///.agent/workflows/multicam_workflow.md)**
+When executing a multi-camera task, follow this sequential 4-stage gated workflow. Resolve `${SKILL_DIR}` to the directory containing this `SKILL.md` (or the repository root).
+
+```mermaid
+flowchart TD
+    S1["Stage 1: Multicam Preprocessing<br/>(scripts/multicam_pipeline.py --normalize --merge)"] --> G1{"Gate 1 Verification<br/>• multicam_sync.json exists<br/>• multicam_merged_full.mp4 exists<br/>• *_synced.mp4 masters exist"}
+    G1 -->|"Passed"| S2["Stage 2: Agentic Video Rough-Cut<br/>(scripts/generate_edl.py)"]
+    S2 --> G2{"Gate 2 Verification<br/>• edl_full.csv exists and >0 bytes<br/>• EDL semantic validation (0 ERROR)<br/>• Zero countdown residue"}
+    G2 -->|"Passed (Primary 90%)"| S3A["Stage 3A: Export Timeline<br/>(scripts/export_fcp7_xml.py)"]
+    G2 -->|"Passed (Secondary 10%)"| S3B["Stage 3B: Direct Rendering<br/>(scripts/edl_to_video.py)"]
+    S3A --> G3A{"Gate 3A Verification<br/>final_cut_full.xml exists"}
+    S3B --> G3B{"Gate 3B Verification<br/>final_cut_full.mp4 exists"}
+    G3B --> S4["Stage 4: YouTube Subtitles<br/>(scripts/generate_subtitles.py)"]
+    S4 --> G4{"Gate 4 Verification<br/>final_cut_full.srt / .vtt exist"}
+```
+
+### Stage 1: Physical Preprocessing (Sync, Normalization, Master Export, Grid Merge)
+- **User Status Update**: `"🎬 正在進行多機位時間對齊與音量標準化..."` (localized to user's language)
+- **Execution Command**:
+  ```bash
+  python3 "${SKILL_DIR}/scripts/multicam_pipeline.py" \
+    --ref <CAM1.mp4> --targets <CAM2.mp4...> \
+    --normalize --merge -o <OUTPUT_DIR>
+  ```
+- **Exit Gate 1 Verification (Mandatory before Stage 2)**:
+  - `<OUTPUT_DIR>/multicam_sync.json` exists with valid offset data.
+  - `<OUTPUT_DIR>/<CAM>_synced.mp4` full-length synchronized masters exist for all cameras.
+  - `<OUTPUT_DIR>/multicam_merged_full.mp4` grid video exists and is non-empty.
+
+### Stage 2: Gemini AI Multimodal Rough-Cut (Agentic Video EDL Generation)
+- **User Status Update**: `"🤖 正在進行 Agentic Video AI 鏡頭剪輯分析..."` (localized to user's language)
+- **Execution Command**:
+  ```bash
+  python3 "${SKILL_DIR}/scripts/generate_edl.py" \
+    -v <OUTPUT_DIR>/multicam_merged_full.mp4 \
+    --strict-edl --lang <zh-TW|en>
+  ```
+- **Exit Gate 2 Verification (Mandatory before Stage 3)**:
+  - `<OUTPUT_DIR>/edl_full.csv` exists and size $> 0\text{ bytes}$.
+  - Deterministic EDL semantic validation passed with zero `ERROR` issues (`E_NO_ROWS`, `E_PARSE_TIME`, `E_NEGATIVE_DURATION`, `E_NON_MONOTONIC`, `E_OVERLAP`, `E_EMPTY_CAMERA`).
+  - `<OUTPUT_DIR>/edl_full_report.md` exists with cutting rationale and validation report table.
+
+### Stage 3A: Export NLE Timeline (⭐ Primary Path / 90% Use Case)
+- **User Status Update**: `"📁 正在匯出剪輯時間線 (XML)..."` (localized to user's language)
+- **Execution Command**:
+  ```bash
+  python3 "${SKILL_DIR}/scripts/export_fcp7_xml.py" \
+    -d <OUTPUT_DIR> -o <OUTPUT_DIR>/final_cut_full.xml \
+    --strict-edl --lang <zh-TW|en>
+  ```
+- **Exit Gate 3A Verification**:
+  - `<OUTPUT_DIR>/final_cut_full.xml` exists and size $> 0\text{ bytes}$.
+
+### Stage 3B: Direct Video Rendering (🎬 Secondary Fast Preview Path / 10% Use Case)
+- **User Status Update**: `"🎬 正在渲染影片成片..."` (localized to user's language)
+- **Execution Command**:
+  ```bash
+  python3 "${SKILL_DIR}/scripts/edl_to_video.py" \
+    --edl <OUTPUT_DIR>/edl_full.csv --media-dir <OUTPUT_DIR> \
+    -o <OUTPUT_DIR>/final_cut_full.mp4 --strict-edl --lang <zh-TW|en>
+  ```
+- **Exit Gate 3B Verification**:
+  - `<OUTPUT_DIR>/final_cut_full.mp4` exists with duration $> 0$.
+
+### Stage 4: YouTube Subtitles Generation (📝 On-Demand / Subtitle Requests)
+- **User Status Update**: `"📝 正在製作字幕..."` (localized to user's language)
+- **Execution Command**:
+  ```bash
+  # Standard Execution (Vertex AI 1M Glossary + Local Whisper + Vertex AI Multimodal Proofreading):
+  python3 "${SKILL_DIR}/scripts/generate_subtitles.py" -i <OUTPUT_DIR>/final_cut_full.mp4
+
+  # Optional outline or recording script injection:
+  python3 "${SKILL_DIR}/scripts/generate_subtitles.py" -i <OUTPUT_DIR>/final_cut_full.mp4 \
+    --outline "<OUTLINE_TEXT_OR_FILE>" --script "<SCRIPT_TEXT_OR_FILE>"
+  ```
+- **Exit Gate 4 Verification**:
+  - `<OUTPUT_DIR>/final_cut_full.srt` and `<OUTPUT_DIR>/final_cut_full.vtt` exist and are non-empty.
+  - `<OUTPUT_DIR>/final_cut_full_glossary.md` and `<OUTPUT_DIR>/final_cut_full_subtitle_report.md` exist.

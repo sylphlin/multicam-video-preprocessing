@@ -47,17 +47,15 @@ chmod +x setup.sh
 ### 📁 套件檔案結構
 ```text
 multicam-video-preprocessing/
-├── GEMINI.md                          # Antigravity 根目錄常駐工作區規則
-├── setup.sh                          # 100% 原生 gcloud 一鍵建置腳本 (GCS 儲存桶、Lifecycle、IAM 與 .env)
+├── AGENTS.md                          # 工作區常駐與專案開發工程規範 (Workspace & Development Rules)
+├── plugin.json                        # Agent Plugins 1.0 標準套件定義清單
+├── setup.sh                           # 100% 原生 gcloud 一鍵建置腳本 (GCS 儲存桶、Lifecycle、IAM 與 .env)
 ├── .env.example                       # Vertex AI (ADC) 與 GCS 環境變數範本
-├── .agent/
-│   ├── rules/
-│   │   └── multicam_rules.md          # 常駐紀律規則 (Always-On Rules)
-│   └── workflows/
-│       └── multicam_workflow.md       # 官方 4 階段執行工作流 (Stage-Gated Runbook)
+├── rules/
+│   └── AGENTS.md                      # Plugin 全域常駐紅線 (Operational Invariants for AI Clients)
 ├── skills/
 │   └── multicam-video-preprocessing/
-│       └── SKILL.md                   # Antigravity 技能能力定義清單
+│       └── SKILL.md                   # Antigravity 技能定義與 4 階段 Gated Runbook
 ├── assets/                            # 提示詞樣板資產 (Prompt Assets)
 │   ├── edl_interview_template.md      # Gemini 訪談粗剪提示詞樣板
 │   └── subtitle_proofread_template.*.md # 多國語言 YouTube 字幕語意校對樣板

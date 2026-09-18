@@ -25,16 +25,14 @@ cd ~/.gemini/config/skills/multicam-video-preprocessing
 ### 📁 디렉토리 구조
 ```text
 multicam-video-preprocessing/
+├── AGENTS.md                          # 워크스페이스 상주 및 프로젝트 개발 엔지니어링 규칙
+├── plugin.json                        # Agent Plugins 1.0 매니페스트
 ├── setup.sh                           # 원클릭 GCP (ADC/Vertex AI/GCS) 환경 자동 구성 스크립트
-├── GEMINI.md                          # Antigravity 루트 워크스페이스 상주 규칙
-├── .agent/
-│   ├── rules/
-│   │   └── multicam_rules.md          # 상주 정책 및 제약 조건
-│   └── workflows/
-│       └── multicam_workflow.md       # 공식 4단계 실행 워크플로우 (Stage-Gated Runbook)
+├── rules/
+│   └── AGENTS.md                      # 플러그인 상주 불변 규칙 (Operational Invariants for AI Clients)
 ├── skills/
 │   └── multicam-video-preprocessing/
-│       └── SKILL.md                   # Antigravity 스킬 기능 정의서
+│       └── SKILL.md                   # Antigravity 스킬 기능 정의서 및 4단계 실행 Runbook
 ├── assets/                            # 프롬프트 템플릿 자산
 │   ├── edl_interview_template.md      # Gemini 가편집 프롬프트 템플릿
 │   └── subtitle_proofread_template.md # YouTube 자막 교정 템플릿

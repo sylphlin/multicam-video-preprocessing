@@ -27,16 +27,14 @@ cd ~/.gemini/config/skills/multicam-video-preprocessing
 ### 📁 套件文件结构
 ```text
 multicam-video-preprocessing/
+├── AGENTS.md                          # 工作区常驻与专案开发工程规范 (Workspace & Development Rules)
+├── plugin.json                        # Agent Plugins 1.0 标准套件定义清单
 ├── setup.sh                           # 一键本地依赖检查与 GCP (ADC/Vertex AI/GCS) 环境部署脚本
-├── GEMINI.md                          # Antigravity 根目录常驻工作区规则
-├── .agent/
-│   ├── rules/
-│   │   └── multicam_rules.md          # 常驻纪律规则 (Always-On Rules)
-│   └── workflows/
-│       └── multicam_workflow.md       # 官方 4 阶段执行工作流 (Stage-Gated Runbook)
+├── rules/
+│   └── AGENTS.md                      # Plugin 全局常驻红线 (Operational Invariants for AI Clients)
 ├── skills/
 │   └── multicam-video-preprocessing/
-│       └── SKILL.md                   # Antigravity 技能能力定义清单
+│       └── SKILL.md                   # Antigravity 技能定义与 4 阶段 Gated Runbook
 ├── assets/                            # 提示词模板资产 (Prompt Assets)
 │   ├── edl_interview_template.md      # Gemini 访谈粗剪提示词模板
 │   └── subtitle_proofread_template.md # YouTube 字幕语义校对模板
