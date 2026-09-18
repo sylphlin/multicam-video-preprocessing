@@ -29,9 +29,9 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 | Step | Script | Core Module (`scripts/modules/`) | Function |
 | :--- | :--- | :--- | :--- |
 | **Step 1** | `scripts/multicam_pipeline.py` | `audio_sync.py`, `audio_normalizer.py`, `video_composer.py` | MFCC Acoustic Sync + Subframe Refinement (0.125ms), EBU R128 (-14 LUFS), Synced Masters, Multi-in-One Full Grid (`multicam_merged_full.mp4`) |
-| **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `gcp_client.py`, `progress.py`, `assets/edl_interview_template.md` | Gemini 3.8 Flash Agentic Video Understanding (Vertex AI / GCS Primary, AI Studio Backup) -> `edl_full.csv` + Report |
-| **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py` | Full-length EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere (NTSC float fps & drop-frame support) |
-| **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py` | Hardware-accelerated clip cutting directly from synced masters -> `final_cut_full.mp4` |
+| **Step 2** | `scripts/generate_edl.py` | `llm_client.py`, `gcp_client.py`, `progress.py`, `edl_validator.py`, `assets/edl_interview_template.md` | Gemini 3.8 Flash Agentic Video Understanding (Vertex AI / GCS Primary, AI Studio Backup) + EDL Validation -> `edl_full.csv` + Report |
+| **Step 3A** | `scripts/export_fcp7_xml.py` | `reporter.py`, `time_utils.py`, `edl_validator.py` | Full-length EDL CSV -> FCP7 XML (`final_cut_full.xml`) for DaVinci / Premiere (EDL validation, NTSC float fps & drop-frame support) |
+| **Step 3B** | `scripts/edl_to_video.py` | `video_composer.py`, `edl_validator.py` | Hardware-accelerated clip cutting directly from synced masters -> `final_cut_full.mp4` (with EDL validation) |
 | **Step 4** | `scripts/generate_subtitles.py` | `llm_client.py`, `gcp_client.py`, `progress.py`, `assets/subtitle_proofread_template.*.md` | Whisper Word Timestamps + Chunk-Scoped Acoustic Reprojection + Gemini 1M Proofreading (Vertex AI / GCS / Studio) -> `.srt` / `.vtt` |
 
 ---
@@ -52,6 +52,8 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
    - Stage 1 extracts 1M context global domain glossary. Stage 2 extracts Whisper physical word timestamps cached to `_words.json` for instant re-runs. Stage 3 performs chunk-scoped acoustic reprojection with automatic exponential backoff & jitter retry handling HTTP 429 and transient rate limits, followed by rhythm sanitization (anti-flicker gap bridging $< 0.6\text{s}$, breathing buffer $+0.4\text{s}$, monotonic forward continuity, 0 micro-flickers/overlaps).
 7. **Dual-Backend Cloud Architecture (Vertex AI + GCS Primary, AI Studio Backup)**:
    - Primary operations run on **Google Cloud Vertex AI** authenticated seamlessly via Application Default Credentials (ADC) without managing API key secrets. Media assets are uploaded to **Google Cloud Storage (GCS)** with SHA-256 hash and file size caching to prevent redundant re-uploads. Passing `--fallback-studio` automatically fails over to Google AI Studio (`GEMINI_API_KEY`) if cloud IAM or storage permissions are unavailable.
+8. **Deterministic EDL Semantic Validation & `--strict-edl` Safeguard**:
+   - Pre-flight semantic validation covering 8 structural dimensions across 3 execution points (before disk write in `generate_edl.py`, and on EDL loading in `export_fcp7_xml.py` and `edl_to_video.py`). Evaluates 6 critical ERRORs (`E_NO_ROWS`, `E_PARSE_TIME`, `E_NEGATIVE_DURATION`, `E_NON_MONOTONIC`, `E_OVERLAP`, `E_EMPTY_CAMERA`) and 2 WARNs (`W_UNKNOWN_CAMERA`, `W_GAP`). Passing `--strict-edl` halts execution with exit code 1 on ERROR (default warns and continues; `generate_edl.py` always writes bad data to disk before exit for post-mortem inspection). Supports report localization via `--lang` (built-in `en` and `zh-TW`, with silent fallback to `en`), customizable gap threshold via `--edl-max-gap-sec` (default: `0.05`), and camera whitelist via `--edl-known-cameras` (defaults to `^CAM\d+$` regex in generator, auto-inferred from media directory in exporter/renderer).
 
 ---
 

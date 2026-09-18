@@ -190,13 +190,40 @@ flowchart TD
    - 採用目標導向稀疏時域取樣，將輸入 Token 消耗巨幅降低 **99.7%**（由約 1,000,000 Token 降至約 3,000 Token），徹底免除章節交界處話語被截斷的風險。
 4. **產出標準化結果**：
    - 輸出單一標準 CSV 決策表（`edl_full.csv`，亦相容 `edl.csv`）與 Markdown 裁切分析報告（`edl_full_report.md`）。
-5. **雙後端雲端架構 (Vertex AI + GCS 主要後端，AI Studio 備用)**：
+5. **EDL 語意驗證器與 `--strict-edl` 防呆中斷**：
+   - **8 項語意結構檢查 (6 ERROR + 2 WARN)**：
+     - `E_NO_ROWS` (ERROR)：EDL 沒有任何鏡頭資料列。
+     - `E_PARSE_TIME` (ERROR)：時間碼格式無法解析（start 或 end 欄位異常）。
+     - `E_NEGATIVE_DURATION` (ERROR)：鏡頭時長為非正值（`end <= start`）。
+     - `E_NON_MONOTONIC` (ERROR)：開始時間倒退（本列 start 小於前列 start）。
+     - `E_OVERLAP` (ERROR)：相鄰鏡頭時間重疊（本列 start 小於前列 end）。
+     - `E_EMPTY_CAMERA` (ERROR)：相機欄位為空。
+     - `W_UNKNOWN_CAMERA` (WARN)：相機代號不在白名單（預設使用 `^CAM\d+$` 正則比對或指定白名單）。
+     - `W_GAP` (WARN)：相鄰鏡頭間隔超過容許門檻（`--edl-max-gap-sec`，預設 `0.05` 秒），會在剪輯時間線上留下黑畫面。
+   - **三個嚴謹執行點**：
+     1. `generate_edl.py`：CSV 落盤前驗證。**無論驗證成功與否，一定會先將 CSV 與分析報告完整寫入磁碟才決定是否退出**，確保異常資料可留在磁碟供除錯檢視。驗證報告會附加於 `edl_full_report.md`，其 H2 區段標題依 `--lang` 在地化（`en` 為 `🔍 EDL Validation Result`，`zh-TW` 為 `🔍 EDL 驗證結果`）。
+     2. `export_fcp7_xml.py`：讀取 EDL 後驗證，自動從素材目錄推斷合法相機白名單。
+     3. `edl_to_video.py`：渲染前驗證，自動從素材目錄或相機對應表推斷相機白名單。
+   - **防呆門檻 (`--strict-edl`)**：預設僅發出警告並繼續執行；傳入 `--strict-edl` 則在偵測到任何 `ERROR` 時立即以 exit code 1 中斷，防止瑕疵 EDL 流入下游。
+   - **報告多語言支援 (`--lang`)**：內建支援 `en`（預設）與 `zh-TW`。語言代碼具備寬容性，`zh-Hant`、`zh_TW`、`ZH-TW` 等變體自動歸一為 `zh-TW`；未支援語言靜默回退至 `en`，不拋錯。
+   - **自訂參數**：`--edl-max-gap-sec`（預設 `0.05` 秒）；`--edl-known-cameras`（逗號分隔如 `CAM1,CAM2`，未指定時預設 `^CAM\d+$`）。
+6. **雙後端雲端架構 (Vertex AI + GCS 主要後端，AI Studio 備用)**：
    - **主要後端**：Google Cloud Vertex AI 搭配 Application Default Credentials（ADC，免管 API Key）。網格影片上傳至 Google Cloud Storage（GCS），並內建 SHA-256 與檔案大小快取，跨次執行免重複上傳。
    - **備用容錯**：加上 `--fallback-studio` 參數，若 Vertex AI / GCS 出現權限或配額錯誤時，自動無縫容錯切換至 Google AI Studio（`GEMINI_API_KEY`），確保流程不中斷。
    - **執行指令範例**：
      ```bash
      # 主要 Vertex AI + GCS 執行（預設，讀取 .env / ADC）：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # 啟用嚴格 EDL 驗證模式（出現 ERROR 即中斷）：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
+
+     # 指定繁體中文驗證報告：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --lang zh-TW
+
+     # 自訂間隔容許門檻與指定相機白名單：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
+       --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
 
      # 啟用 AI Studio 自動容錯降級：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
@@ -223,10 +250,13 @@ flowchart TD
 - **執行指令範例**：
   ```bash
   # 標準 30 fps XML 匯出：
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml
+
+  # 啟用嚴格 EDL 驗證與中文報告（自動從素材目錄推斷相機白名單）：
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --strict-edl --lang zh-TW
 
   # 廣播級 29.97 fps NTSC Drop-Frame 時間線匯出：
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ---
@@ -236,7 +266,11 @@ flowchart TD
    - 調用 Apple Silicon 硬體編碼器（`h264_videotoolbox`），直接讀取全集同步母帶與 `edl_full.csv` 渲染出完整成片 `final_cut_full.mp4`，無需產出中間章節分段或二次拼接。
 - **執行指令範例**：
   ```bash
-  python3 scripts/edl_to_video.py -i output/edl_full.csv -o output/final_cut_full.mp4
+  # 一步到位直接渲染成片：
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4
+
+  # 啟用嚴格 EDL 驗證與中文報告：
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4 --strict-edl --lang zh-TW
   ```
 
 ---

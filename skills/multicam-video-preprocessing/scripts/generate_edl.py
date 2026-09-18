@@ -32,12 +32,20 @@ try:
     from modules.llm_client import call_llm, resolve_api_key, get_ssl_context
     from modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, ensure_gcs_bucket
     from modules.progress import LiveTicker
-    from modules.edl_validator import validate_edl_rows, format_validation_report
+    from modules.edl_validator import (
+        validate_edl_rows,
+        format_validation_report,
+        get_report_section_heading,
+    )
 except ImportError:
     from scripts.modules.llm_client import call_llm, resolve_api_key, get_ssl_context
     from scripts.modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, ensure_gcs_bucket
     from scripts.modules.progress import LiveTicker
-    from scripts.modules.edl_validator import validate_edl_rows, format_validation_report
+    from scripts.modules.edl_validator import (
+        validate_edl_rows,
+        format_validation_report,
+        get_report_section_heading,
+    )
 
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
@@ -585,7 +593,8 @@ def main():
             token_section += f"- **Total Tokens**: `{usage_info.get('total_tokens', 0):,}`\n"
 
         validation_section = (
-            f"\n\n---\n## 🔍 EDL 驗證結果\n```\n{val_report_str}\n```\n"
+            f"\n\n---\n## {get_report_section_heading(args.lang)}"
+            f"\n```\n{val_report_str}\n```\n"
         )
 
         final_report = report_md + token_section + validation_section

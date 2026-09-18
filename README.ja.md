@@ -129,13 +129,40 @@ multicam-video-preprocessing/
    - 目的指向の動的スパースサンプリングにより、入力トークン消費を **99.7% 削減**（約 100 万トークンから約 3,000 トークンへ激減）。チャプター境界による発言分断を完全に解消。
 4. **標準出力**：
    - 単一の標準 CSV 決定リスト（`edl_full.csv`）および Markdown 編集レポート（`edl_full_report.md`）を出力。
-5. **デュアルバックエンドクラウド構成 (Vertex AI + GCS プライマリ、AI Studio バックアップ)**：
+5. **EDL セマンティックバリデータ＆ `--strict-edl` 安全停止**：
+   - **8 項目の整合性検査 (6 ERROR + 2 WARN)**：
+     - `E_NO_ROWS` (ERROR)：EDL にカットデータ行が存在しない。
+     - `E_PARSE_TIME` (ERROR)：タイムコード書式が解析不能（start / end 列の異常）。
+     - `E_NEGATIVE_DURATION` (ERROR)：カット長が 0 秒以下（`end <= start`）。
+     - `E_NON_MONOTONIC` (ERROR)：開始時間が前行より後退。
+     - `E_OVERLAP` (ERROR)：隣接カット間で時間重複が発生。
+     - `E_EMPTY_CAMERA` (ERROR)：カメラ名（camera）列が空。
+     - `W_UNKNOWN_CAMERA` (WARN)：カメラ名が既知ホワイトリスト外（デフォルトは正規表現 `^CAM\d+$` または指定リスト）。
+     - `W_GAP` (WARN)：隣接カット間の隙間が閾値超過（`--edl-max-gap-sec`、デフォルト `0.05` 秒）、タイムラインに黒フレームが発生。
+   - **3 箇所の厳格な検証ポイント**：
+     1. `generate_edl.py`：CSV 出力前に検証。**成否にかかわらず必ず CSV と分析レポートをディスクに書き出した上で終了判定を行う**ため、異常データも確実に確認・デバッグ可能。検証レポートは `edl_full_report.md` に追加され、その H2 見出しは `--lang` に応じてローカライズされます（`en` は `🔍 EDL Validation Result`、`zh-TW` は `🔍 EDL 驗證結果`）。
+     2. `export_fcp7_xml.py`：EDL 読み込み時に検証。素材ディレクトリからカメラホワイトリストを自動推論。
+     3. `edl_to_video.py`：動画レンダリング前に検証。素材ディレクトリまたはカメラマップから自動推論。
+   - **安全停止ゲート (`--strict-edl`)**：デフォルトは警告のみで処理を継続。`--strict-edl` 指定時は `ERROR` 検出で終了コード 1 で即座にエラー停止し、不正な EDL の後続波及を防止。
+   - **多言語レポート対応 (`--lang`)**：`en`（デフォルト）と `zh-TW` に標準対応。`zh-Hant`、`zh_TW` などの表記揺れは `zh-TW` へ自動正規化され、未対応言語はエラーを出さず静かに `en` へフォールバック。
+   - **カスタマイズ引数**：`--edl-max-gap-sec`（デフォルト `0.05` 秒）；`--edl-known-cameras`（カンマ区切りホワイトリスト、例：`CAM1,CAM2`、未指定時は `^CAM\d+$`）。
+6. **デュアルバックエンドクラウド構成 (Vertex AI + GCS プライマリ、AI Studio バックアップ)**：
    - **プライマリバックエンド**：Google Cloud Vertex AI（Application Default Credentials、ADC 認証対応）。グリッド映像は Google Cloud Storage（GCS）にアップロードされ、ローカル SHA-256 およびファイルサイズキャッシュにより重複アップロードを完全に防止。
    - **バックアップフォールバック**：`--fallback-studio` オプションを指定すると、Vertex AI / GCS の権限やクォータ不足時に自動的に Google AI Studio（`GEMINI_API_KEY`）へシームレスに切り替わり、処理を安全に続行。
    - **実行コマンド例**：
      ```bash
      # プライマリ: Google Cloud Vertex AI (ADC + GCS キャッシュ、デフォルト):
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # 厳格 EDL 検証モード（ERROR 検出時に即時停止）:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
+
+     # 検証レポートの言語指定:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --lang zh-TW
+
+     # ギャップ許容閾値とカメラホワイトリストの個別設定:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
+       --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
 
      # Google AI Studio への自動フォールバックを有効化:
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
@@ -149,17 +176,24 @@ multicam-video-preprocessing/
 - **実行コマンド例**：
   ```bash
   # 標準 30 fps XML 書き出し：
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml
+
+  # 厳格 EDL 検証とレポート言語指定（カメラホワイトリストは素材から自動推論）：
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --strict-edl --lang zh-TW
 
   # 放送用 29.97 fps NTSC Drop-Frame XML 書き出し：
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ### ステップ 3B：ワンパス動画直接レンダリング (`edl_to_video.py`)
 - 中間チャプター動画の書き出しや結合を介さず、Apple Silicon `h264_videotoolbox` を用いて同期マスターから直接 `final_cut_full.mp4` を一発レンダリング。
 - **実行コマンド例**：
   ```bash
-  python3 scripts/edl_to_video.py -i output/edl_full.csv -o output/final_cut_full.mp4
+  # 標準ワンパス直接レンダリング：
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4
+
+  # 厳格 EDL 検証とレポート言語指定：
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4 --strict-edl --lang zh-TW
   ```
 
 ### ステップ 4：YouTube 字幕生成 (`generate_subtitles.py`)

@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "multicam-video-preprocessing",
-  "version": "1.4.0",
-  "description": "Universal multi-camera video processing pipeline and AI editing suite for 2 to 6 cameras. Features FFT audio time alignment, EBU R128 loudness normalization, multi-in-one grid composition, Gemini 3.8 Flash Agentic Video zero-split full pipeline, FCP7 XML timeline export, and millisecond-accurate YouTube subtitles generation (Whisper + Gemini Proofreading).",
+  "version": "1.5.0",
+  "description": "Universal multi-camera video processing pipeline and AI editing suite for 2 to 6 cameras. Features FFT audio time alignment, EBU R128 loudness normalization, multi-in-one grid composition, Gemini 3.8 Flash Agentic Video zero-split full pipeline, deterministic EDL semantic validation with strict gate safeguard, FCP7 XML timeline export, and millisecond-accurate YouTube subtitles generation (Whisper + Gemini Proofreading).",
   "author": {
     "name": "sylphlin",
     "url": "https://github.com/sylphlin"
@@ -20,6 +20,7 @@
     "ai-rough-cut",
     "agentic-video",
     "edl",
+    "edl-validation",
     "youtube-subtitles",
     "whisper",
     "gemini-proofreading",

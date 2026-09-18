@@ -24,6 +24,7 @@ from modules.edl_validator import (
     validate_edl_file,
     format_validation_report,
     normalize_lang,
+    get_report_section_heading,
 )
 
 
@@ -410,6 +411,54 @@ class TestEDLValidator(unittest.TestCase):
         result = validate_edl_rows(rows, known_cameras=known_cams)
         self.assertFalse(result.has_warning)
         self.assertFalse(result.has_error)
+
+    # ------------------------------------------------------------------
+    # Localized Markdown section heading (embedded into edl_full_report.md)
+    # ------------------------------------------------------------------
+
+    def test_report_section_heading_localized(self):
+        """Section heading follows --lang instead of being hardcoded."""
+        self.assertEqual(
+            get_report_section_heading("en"), "🔍 EDL Validation Result"
+        )
+        self.assertEqual(
+            get_report_section_heading("zh-TW"), "🔍 EDL 驗證結果"
+        )
+
+    def test_report_section_heading_accepts_locale_aliases(self):
+        """Locale aliases normalize the same way as normalize_lang()."""
+        for alias in ("zh_TW", "zh-Hant", "ZH-TW", "zh-tw", "zh"):
+            self.assertEqual(
+                get_report_section_heading(alias),
+                "🔍 EDL 驗證結果",
+                msg=f"alias {alias!r} should map to zh-TW",
+            )
+        for alias in ("en-US", "en_GB", "EN"):
+            self.assertEqual(
+                get_report_section_heading(alias), "🔍 EDL Validation Result"
+            )
+
+    def test_report_section_heading_falls_back_silently(self):
+        """Unsupported / empty locales fall back to DEFAULT_LANG without raising."""
+        expected = get_report_section_heading(DEFAULT_LANG)
+        for bad in (None, "", "   ", "fr", "xyz123", 123):
+            self.assertEqual(get_report_section_heading(bad), expected)
+
+    def test_report_section_heading_matches_body_language(self):
+        """Heading and report body must not disagree on language."""
+        rows = [
+            ["Start", "End", "Camera"],
+            ["00:00.000", "00:05.000", "CAM1"],
+        ]
+        result = validate_edl_rows(rows)
+
+        zh_body = format_validation_report(result, lang="zh-TW")
+        self.assertIn("驗證", get_report_section_heading("zh-TW"))
+        self.assertIn("驗證", zh_body)
+
+        en_body = format_validation_report(result, lang="en")
+        self.assertIn("Validation", get_report_section_heading("en"))
+        self.assertIn("Validation", en_body)
 
 
 if __name__ == "__main__":

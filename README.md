@@ -191,13 +191,40 @@ Simply prompt the Antigravity Agent in plain conversational language:
    - Uses goal-directed sparse temporal sampling to reduce input token consumption by **99.7%** (from ~1,000,000 to ~3,000 tokens), completely eliminating chapter boundaries and boundary speech bisection.
 4. **Standardized Deliverables**:
    - Generates unified CSV decision table (`edl_full.csv`) and Markdown cutting analysis report (`edl_full_report.md`).
-5. **Dual-Backend Cloud Architecture (Vertex AI + GCS Primary, AI Studio Backup)**:
+5. **Deterministic EDL Semantic Validation & `--strict-edl` Safeguard**:
+   - **8 Structural Checks (6 ERROR + 2 WARN)**:
+     - `E_NO_ROWS` (ERROR): EDL contains no data rows.
+     - `E_PARSE_TIME` (ERROR): Unparseable timecode format in start or end column.
+     - `E_NEGATIVE_DURATION` (ERROR): Shot duration is non-positive (`end <= start`).
+     - `E_NON_MONOTONIC` (ERROR): Start time moves backward relative to previous row.
+     - `E_OVERLAP` (ERROR): Current shot start time overlaps previous shot end time.
+     - `E_EMPTY_CAMERA` (ERROR): Camera angle column is blank or empty.
+     - `W_UNKNOWN_CAMERA` (WARN): Camera name not in whitelist (defaults to `^CAM\d+$` regex or explicit list).
+     - `W_GAP` (WARN): Inter-shot gap exceeds threshold (`--edl-max-gap-sec`, default `0.05s`), leaving black frame gaps on the timeline.
+   - **3 Deterministic Execution Points**:
+     1. `generate_edl.py`: Pre-write validation. **Always writes CSV and analysis report to disk before deciding whether to exit**, ensuring malformed data remains available for inspection. Appends the validation report to `edl_full_report.md` under an H2 heading localized by `--lang` (`🔍 EDL Validation Result` for `en`, `🔍 EDL 驗證結果` for `zh-TW`).
+     2. `export_fcp7_xml.py`: Post-load validation upon reading EDL. Automatically infers camera whitelist from media directory.
+     3. `edl_to_video.py`: Post-load validation before rendering. Auto-infers camera whitelist from media directory / camera map.
+   - **Fail-Fast Gate (`--strict-edl`)**: By default, validation issues only emit warnings and continue execution. Passing `--strict-edl` halts execution with exit code 1 if any `ERROR` is found.
+   - **Multilingual Validation Report (`--lang`)**: Built-in support for `en` (default) and `zh-TW`. Locale aliases (`zh-Hant`, `zh_TW`, `ZH-TW`) automatically normalize to `zh-TW`; unsupported locales gracefully fall back to `en` without raising exceptions.
+   - **Configurable Tolerances**: `--edl-max-gap-sec` (default `0.05`s) controls gap warning sensitivity; `--edl-known-cameras` accepts comma-separated lists (e.g. `CAM1,CAM2`).
+6. **Dual-Backend Cloud Architecture (Vertex AI + GCS Primary, AI Studio Backup)**:
    - **Primary Backend**: Google Cloud Vertex AI using Application Default Credentials (ADC via `gcloud auth application-default login`). Grid videos are uploaded to Google Cloud Storage (GCS) with local SHA-256 and file size caching, avoiding redundant re-uploads.
    - **Backup Fallback**: Pass `--fallback-studio` to automatically fall back to Google AI Studio (`GEMINI_API_KEY`) if Vertex AI / GCS permissions, quotas, or credentials encounter issues.
    - **CLI Examples**:
      ```bash
      # Primary: Google Cloud Vertex AI with ADC + GCS Caching (Default):
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # Strict EDL validation mode (aborts with code 1 on ERROR):
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
+
+     # Localized validation report in Traditional Chinese:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --lang zh-TW
+
+     # Custom gap tolerance and explicit camera whitelist:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
+       --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
 
      # With automatic failover to Google AI Studio:
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
@@ -225,10 +252,13 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
 - **CLI Usage Example**:
   ```bash
   # Standard 30 fps XML export:
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml
+
+  # Strict EDL validation with localized report (auto-infers camera whitelist from media dir):
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --strict-edl --lang zh-TW
 
   # Broadcast 29.97 fps NTSC Drop-Frame XML:
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ---
@@ -239,7 +269,11 @@ Outputs industry-standard **Final Cut Pro 7 XML (xmeml version 4)**:
    - Eliminates intermediate chapter files and multi-step concatenation.
 - **CLI Usage Example**:
   ```bash
-  python3 scripts/edl_to_video.py -i output/edl_full.csv -o output/final_cut_full.mp4
+  # Standard single-pass render:
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4
+
+  # With strict EDL validation and localized report:
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4 --strict-edl --lang zh-TW
   ```
 
 ---

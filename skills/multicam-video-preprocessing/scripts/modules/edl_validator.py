@@ -88,6 +88,7 @@ DEFAULT_LANG = "en"
 _MESSAGES: Dict[str, Dict[str, str]] = {
     "zh-TW": {
         "report_title": "🔍 EDL 語意驗證報告",
+        "report_section_heading": "🔍 EDL 驗證結果",
         "shot_count": "總鏡頭數  : {count}",
         "camera_dist": "相機分佈  : {cam_str}",
         "cam_none": "無",
@@ -116,6 +117,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
     },
     "en": {
         "report_title": "🔍 EDL Semantic Validation Report",
+        "report_section_heading": "🔍 EDL Validation Result",
         "shot_count": "Shot Count   : {count}",
         "camera_dist": "Camera Dist  : {cam_str}",
         "cam_none": "None",
@@ -171,6 +173,18 @@ def _t(lang: Optional[str], key: str, **kwargs) -> str:
     if kwargs:
         return template.format(**kwargs)
     return template
+
+
+def get_report_section_heading(lang: Optional[str] = DEFAULT_LANG) -> str:
+    """
+    Return the localized heading text used when embedding the validation report
+    into a Markdown document (callers prepend their own '## ' marker).
+
+    Exposed as a public helper so callers do not need to reach into `_t()`.
+    Unsupported locales silently fall back to DEFAULT_LANG, matching
+    `normalize_lang()` behaviour.
+    """
+    return _t(lang, "report_section_heading")
 
 
 def _display_width(s: str) -> int:

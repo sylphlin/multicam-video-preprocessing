@@ -129,13 +129,40 @@ multicam-video-preprocessing/
    - 목표 지향적 동적 희소 샘플링을 통해 입력 토큰 소비를 **99.7% 절감**(약 1,000,000 토큰에서 약 3,000 토큰으로 감소). 챕터 경계로 인한 발화 단절 위험을 원천 차단.
 4. **표준 결과물 출력**:
    - 단일 표준 CSV 결정 목록(`edl_full.csv`) 및 Markdown 가편집 분석 보고서(`edl_full_report.md`) 출력.
-5. **듀얼 백엔드 클라우드 아키텍처 (Vertex AI + GCS 기본, AI Studio 백업)**:
+5. **EDL 시맨틱 검증기 및 `--strict-edl` 안전 중단**:
+   - **8가지 구조 검증 항목 (6 ERROR + 2 WARN)**:
+     - `E_NO_ROWS` (ERROR): EDL에 컷 데이터 행이 전혀 없음.
+     - `E_PARSE_TIME` (ERROR): 타임코드 형식을 구문 분석할 수 없음 (start 또는 end 열 이상).
+     - `E_NEGATIVE_DURATION` (ERROR): 컷 길이가 0 이하 (`end <= start`).
+     - `E_NON_MONOTONIC` (ERROR): 시작 시간이 이전 행보다 역행.
+     - `E_OVERLAP` (ERROR): 인접한 컷 간에 시간 중복 발생.
+     - `E_EMPTY_CAMERA` (ERROR): 카메라(camera) 열이 비어 있음.
+     - `W_UNKNOWN_CAMERA` (WARN): 카메라 이름이 알려진 화이트리스트 외 (`^CAM\d+$` 정규식 또는 명시적 목록).
+     - `W_GAP` (WARN): 인접 컷 간 간격이 임계값 초과 (`--edl-max-gap-sec`, 기본값 `0.05`초), 타임라인에 블랙 프레임 발생.
+   - **3곳의 엄격한 실행 지점**:
+     1. `generate_edl.py`: CSV 디스크 저장 전 검증. **검증 통과 여부와 관계없이 반드시 CSV와 분석 보고서를 디스크에 먼저 기록한 후 종료 여부를 결정**하므로, 비정상 데이터도 디스크에 보존되어 디버깅 가능. 검증 보고서는 `edl_full_report.md`에 추가되며, H2 섹션 제목은 `--lang`에 따라 현지화됩니다 (`en`은 `🔍 EDL Validation Result`, `zh-TW`는 `🔍 EDL 驗證結果`).
+     2. `export_fcp7_xml.py`: EDL 로드 후 검증, 소스 미디어 디렉터리에서 카메라 화이트리스트 자동 추론.
+     3. `edl_to_video.py`: 비디오 렌더링 전 검증, 미디어 디렉터리 또는 카메라 맵에서 자동 추론.
+   - **안전 중단 게이트 (`--strict-edl`)**: 기본적으로 경고만 출력하고 계속 진행. `--strict-edl` 지정 시 `ERROR` 감지 즉시 종료 코드 1로 중단하여 결함 있는 EDL의 하류 유입 방지.
+   - **보고서 다국어 지원 (`--lang`)**: `en`(기본값) 및 `zh-TW` 기본 내장. `zh-Hant`, `zh_TW`, `ZH-TW` 등 변형 코드는 `zh-TW`로 자동 정규화되며, 미지원 언어는 에러 없이 자동으로 `en`으로 폴백.
+   - **사용자 정의 매개변수**: `--edl-max-gap-sec`(기본값 `0.05`초); `--edl-known-cameras`(쉼표로 구분된 화이트리스트 예: `CAM1,CAM2`, 미지정 시 기본 정규식 `^CAM\d+$`).
+6. **듀얼 백엔드 클라우드 아키텍처 (Vertex AI + GCS 기본, AI Studio 백업)**:
    - **기본 백엔드**: Google Cloud Vertex AI 및 Application Default Credentials(ADC, API 키 관리 불필요). 그리드 영상은 Google Cloud Storage(GCS)에 업로드되며, 로컬 SHA-256 및 파일 크기 캐시를 통해 중복 업로드를 완전히 방지합니다.
    - **백업 폴백**: `--fallback-studio` 옵션을 추가하면 Vertex AI / GCS 권한 또는 할당량 문제 발생 시 자동으로 Google AI Studio(`GEMINI_API_KEY`)로 원활하게 전환되어 중단 없이 안전하게 작업을 완료합니다.
    - **실행 명령 예시**:
      ```bash
      # 기본: Google Cloud Vertex AI (ADC + GCS 캐싱, 기본값):
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # 엄격 EDL 검증 모드 (ERROR 감지 시 즉시 중단):
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
+
+     # 검증 보고서 언어 지정:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --lang zh-TW
+
+     # 간격 허용 임계값 및 카메라 화이트리스트 개별 설정:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
+       --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
 
      # Google AI Studio 자동 폴백 활성화:
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
@@ -149,17 +176,24 @@ multicam-video-preprocessing/
 - **실행 명령어 예시**:
   ```bash
   # 표준 30 fps XML 내보내기:
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml
+
+  # 엄격 EDL 검증 및 보고서 언어 지정 (미디어 디렉터리에서 카메라 화이트리스트 자동 추론):
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --strict-edl --lang zh-TW
 
   # 방송용 29.97 fps NTSC Drop-Frame XML 내보내기:
-  python3 scripts/export_fcp7_xml.py -i output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
+  python3 scripts/export_fcp7_xml.py -e output/edl_full.csv -o output/final_cut_full.xml --fps 29.97 --drop-frame
   ```
 
 ### 3B단계: 원패스 직접 렌더링 (`edl_to_video.py`)
 - 중간 챕터 비디오 출력 및 병합 단계 없이, Apple Silicon `h264_videotoolbox`를 활용하여 동기화 마스터에서 `final_cut_full.mp4`를 단일 패스로 직접 렌더링.
 - **실행 명령어 예시**:
   ```bash
-  python3 scripts/edl_to_video.py -i output/edl_full.csv -o output/final_cut_full.mp4
+  # 표준 원패스 직접 렌더링:
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4
+
+  # 엄격 EDL 검증 및 보고서 언어 지정:
+  python3 scripts/edl_to_video.py --edl output/edl_full.csv -o output/final_cut_full.mp4 --strict-edl --lang zh-TW
   ```
 
 ### 4단계: YouTube 자막 생성 (`generate_subtitles.py`)
