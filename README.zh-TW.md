@@ -443,3 +443,54 @@ gcloud auth application-default login \
 >   gcloud storage buckets describe gs://multicam-video-YOUR_GCP_PROJECT_ID --format="json(lifecycle_config)"
 >   ```
 > - 若需調整保留天數，可直接修改 `setup.sh` 後重新執行 `./setup.sh --project YOUR_GCP_PROJECT_ID`，或透過 `gcloud storage buckets update gs://multicam-video-YOUR_GCP_PROJECT_ID --lifecycle-file=lifecycle.json` 即時套用。
+
+---
+
+### 3. ☁️ Google Drive 雲端硬碟直通情境與實戰範例 (ADC 零金鑰直連)
+
+在實務影視製作流程中，攝影師或現場場記常將多機位原始素材直接上傳至 **Google Drive（個人雲端硬碟或團隊共用雲端硬碟 Shared Drives）**。本工具套件支援透過 `gcloud` ADC (`drive.readonly` 權限) 直接讀取 Google Drive 連結與 Folder ID，無需手動從瀏覽器逐一下載解壓縮：
+
+#### 📌 四大常見支援情境一覽：
+
+| 支援情境 | 適用階段與腳本 | 輸入格式支援 | 智慧快取與自動處理行為 |
+| :--- | :--- | :--- | :--- |
+| **情境 A：整包多機位資料夾直通**<br/>*(最推薦：攝影師整包上傳)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--gdrive-folder "<資料夾連結或ID>"`<br/>*(支援 `drive/folders/...` 或 `gdrive://...`)* | 自動呼叫 Drive API v3 掃描資料夾內所有影片檔（`.mp4`, `.mov`, `.mkv` 等），依**自然數字排序**（`CAM1` 自動設為 `--ref` 主機、`CAM2..CAM6` 自動設為 `--targets`），並透過本地 MD5 快取免重複下載。 |
+| **情境 B：指定個別雲端硬碟檔案連結**<br/>*(不同資料夾或指定主副機)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--ref "<CAM1檔案連結>"`<br/>`--targets "<CAM2連結>" "<CAM3連結>"` | 分別解析各個 Google Drive 檔案連結 (`file/d/.../view` 或 `open?id=...`)，校驗遠端 `md5Checksum` 後下載至 `<output_dir>/gdrive_inputs/` 進行毫秒級聲學對齊。 |
+| **情境 C：雲端網格影片直通 GCS 進行 AI 粗剪**<br/>*(零重複傳輸快取)* | **Stage 2**<br/>(`generate_edl.py`) | `-v "<網格影片 Google Drive 連結>"`<br/>或 `-v "gs://bucket/raw/..."` | **遠端 `gdrive_md5` 秒級快取**：先比對 Google Drive 檔案 MD5 與遠端 GCS `gs://multicam-video-${PROJECT_ID}/raw/` Blob 的 `metadata.gdrive_md5`；**若已存在於 GCS，直接回傳 `gs://` URI（同時略過 Drive 下載與 GCS 上傳）**！ |
+| **情境 D：雲端成片直接生成 YouTube 字幕**<br/>*(不跑前處理，單獨製作字幕)* | **Stage 4**<br/>(`generate_subtitles.py`) | `-i "<成片 Google Drive 連結>"` | 直接從 Google Drive 拉取成片或音軌（MD5 快取），自動執行 Vertex AI 1M 全域詞彙表提取、Whisper 詞級對齊與多模態聽音審稿。 |
+
+#### 💻 實戰指令範例 (CLI)：
+
+```bash
+# 【情境 A】直接貼上 Google Drive 多機位資料夾連結（自動掃描 CAM1..CAMn + 同步正規化 + 輸出多合一網格）：
+python3 scripts/multicam_pipeline.py \
+  --gdrive-folder "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456?usp=drive_link" \
+  --normalize --merge -o output/
+
+# 【情境 B】分別指定不同 Google Drive 檔案連結作為主機 (CAM1) 與副機 (CAM2, CAM3)：
+python3 scripts/multicam_pipeline.py \
+  --ref "https://drive.google.com/file/d/1Cam1FileIdxxxxxx/view?usp=sharing" \
+  --targets "https://drive.google.com/file/d/1Cam2FileIdxxxxxx/view?usp=sharing" \
+            "https://drive.google.com/file/d/1Cam3FileIdxxxxxx/view?usp=sharing" \
+  --normalize --merge -o output/
+
+# 【情境 C】直接將 Google Drive 上的網格影片轉存至 GCS 並執行 Gemini 3.8 Flash Agentic Video 粗剪：
+python3 scripts/generate_edl.py \
+  -v "https://drive.google.com/file/d/1MergedGridVideoIdxxxxxx/view?usp=sharing" \
+  --strict-edl --lang zh-TW -o output/
+
+# 【情境 D】直接針對 Google Drive 上的最終成片生成 YouTube 雙格式字幕 (.srt / .vtt) 與品質檢驗報告：
+python3 scripts/generate_subtitles.py \
+  -i "https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing" \
+  --language zh-TW -o output/
+```
+
+#### 💬 Antigravity Agent 自然語言對話範例：
+
+在 Google Antigravity IDE 中，您只需直接在對話框貼上 Google Drive 連結即可觸發自動化流程：
+
+- **整包多機同步 + AI 粗剪 XML**：
+  > 「幫我把這個 Google Drive 資料夾裡的多機訪談影片對齊時間、統一音量到 -14 LUFS，並用 AI 剪輯出 Final Cut Pro / DaVinci Resolve 可以直接匯入的 XML 時間線：`https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456`」
+- **單獨針對雲端成片製作字幕**：
+  > 「幫我幫這支放在 Google Drive 上的訪談成片製作繁體中文 YouTube 字幕 (.srt & .vtt)，並附上品質檢驗報告：`https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing`」
+

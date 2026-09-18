@@ -405,3 +405,54 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
   ]
 }
 ```
+
+---
+
+### 3. ☁️ Google Drive 云端硬盘直通情境与实战范例 (ADC 零密钥直连)
+
+在实际影视制作流程中，摄影师或场记通常会将多机位原始素材直接上传至 **Google Drive（个人云端硬盘或团队共享云端硬盘 Shared Drives）**。本工具套件支持通过 `gcloud` ADC（`drive.readonly` 权限）直接解析并拉取 Google Drive 链接与 Folder ID，免去浏览器手动下载与解压：
+
+#### 📌 四大常见支持情境一览：
+
+| 支持情境 | 适用阶段与脚本 | 输入格式支持 | 智能缓存与自动处理机制 |
+| :--- | :--- | :--- | :--- |
+| **情境 A：整包多机位文件夹直通**<br/>*(最推荐：摄影师整包上传)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--gdrive-folder "<文件夹链接或ID>"`<br/>*(支持 `drive/folders/...` 或 `gdrive://...`)* | 自动调用 Drive API v3 扫描文件夹内所有视频文件（`.mp4`, `.mov`, `.mkv` 等），按**自然数字排序**（`CAM1` 自动设为 `--ref` 主机、`CAM2..CAM6` 自动设为 `--targets`），并通过本地 MD5 缓存免重复下载。 |
+| **情境 B：指定个别云端硬盘文件链接**<br/>*(不同文件夹或指定主副机)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--ref "<CAM1文件链接>"`<br/>`--targets "<CAM2链接>" "<CAM3链接>"` | 分别解析各个 Google Drive 文件链接（`file/d/.../view` 或 `open?id=...`），校验远程 `md5Checksum` 后缓存至 `<output_dir>/gdrive_inputs/` 进行毫秒级声学对齐。 |
+| **情境 C：云端网格视频直通 GCS 进行 AI 粗剪**<br/>*(零重复传输缓存)* | **Stage 2**<br/>(`generate_edl.py`) | `-v "<网格视频 Google Drive 链接>"`<br/>或 `-v "gs://bucket/raw/..."` | **远程 `gdrive_md5` 秒级缓存**：先比对 Google Drive 文件 MD5 与远程 GCS `gs://multicam-video-${PROJECT_ID}/raw/` Blob 的 `metadata.gdrive_md5`；**若已存在于 GCS，直接返回 `gs://` URI（同时跳过 Drive 下载与 GCS 上传）**！ |
+| **情境 D：云端成片直接生成 YouTube 字幕**<br/>*(独立制作字幕)* | **Stage 4**<br/>(`generate_subtitles.py`) | `-i "<成片 Google Drive 链接>"` | 直接从 Google Drive 拉取成片或音轨（MD5 缓存），自动执行 Vertex AI 1M 全域词汇表提取、Whisper 词级对齐与多模态听音审稿。 |
+
+#### 💻 实战命令范例 (CLI)：
+
+```bash
+# 【情境 A】直接粘贴 Google Drive 多机位文件夹链接（自动扫描 CAM1..CAMn + 同步归一化 + 输出多合一网格）：
+python3 scripts/multicam_pipeline.py \
+  --gdrive-folder "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456?usp=drive_link" \
+  --normalize --merge -o output/
+
+# 【情境 B】分别指定不同 Google Drive 文件链接作为主机 (CAM1) 与副机 (CAM2, CAM3)：
+python3 scripts/multicam_pipeline.py \
+  --ref "https://drive.google.com/file/d/1Cam1FileIdxxxxxx/view?usp=sharing" \
+  --targets "https://drive.google.com/file/d/1Cam2FileIdxxxxxx/view?usp=sharing" \
+            "https://drive.google.com/file/d/1Cam3FileIdxxxxxx/view?usp=sharing" \
+  --normalize --merge -o output/
+
+# 【情境 C】直接将 Google Drive 上的网格视频转存至 GCS 并执行 Gemini 3.8 Flash Agentic Video 粗剪：
+python3 scripts/generate_edl.py \
+  -v "https://drive.google.com/file/d/1MergedGridVideoIdxxxxxx/view?usp=sharing" \
+  --strict-edl --lang zh-TW -o output/
+
+# 【情境 D】直接针对 Google Drive 上的最终成片生成 YouTube 双格式字幕 (.srt / .vtt) 与质量检验报告：
+python3 scripts/generate_subtitles.py \
+  -i "https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing" \
+  --language zh-CN -o output/
+```
+
+#### 💬 Antigravity Agent 自然语言对话范例：
+
+在 Google Antigravity IDE 中，您只需直接在对话框粘贴 Google Drive 链接即可触发全自动流程：
+
+- **整包多机同步 + AI 粗剪 XML**：
+  > 「帮我把这个 Google Drive 文件夹里的多机访谈视频对齐时间、统一音量到 -14 LUFS，并用 AI 剪辑出 Final Cut Pro / DaVinci Resolve 可以直接导入的 XML 时间线：`https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456`」
+- **单独针对云端成片制作字幕**：
+  > 「帮我给这支放在 Google Drive 上的访谈成片制作 YouTube 字幕 (.srt & .vtt)，并附上质量检验报告：`https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing`」
+

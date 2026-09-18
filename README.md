@@ -452,3 +452,54 @@ To balance **zero-reupload SHA-256 caching** with **automated cloud storage cost
 >   gcloud storage buckets describe gs://multicam-video-YOUR_GCP_PROJECT_ID --format="json(lifecycle_config)"
 >   ```
 > - Update rules anytime by editing `setup.sh` and re-running `./setup.sh --project YOUR_GCP_PROJECT_ID`, or via `gcloud storage buckets update gs://multicam-video-YOUR_GCP_PROJECT_ID --lifecycle-file=lifecycle.json`.
+
+---
+
+### 3. ☁️ Google Drive Direct Link & Folder Scenarios (100% ADC Integration)
+
+In real-world production workflows, camera operators and editors frequently upload multi-camera raw footage directly to **Google Drive (My Drive or Shared Drives)**. This suite natively accepts Google Drive folder/file URLs and IDs via Application Default Credentials (`drive.readonly` scope), eliminating manual browser downloads:
+
+#### 📌 Supported Google Drive Scenarios:
+
+| Scenario | Stage & Script | Supported Input Syntax | Smart Caching & Automated Behavior |
+| :--- | :--- | :--- | :--- |
+| **Scenario A: Full Multi-Cam Folder Link**<br/>*(Recommended for raw camera dumps)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--gdrive-folder "<FOLDER_URL_OR_ID>"`<br/>*(`drive/folders/...` or `gdrive://...`)* | Automatically queries Drive API v3 for all video files (`.mp4`, `.mov`, `.mkv`, etc.), applies **natural alphanumeric sorting** (`CAM1` assigned as `--ref`, `CAM2..CAM6` assigned as `--targets`), and caches locally via MD5 verification. |
+| **Scenario B: Individual Camera File Links**<br/>*(Separate folders or explicit ref/targets)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--ref "<CAM1_LINK>"`<br/>`--targets "<CAM2_LINK>" "<CAM3_LINK>"` | Resolves each Google Drive file URL (`file/d/.../view` or `open?id=...`), verifies remote `md5Checksum`, and caches to `<output_dir>/gdrive_inputs/` for sub-frame alignment. |
+| **Scenario C: Cloud Grid Video to GCS for AI EDL**<br/>*(Zero-Transfer Fast Path)* | **Stage 2**<br/>(`generate_edl.py`) | `-v "<GDRIVE_VIDEO_LINK>"`<br/>or `-v "gs://bucket/raw/..."` | **Remote `gdrive_md5` Fast-Path**: Compares the Google Drive file's `md5Checksum` against the remote GCS blob's `metadata.gdrive_md5` in `gs://multicam-video-${PROJECT_ID}/raw/`. **On match, both Drive download and GCS upload are completely skipped!** |
+| **Scenario D: Cloud Video Direct to YouTube Subtitles**<br/>*(Standalone subtitle generation)* | **Stage 4**<br/>(`generate_subtitles.py`) | `-i "<GDRIVE_VIDEO_LINK>"` | Pulls the video/audio from Google Drive (with MD5 caching) and runs the 3-stage Vertex AI 1M Glossary + Whisper Word Timestamp + Multimodal Proofreading pipeline. |
+
+#### 💻 Practical CLI Examples:
+
+```bash
+# [Scenario A] Pass a Google Drive folder URL containing CAM1..CAMn raw videos:
+python3 scripts/multicam_pipeline.py \
+  --gdrive-folder "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456?usp=drive_link" \
+  --normalize --merge -o output/
+
+# [Scenario B] Specify individual Google Drive file share links for CAM1 (ref) and CAM2/CAM3 (targets):
+python3 scripts/multicam_pipeline.py \
+  --ref "https://drive.google.com/file/d/1Cam1FileIdxxxxxx/view?usp=sharing" \
+  --targets "https://drive.google.com/file/d/1Cam2FileIdxxxxxx/view?usp=sharing" \
+            "https://drive.google.com/file/d/1Cam3FileIdxxxxxx/view?usp=sharing" \
+  --normalize --merge -o output/
+
+# [Scenario C] Stage a Google Drive grid video directly to GCS and run Gemini 3.8 Flash Agentic Video rough-cut:
+python3 scripts/generate_edl.py \
+  -v "https://drive.google.com/file/d/1MergedGridVideoIdxxxxxx/view?usp=sharing" \
+  --strict-edl --lang en -o output/
+
+# [Scenario D] Generate YouTube SRT/VTT subtitles directly from a Google Drive final cut video link:
+python3 scripts/generate_subtitles.py \
+  -i "https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing" \
+  --language en -o output/
+```
+
+#### 💬 Antigravity Agent Conversational Prompt Examples:
+
+Inside Google Antigravity IDE, you can paste Google Drive links directly into the chat prompt:
+
+- **End-to-End Multicam Sync + NLE XML Export**:
+  > *"Sync the multi-camera interview videos in this Google Drive folder, normalize audio to -14 LUFS, and generate a Final Cut Pro / DaVinci Resolve XML rough-cut timeline: `https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456`"*
+- **Standalone YouTube Subtitles from Google Drive Link**:
+  > *"Generate YouTube SRT and VTT subtitles with a quality audit report for this interview video on Google Drive: `https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing`"*
+

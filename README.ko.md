@@ -295,3 +295,45 @@ multicam-video-preprocessing/
   ]
 }
 ```
+
+---
+
+### 3. ☁️ Google Drive 연동 시나리오 및 실전 예제 (ADC 인증 · 무키 직결)
+
+촬영 감독이나 편집팀이 **Google Drive (내 드라이브 또는 공유 드라이브 Shared Drives)**에 업로드한 멀티캠 원본 영상을 브라우저에서 수동으로 다운로드할 필요 없이, `gcloud` ADC (`drive.readonly` 권한)를 통해 파이프라인에 직접 입력할 수 있습니다.
+
+#### 📌 지원 시나리오 요약:
+
+| 시나리오 | 대상 단계 및 스크립트 | 입력 형식 | 스마트 캐싱 및 자동 처리 메커니즘 |
+| :--- | :--- | :--- | :--- |
+| **시나리오 A: 멀티캠 폴더 링크 일괄 지정**<br/>*(가장 권장: 촬영 원본 폴더 공유)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--gdrive-folder "<폴더 URL 또는 ID>"` | Drive API v3로 폴더 내 모든 영상(`.mp4`, `.mov`, `.mkv` 등)을 탐색하고 **자연 정렬**을 통해 `CAM1`을 `--ref`로, `CAM2..CAM6`을 `--targets`로 자동 배정하며 로컬 MD5 캐시로 중복 다운로드를 방지합니다. |
+| **시나리오 B: 개별 Google Drive 파일 링크 지정**<br/>*(서로 다른 폴더의 파일 조합)* | **Stage 1**<br/>(`multicam_pipeline.py`) | `--ref "<CAM1 링크>"`<br/>`--targets "<CAM2 링크>" "<CAM3 링크>"` | 개별 공유 링크(`file/d/.../view` 등)를 파싱하고 원격 `md5Checksum` 검증 후 로컬 캐시로 다운로드하여 정밀 동기화를 수행합니다. |
+| **시나리오 C: 클라우드 그리드 영상을 GCS로 직결하여 AI 가편집**<br/>*(무전송 고속 캐시)* | **Stage 2**<br/>(`generate_edl.py`) | `-v "<그리드 영상 Google Drive 링크>"` | **원격 `gdrive_md5` 즉시 비교**: Google Drive 파일의 MD5와 GCS `gs://multicam-video-${PROJECT_ID}/raw/`의 `metadata.gdrive_md5`를 비교하여 **일치할 경우 Drive 다운로드와 GCS 업로드를 모두 생략**합니다. |
+| **시나리오 D: 클라우드 완성본 영상에서 직접 YouTube 자막 생성**<br/>*(자막 단독 생성)* | **Stage 4**<br/>(`generate_subtitles.py`) | `-i "<완성본 Google Drive 링크>"` | Google Drive에서 영상/오디오를 가져와 Vertex AI 1M 용어집 추출, Whisper 단어 타임스탬프 정렬 및 멀티모달 오디오 교정을 수행합니다. |
+
+#### 💻 실전 명령어 예시 (CLI):
+
+```bash
+# [시나리오 A] Google Drive 멀티캠 폴더 URL을 직접 전달하여 CAM1..CAMn 자동 탐색 + 동기화 + 그리드 합성:
+python3 scripts/multicam_pipeline.py \
+  --gdrive-folder "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456?usp=drive_link" \
+  --normalize --merge -o output/
+
+# [시나리오 B] 개별 Google Drive 파일 링크를 CAM1 (ref) 및 CAM2/CAM3 (targets)로 지정:
+python3 scripts/multicam_pipeline.py \
+  --ref "https://drive.google.com/file/d/1Cam1FileIdxxxxxx/view?usp=sharing" \
+  --targets "https://drive.google.com/file/d/1Cam2FileIdxxxxxx/view?usp=sharing" \
+            "https://drive.google.com/file/d/1Cam3FileIdxxxxxx/view?usp=sharing" \
+  --normalize --merge -o output/
+
+# [시나리오 C] Google Drive 그리드 영상을 GCS로 스테이징하고 Gemini 3.8 Flash Agentic Video 가편집 실행:
+python3 scripts/generate_edl.py \
+  -v "https://drive.google.com/file/d/1MergedGridVideoIdxxxxxx/view?usp=sharing" \
+  --strict-edl --lang en -o output/
+
+# [시나리오 D] Google Drive 완성본 영상에서 YouTube 자막 (.srt / .vtt) 및 품질 감사 보고서 직접 생성:
+python3 scripts/generate_subtitles.py \
+  -i "https://drive.google.com/file/d/1FinalCutVideoIdxxxxxx/view?usp=sharing" \
+  --language ko -o output/
+```
+
