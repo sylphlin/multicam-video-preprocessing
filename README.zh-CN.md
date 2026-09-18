@@ -14,17 +14,20 @@
 
 ---
 
-## 📦 Antigravity 导入与安装 (Installation & Setup)
+## 📦 Antigravity 导入与一键安装部署 (`setup.sh`)
 
-本专案完全适配 Antigravity Skill 与 Workflow 标准结构，可直接 Clone 至 Antigravity 技能目录下无缝启用：
+本专案完全适配 Antigravity Skill 与 Workflow 标准结构，并提供一键交互式安装与 GCP 环境配置脚本 `setup.sh`：
 
 ```bash
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+cd ~/.gemini/config/skills/multicam-video-preprocessing
+./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
 ### 📁 套件文件结构
 ```text
 multicam-video-preprocessing/
+├── setup.sh                           # 一键本地依赖检查与 GCP (ADC/Vertex AI/GCS) 环境部署脚本
 ├── GEMINI.md                          # Antigravity 根目录常驻工作区规则
 ├── .agent/
 │   ├── rules/
@@ -207,13 +210,16 @@ flowchart TD
    - **防呆门禁 (`--strict-edl`)**：默认仅发出警告并继续执行；传入 `--strict-edl` 则在存在任何 `ERROR` 时立即以 exit code 1 中断管线，防止带病 EDL 流入下游。
    - **报告多语言支持 (`--lang`)**：内置支持 `en`（默认）与 `zh-TW`。语言代码具备容错性，`zh-Hant`、`zh_TW`、`ZH-TW` 等变体自动归一化至 `zh-TW`；未支持的语言代码静默回退至 `en`，不抛出异常。
    - **自定义参数**：`--edl-max-gap-sec`（默认 `0.05` 秒）；`--edl-known-cameras`（逗号分隔白名单如 `CAM1,CAM2`，未指定时默认正则 `^CAM\d+$`）。
-6. **双后端云端架构 (Vertex AI + GCS 主要后端，AI Studio 备用)**：
-   - **主要后端**：Google Cloud Vertex AI 搭配 Application Default Credentials（ADC，免管 API Key）。网格视频上传至 Google Cloud Storage（GCS），内置 SHA-256 与文件大小缓存，跨次执行免重复上传。
-   - **备用容错**：加上 `--fallback-studio` 参数，若 Vertex AI / GCS 出现权限或配额错误时，自动无缝容错切换至 Google AI Studio（`GEMINI_API_KEY`），确保流程不中断。
+6. **100% Google Cloud Vertex AI (ADC) + GCS 智能缓存与双阶自动生命周期架构**：
+   - **免管 API Key 安全认证**：全面采用 Google Cloud Vertex AI（`GOOGLE_CLOUD_LOCATION=global`）搭配 Application Default Credentials（ADC），完全排除 AI Studio（`GEMINI_API_KEY`）与外部 File API 上传。
+   - **GCS SHA-256 智能缓存与双阶自动清理（2 天 / 15 天）**：网格视频与音频上传至 `gs://multicam-video-${PROJECT_ID}/raw/`，内置本地 SHA-256 与文件大小缓存，跨次执行免重复上传。暂存文件（`raw/`）由 GCS Lifecycle 规则于 **2 天后**自动清除，产出物与资产（`output/`、`deliverables/`、`multicam_assets/`）保留 **15 天**后自动清理（亦可传入 `--cleanup-gcs` 于推论完成后立即删除）。
    - **执行指令示例**：
      ```bash
-     # 主要 Vertex AI + GCS 执行（默认，读取 .env / ADC）：
+     # 标准执行：Google Cloud Vertex AI + GCS 智能缓存（默认）：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # 推论完成后立即删除 GCS 暂存网格视频：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --cleanup-gcs
 
      # 启用严格 EDL 验证模式（出现 ERROR 即中断）：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
@@ -224,12 +230,6 @@ flowchart TD
      # 自定义间隔容许阈值与指定机位白名单：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
        --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
-
-     # 启用 AI Studio 自动容错降级：
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
-
-     # 直接指定 Google AI Studio 执行：
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --backend studio
      ```
 
 ---
@@ -323,14 +323,11 @@ flowchart TD
 #### 执行指令范例：
 
 ```bash
-# 基本执行（Google Cloud Vertex AI 与 ADC 认证，默认）：
+# 标准执行（Google Cloud Vertex AI 与 ADC 认证 + GCS 暂存）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
-# 启用 AI Studio 自动容错降级：
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
-
-# 直接指定 Google AI Studio 执行：
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --backend studio
+# 阶段一完成后立即删除 GCS 全篇音频暂存：
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --cleanup-gcs
 
 # 提供访纲或重点笔记偏置专有名词（可选）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "讲者: 来宾名称, 主题: 核心议题、专有名词列表"
@@ -357,31 +354,50 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 
 ---
 
-## 🛠️ 环境需求与云端配置
+## 🛠️ 环境需求与一键云端部署 (`setup.sh`)
 
 - **Google Antigravity IDE / Agent Framework**
 - **FFmpeg**（支持 `h264_videotoolbox` 硬件编码与 `loudnorm` 滤镜）
 - **Python 3.8+**（依赖 `numpy`、`google-genai`、`google-cloud-storage`）
+- **Google Cloud SDK (`gcloud`)**
 
-### 云端认证与双后端设置
+### 一键 GCP 环境设置 (`setup.sh`) 与双阶 GCS 自动生命周期管理
 
-本工具套件采用**双后端云端架构**：
+本工具套件采用 **100% Google Cloud Vertex AI（Application Default Credentials, ADC）+ Google Cloud Storage (GCS)** 架构，无需手动管理 API Key，亦不调用任何 AI Studio 上传接口。
 
-1. **Google Cloud Vertex AI（主要后端，推荐）**：
-   - 通过 Google Cloud ADC 登录认证（免管 API Key）：
-     ```bash
-     gcloud auth application-default login
-     ```
-   - 复制 `.env.example` 为 `.env` 并填写项目与存储桶名称：
-     ```bash
-     cp .env.example .env
-     ```
-     ```env
-     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
-     GCS_BUCKET=video-preprocessing-sylph-demo-505906
-     GOOGLE_CLOUD_LOCATION=us-central1
-     GEMINI_API_KEY=your_gemini_api_key_here
-     ```
-   - 具备智能 SHA-256 本地哈希缓存，大型视频上传一次即可重复引用。
-2. **Google AI Studio（备用后端 / 轻量模式）**：
-   - 指定 `--backend studio` 或加上 `--fallback-studio`，系统在 Vertex AI / GCS 权限不足时自动切换至 Google AI Studio（使用 `GEMINI_API_KEY`）。
+```bash
+# 交互式一键完成本地依赖检查、ADC 认证、Vertex AI API 启用与 GCS 存储桶建立：
+./setup.sh
+
+# 非交互模式（供 Antigravity Agent 自动部署使用）：
+./setup.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --non-interactive
+```
+
+1. **`setup.sh` 自动部署内容**：
+   - 自动启用 `aiplatform.googleapis.com`（Vertex AI）与 `storage.googleapis.com`（GCS）API。
+   - 自动建立专属 GCS 存储桶（`gs://multicam-video-${PROJECT_ID}`）并配置 IAM 权限（`roles/aiplatform.user`, `roles/storage.objectAdmin`）。
+   - 自动生成 `.env` 配置文件（`GOOGLE_CLOUD_LOCATION=global`, `GCP_REGION=us-central1`）。
+2. **🗑️ GCS 存储桶双阶生命周期 (Lifecycle) 自动清理规则表**：
+
+为兼顾「同日重复调校免重传大型文件（SHA-256 缓存）」与「避免云端存储费用累积」，`setup.sh` 与 `scripts/modules/gcp_client.py` 会在 GCS 存储桶自动挂载以下分阶自动清理规则：
+
+| GCS 路径前缀 (`matchesPrefix`) | 存储文件类型 | 保留期限 (`age`) | 清理方式 | 规则说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`raw/audio_chunks/`** | 字幕阶段三切块音频切片 (`.m4a` / `.mp3`) | **推论后立即删除** | Python `finally` 块即时删除（并由 `raw/` 2 天规则双重兜底） | 每个字幕切块完成多模态听音校对后立即从 GCS 删除，零空间残留。 |
+| **`raw/`** | 多合一全集网格视频 (`multicam_merged_full.mp4`)、全集主音轨 (`final_cut_full_audio.m4a`) | **2 天 (`age: 2`)** | GCS Lifecycle 自动 `Delete`（或传入 `--cleanup-gcs` 立即删除） | 供 Vertex AI 多模态推论暂存。保留 2 天让同专案重跑时可秒级命中 SHA-256 缓存，2 天后自动清除。 |
+| **`output/`**<br/>**`deliverables/`**<br/>**`multicam_assets/`** | 云端备份之剪辑时间线 (`.xml` / `.csv`)、字幕文件 (`.srt` / `.vtt`)、报告与成片产出物 | **15 天 (`age: 15`)** | GCS Lifecycle 自动 `Delete` | 产出物与专案资产保留 **15 天** 供团队跨设备下载与审阅，15 天后自动清理。 |
+
+```json
+{
+  "rule": [
+    {
+      "action": { "type": "Delete" },
+      "condition": { "age": 2, "matchesPrefix": ["raw/"] }
+    },
+    {
+      "action": { "type": "Delete" },
+      "condition": { "age": 15, "matchesPrefix": ["output/", "deliverables/", "multicam_assets/"] }
+    }
+  ]
+}
+```

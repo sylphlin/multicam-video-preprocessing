@@ -14,15 +14,18 @@
 
 ---
 
-## 📦 Antigravity インストール＆ディレクトリ構造
+## 📦 Antigravity インストール＆ワンクリック展開 (`setup.sh`)
 
 ```bash
 git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+cd ~/.gemini/config/skills/multicam-video-preprocessing
+./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
 ### 📁 ディレクトリ構造
 ```text
 multicam-video-preprocessing/
+├── setup.sh                           # ワンクリック GCP (ADC/Vertex AI/GCS) 環境構築スクリプト
 ├── GEMINI.md                          # Antigravity ワークスペース常駐ルール
 ├── .agent/
 │   ├── rules/
@@ -146,13 +149,16 @@ multicam-video-preprocessing/
    - **安全停止ゲート (`--strict-edl`)**：デフォルトは警告のみで処理を継続。`--strict-edl` 指定時は `ERROR` 検出で終了コード 1 で即座にエラー停止し、不正な EDL の後続波及を防止。
    - **多言語レポート対応 (`--lang`)**：`en`（デフォルト）と `zh-TW` に標準対応。`zh-Hant`、`zh_TW` などの表記揺れは `zh-TW` へ自動正規化され、未対応言語はエラーを出さず静かに `en` へフォールバック。
    - **カスタマイズ引数**：`--edl-max-gap-sec`（デフォルト `0.05` 秒）；`--edl-known-cameras`（カンマ区切りホワイトリスト、例：`CAM1,CAM2`、未指定時は `^CAM\d+$`）。
-6. **デュアルバックエンドクラウド構成 (Vertex AI + GCS プライマリ、AI Studio バックアップ)**：
-   - **プライマリバックエンド**：Google Cloud Vertex AI（Application Default Credentials、ADC 認証対応）。グリッド映像は Google Cloud Storage（GCS）にアップロードされ、ローカル SHA-256 およびファイルサイズキャッシュにより重複アップロードを完全に防止。
-   - **バックアップフォールバック**：`--fallback-studio` オプションを指定すると、Vertex AI / GCS の権限やクォータ不足時に自動的に Google AI Studio（`GEMINI_API_KEY`）へシームレスに切り替わり、処理を安全に続行。
+6. **100% Google Cloud Vertex AI (ADC) + GCS スマートキャッシュ＆2段階自動ライフサイクル構成**：
+   - **API キー管理ゼロのセキュア認証**：Google Cloud Vertex AI（`GOOGLE_CLOUD_LOCATION=global`）と Application Default Credentials（ADC）のみを使用し、AI Studio（`GEMINI_API_KEY`）や外部 File API へのアップロードを完全排除。
+   - **GCS SHA-256 キャッシュ＆2段階自動削除（2日／15日）**：グリッド映像や音声は `gs://multicam-video-${PROJECT_ID}/raw/` にアップロードされ、ローカル SHA-256 キャッシュにより再アップロードを防止。一時ファイル（`raw/`）は **2日後**、成果物（`output/`、`deliverables/`、`multicam_assets/`）は **15日後** に GCS ライフサイクルルールで自動削除されます（`--cleanup-gcs` で推論完了直後に即時削除も可能）。
    - **実行コマンド例**：
      ```bash
-     # プライマリ: Google Cloud Vertex AI (ADC + GCS キャッシュ、デフォルト):
+     # 標準実行: Google Cloud Vertex AI (ADC + GCS キャッシュ):
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # 推論完了後に GCS 上の一時動画を即時削除:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --cleanup-gcs
 
      # 厳格 EDL 検証モード（ERROR 検出時に即時停止）:
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
@@ -163,9 +169,6 @@ multicam-video-preprocessing/
      # ギャップ許容閾値とカメラホワイトリストの個別設定:
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
        --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
-
-     # Google AI Studio への自動フォールバックを有効化:
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
      ```
 
 ### ステップ 3A：FCP7 XML タイムラインエクスポート (`export_fcp7_xml.py`)
@@ -219,11 +222,11 @@ multicam-video-preprocessing/
   - **フリッカー防止微小ギャップ結合**：$< 0.2\text{s}$ の微小ギャップを 0s に平滑化、$+0.4\text{s}$ の呼吸余白を確保。
 - **実行コマンド例**：
   ```bash
-  # 基本実行（Google Cloud Vertex AI & ADC 認証、デフォルト）：
+  # 標準実行（Google Cloud Vertex AI & ADC 認証 + GCS ステージング）：
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
-  # Google AI Studio への自動フォールバックを有効化：
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
+  # Stage 1 完了後に GCS 上の全編音声を即時削除：
+  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --cleanup-gcs
 
   # 台本／収録原稿を渡して用語と文脈を最適化：
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --script manuscript.txt
@@ -243,31 +246,48 @@ multicam-video-preprocessing/
 
 ---
 
-## 🛠️ 必要環境とクラウド設定
+## 🛠️ 必要環境とクラウド設定 (`setup.sh`)
 
 - **Google Antigravity IDE / Agent Framework**
 - **FFmpeg**（`h264_videotoolbox` ハードウェアエンコードおよび `loudnorm` 対応）
 - **Python 3.8+**（`numpy`, `google-genai`, `google-cloud-storage`）
+- **Google Cloud SDK (`gcloud`)**
 
-### クラウド認証とデュアルバックエンド設定
+### ワンクリック環境構築 (`setup.sh`) と 2段階 GCS 自動クリーンアップ
 
-本ツールキットは**デュアルバックエンドクラウド構成**を採用しています：
+本ツールキットは **100% Google Cloud Vertex AI（Application Default Credentials, ADC）+ Google Cloud Storage (GCS)** アーキテクチャを採用しており、API キーの手動管理や AI Studio へのアップロードは一切不要です。
 
-1. **Google Cloud Vertex AI (プライマリ、推奨)**：
-   - Google Cloud ADC でログイン認証（API キーの管理不要）：
-     ```bash
-     gcloud auth application-default login
-     ```
-   - `.env.example` を `.env` にコピーしてプロジェクト ID と GCS バケットを設定：
-     ```bash
-     cp .env.example .env
-     ```
-     ```env
-     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
-     GCS_BUCKET=video-preprocessing-sylph-demo-505906
-     GOOGLE_CLOUD_LOCATION=us-central1
-     GEMINI_API_KEY=your_gemini_api_key_here
-     ```
-   - スマートな SHA-256 ローカルハッシュキャッシュにより、大容量動画の重複アップロードを防止します。
-2. **Google AI Studio (バックアップ / 単体利用)**：
-   - `--backend studio` を指定するか、`--fallback-studio` を付与することで、Vertex AI の権限不足時に自動的に Google AI Studio（`GEMINI_API_KEY`）へ切り替わります。
+```bash
+# 対話形式でローカル依存関係チェック・ADC 認証・Vertex AI 有効化・GCS バケット構築を一括実行：
+./setup.sh
+
+# 非対話モード（Antigravity エージェント自動実行用）：
+./setup.sh --project YOUR_GCP_PROJECT_ID --region us-central1 --non-interactive
+```
+
+1. **自動プロビジョニング内容 (`setup.sh`)**：
+   - `aiplatform.googleapis.com`（Vertex AI）および `storage.googleapis.com`（GCS）API の自動有効化。
+   - 専用 GCS バケット（`gs://multicam-video-${PROJECT_ID}`）の自動作成と IAM 権限（`roles/aiplatform.user`, `roles/storage.objectAdmin`）の設定。
+   - `.env` 設定ファイルの自動生成（`GOOGLE_CLOUD_LOCATION=global`, `GCP_REGION=us-central1`）。
+2. **🗑️ GCS バケット 2段階ライフサイクル自動削除ルール一覧**：
+
+| GCS パスプレフィックス (`matchesPrefix`) | 保存対象ファイル | 保持期間 (`age`) | 削除メカニズム | 設計目的 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`raw/audio_chunks/`** | 字幕 Stage 3 チャンク音声スライス (`.m4a` / `.mp3`) | **推論直後に即時削除** | Python `finally` で即時削除（`raw/` 2日ルールで二重保護） | チャンクごとのマルチモーダル音声校正が完了した直後に自動削除されます。 |
+| **`raw/`** | 全編グリッド動画 (`multicam_merged_full.mp4`)、全編音声 (`final_cut_full_audio.m4a`) | **2日間 (`age: 2`)** | GCS Lifecycle 自動 `Delete`（`--cleanup-gcs` で即時削除可） | SHA-256 キャッシュにより同日中の再アップロードを防ぎつつ、**2日後**に自動削除してストレージ課金を抑止します。 |
+| **`output/`**<br/>**`deliverables/`**<br/>**`multicam_assets/`** | タイムライン (`.xml` / `.csv`)、字幕 (`.srt` / `.vtt`)、レポート、完成動画などの成果物 | **15日間 (`age: 15`)** | GCS Lifecycle 自動 `Delete` | 成果物およびプロジェクト資産を **15日間** 保持し、チームのダウンロード・確認後に自動クリーンアップします。 |
+
+```json
+{
+  "rule": [
+    {
+      "action": { "type": "Delete" },
+      "condition": { "age": 2, "matchesPrefix": ["raw/"] }
+    },
+    {
+      "action": { "type": "Delete" },
+      "condition": { "age": 15, "matchesPrefix": ["output/", "deliverables/", "multicam_assets/"] }
+    }
+  ]
+}
+```

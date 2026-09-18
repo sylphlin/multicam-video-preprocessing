@@ -1,35 +1,25 @@
 #!/usr/bin/env python3
 """
 YouTube Subtitles Generator CLI Tool (generate_subtitles.py).
-Generates millisecond-accurate, contextually proofread YouTube subtitles (SRT & VTT).
+Generates millisecond-accurate, contextually proofread YouTube subtitles (SRT & VTT)
+using 100% Google Cloud Vertex AI (ADC) and Google Cloud Storage (GCS).
 
 Three-Stage Golden Standard Pipeline:
-  Stage 1: Global Audio Context & Glossary Extraction (Gemini 1M Context Audio Scan).
-           Listens to the entire episode audio to extract speaker names, channel title, English terms, and domain jargon.
-           Optionally merges user-provided interview outlines (--outline).
+  Stage 1: Global Audio Context & Glossary Extraction (Vertex AI Gemini 1M Context Audio Scan via GCS).
+           Listens to the entire episode audio staged on GCS to extract speaker names, channel title,
+           English terms, and domain jargon. Optionally merges user-provided interview outlines (--outline).
   Stage 2: Zero-Drift Acoustic Transcription via Whisper (mlx-whisper / faster-whisper).
            Produces frame-locked, physical acoustic millisecond timestamps (0.000s drift).
-  Stage 3: Multimodal Audio-Text Chunked Precision Proofreading (Gemini 3.8 Flash).
-           Slices local audio chunks and proofreads subtitles against both the local acoustic waveform and the Global Glossary,
-           strictly preserving 100% of Whisper's millisecond timestamps and line indices.
+  Stage 3: Multimodal Audio-Text Chunked Precision Proofreading (Vertex AI Gemini 3.8 Flash + GCS).
+           Slices local audio chunks, stages them to GCS, and proofreads subtitles against both the
+           acoustic waveform and the Global Glossary, strictly preserving 100% of Whisper's millisecond timestamps.
 
 Usage Examples:
-  # Standard YouTube Subtitle Generation (Whisper + Gemini Audio Proofreading)
+  # Standard YouTube Subtitle Generation (Whisper + Vertex AI Gemini Audio Proofreading via ADC/GCS)
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
   # With User Interview Outline / Glossary
   python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Alex, Guest: Chris, Topics: AI, Tech Trends"
-
-  # OpenAI / Codex Cloud Endpoint (GPT-5.6 Luna)
-  python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
-    --base-url https://api.openai.com/v1 --model gpt-5.6-luna --api-key $OPENAI_API_KEY
-
-Language Support & Fallbacks:
-  Dedicated subtitle templates are provided for: zh-TW, zh-CN, ja, ko, en.
-  Any unsupported language code falls back to 'en' conventions (Latin script typography & line limits).
-  Known limitation: Falling back to 'en' is suitable for Latin-script languages (fr, de, es, pt, etc.),
-  but serves as an approximation for non-Latin scripts such as Thai (no word boundary spacing),
-  Arabic/Hebrew (right-to-left), and Devanagari.
 """
 
 import argparse
@@ -43,19 +33,16 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 
 # Support internal modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from modules.llm_client import call_llm, resolve_api_key
-    from modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache
+    from modules.llm_client import call_llm
+    from modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, delete_gcs_blob
     from modules.progress import LiveTicker
 except ImportError:
-    from scripts.modules.llm_client import call_llm, resolve_api_key
-    from scripts.modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache
+    from scripts.modules.llm_client import call_llm
+    from scripts.modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, delete_gcs_blob
     from scripts.modules.progress import LiveTicker
 
 
@@ -427,12 +414,12 @@ def extract_whisper_prompt(glossary_text, max_chars=145, language="zh-TW"):
 
 
 def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, user_script=None,
-                            api_key=None, base_url=None, model="gemini-3.8-flash",
-                            backend="vertex", project=None, gcs_bucket=None, location=None, fallback_studio=False):
+                            model="gemini-3.8-flash", project=None, gcs_bucket=None,
+                            location=None, region=None, cleanup_gcs=False):
     """
-    Stage 1: Global Audio Context & Consistency Glossary Extraction (Gemini 1M Context Scan).
-    Listens to full episode audio (and/or analyzes user script / outline) to extract speaker names,
-    organizations, acronyms, and critical domain terminology.
+    Stage 1: Global Audio Context & Consistency Glossary Extraction (Vertex AI Gemini 1M Context Scan).
+    Listens to full episode audio staged on GCS (and/or analyzes user script / outline) to extract
+    speaker names, organizations, acronyms, and critical domain terminology.
     Also produces a concentrated Whisper Initial Prompt line at the top.
     """
     print(f"\n[Stage 1/3] 🎧 Extracting Global Consistency Glossary across entire episode...")
@@ -463,50 +450,37 @@ def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, us
         "Output ONLY the clean, authoritative Markdown Glossary:"
     )
 
-    # Use lightweight compressed MP3 for audio scanning if audio file is available
-    audio_for_gemini = None
+    # Compress to 48k mono MP3 and stage to GCS for Vertex AI 1M Context Scan
     gcs_audio_uri = None
     tmp_audio_mp3 = None
-    if audio_wav and os.path.exists(audio_wav) and "gemini" in model.lower() and not base_url:
+    if audio_wav and os.path.exists(audio_wav) and gcs_bucket:
         try:
             tmp_audio_mp3 = os.path.join(os.path.dirname(audio_wav), "global_glossary_audio.mp3")
-            # Compress to 48k mono mp3 for fast upload
             subprocess.run(["ffmpeg", "-y", "-i", audio_wav, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "48k", tmp_audio_mp3],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-            mp3_size = os.path.getsize(tmp_audio_mp3)
-            if mp3_size <= 20 * 1024 * 1024:  # <= 20MB inline limit
-                audio_for_gemini = tmp_audio_mp3
-            elif backend == "vertex" and gcs_bucket:
-                # Upload to GCS if > 20MB for Vertex AI
-                try:
-                    gcs_audio_uri = upload_file_to_gcs_with_cache(
-                        tmp_audio_mp3,
-                        bucket_name=gcs_bucket,
-                        project=project,
-                        location=location or "us-central1"
-                    )
-                except Exception as gcs_err:
-                    print(f"  [Notice] GCS audio upload failed ({gcs_err}), falling back to text-only glossary scan.", file=sys.stderr)
-        except Exception as e:
-            audio_for_gemini = None
+            gcs_audio_uri = upload_file_to_gcs_with_cache(
+                tmp_audio_mp3,
+                bucket_name=gcs_bucket,
+                gcs_prefix="raw",
+                project=project,
+                region=region or "us-central1",
+            )
+        except Exception as gcs_err:
+            print(f"  [Notice] GCS audio upload failed ({gcs_err}), falling back to text-only glossary scan.", file=sys.stderr)
 
     try:
-        with LiveTicker("Extracting Global Consistency Glossary via Gemini (1M context scan)"):
+        with LiveTicker("Extracting Global Consistency Glossary via Vertex AI Gemini (1M context scan)"):
             glossary_content = call_llm(
                 prompt=prompt,
                 model=model,
-                backend=backend,
                 project=project,
                 location=location,
                 gcs_bucket=gcs_bucket,
-                fallback_studio=fallback_studio,
-                base_url=base_url,
-                api_key=api_key,
-                audio_path=audio_for_gemini,
+                region=region,
                 gcs_uri=gcs_audio_uri,
                 temperature=0.1,
                 max_tokens=4096,
-                thinking_budget=0
+                thinking_budget=0,
             )
         duration = time.time() - t0
         print(f"  ✓ Global Glossary extracted in {duration:.1f}s")
@@ -515,10 +489,12 @@ def extract_global_glossary(audio_wav=None, segments=None, user_outline=None, us
         print(f"  [Warning] Global glossary extraction failed ({e}). Continuing with standard proofreading.", file=sys.stderr)
         return user_outline or user_script or ""
     finally:
+        if cleanup_gcs and gcs_audio_uri:
+            delete_gcs_blob(gcs_audio_uri, project=project)
         if tmp_audio_mp3 and os.path.exists(tmp_audio_mp3):
             try:
                 os.remove(tmp_audio_mp3)
-            except:
+            except Exception:
                 pass
 
 
@@ -679,10 +655,10 @@ def align_split_clauses_with_words(final_parts, t_start, t_end, all_words=None):
 
 
 def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glossary, audio_wav,
-                           api_key=None, base_url=None, model="gemini-3.8-flash", user_script=None,
-                           backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False,
+                           model="gemini-3.8-flash", user_script=None,
+                           project=None, location=None, gcs_bucket=None, region=None,
                            max_chars_cjk=15, max_chars_korean=16, max_chars_latin=42):
-    """Worker function to proofread a single chunk of SRT blocks with local audio slice and optional reference script."""
+    """Worker function to proofread a single chunk of SRT blocks with GCS-staged audio slice and optional reference script."""
     chunk_text = "\n\n".join(chunk_slice)
     glossary_section = f"\n=== 全片權威專有名詞對照表 (Global Consistency Glossary) ===\n{global_glossary}\n============================================================\n" if global_glossary else ""
     script_section = ""
@@ -698,7 +674,7 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
     chunk_mp3_path = None
     tmp_dir = os.path.dirname(audio_wav) if audio_wav else None
 
-    if audio_wav and os.path.exists(audio_wav) and "gemini" in model.lower() and not base_url:
+    if audio_wav and os.path.exists(audio_wav):
         try:
             # Find start and end timestamps in this chunk
             first_block = chunk_slice[0].splitlines()
@@ -730,17 +706,15 @@ def proofread_single_chunk(c_idx, num_chunks, chunk_slice, template, global_glos
         response_text = call_llm(
             prompt=prompt,
             model=model,
-            backend=backend,
             project=project,
             location=location,
             gcs_bucket=gcs_bucket,
-            fallback_studio=fallback_studio,
-            base_url=base_url,
-            api_key=api_key,
+            region=region,
             audio_path=chunk_mp3_path,
+            cleanup_ephemeral_audio=True,
             temperature=0.1,
             max_tokens=8192,
-            thinking_budget=0
+            thinking_budget=0,
         )
 
         match = re.search(r"```(?:srt)?\s*\n(.*?)```", response_text, re.DOTALL | re.IGNORECASE)
@@ -1193,13 +1167,13 @@ def sanitize_subtitle_timings(raw_srt, all_words=None, min_duration=1.0, max_dur
 
 
 def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_script=None,
-                           api_key=None, base_url=None, model="gemini-3.8-flash", chunk_size=80,
+                           model="gemini-3.8-flash", chunk_size=80,
                            max_workers=5, language="zh-TW", all_words=None, cache_path=None,
-                           backend="vertex", project=None, location=None, gcs_bucket=None, fallback_studio=False,
+                           project=None, location=None, gcs_bucket=None, region=None,
                            max_chars_cjk=15, max_chars_korean=16, max_chars_latin=42):
     """
     Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading with injected Global Glossary and Reference Script.
-    Slices local audio chunks and proofreads subtitles against actual audio acoustics,
+    Slices local audio chunks, stages them to GCS, and proofreads subtitles against actual audio acoustics via Vertex AI,
     guaranteeing 100% physical timestamp preservation.
     """
     template, tmpl_file = load_proofread_template(
@@ -1260,9 +1234,9 @@ def proofread_srt_with_llm(raw_srt, audio_wav=None, global_glossary=None, user_s
                     proofread_single_chunk,
                     c_idx, num_chunks, chunk_slices[c_idx],
                     template, global_glossary, audio_wav,
-                    api_key=api_key, base_url=base_url, model=model, user_script=user_script,
-                    backend=backend, project=project, location=location,
-                    gcs_bucket=gcs_bucket, fallback_studio=fallback_studio,
+                    model=model, user_script=user_script,
+                    project=project, location=location,
+                    gcs_bucket=gcs_bucket, region=region,
                     max_chars_cjk=max_chars_cjk, max_chars_korean=max_chars_korean, max_chars_latin=max_chars_latin
                 ): c_idx
                 for c_idx in uncached_indices
@@ -1792,23 +1766,20 @@ def main():
     parser.add_argument("--whisper-model", default="base", choices=["tiny", "base", "small", "medium", "large-v3"],
                         help="Whisper model size for Stage 2 acoustic transcription (default: base)")
     parser.add_argument("--model", default="gemini-3.8-flash",
-                        help="LLM model for Stage 1 & 3 proofreading (e.g. gemini-3.8-flash, gpt-5.6-luna, gemma4:e4b)")
-    parser.add_argument("--base-url", default=None,
-                        help="Custom OpenAI-compatible API base URL (e.g. https://api.openai.com/v1, http://localhost:11434/v1)")
-    parser.add_argument("--backend", default="vertex", choices=["vertex", "studio"],
-                        help="LLM & Storage backend: 'vertex' (Google Cloud Vertex AI + GCS via ADC, default) or 'studio' (Google AI Studio via API Key)")
+                        help="Vertex AI Gemini model for Stage 1 & 3 proofreading (default: gemini-3.8-flash)")
     parser.add_argument("--project", default=None,
-                        help="Google Cloud Project ID for Vertex AI (or set GOOGLE_CLOUD_PROJECT in .env)")
-    parser.add_argument("--gcs-bucket", default=None,
-                        help="Google Cloud Storage Bucket for audio assets (or set GCS_BUCKET in .env)")
+                        help="Google Cloud Project ID for Vertex AI / GCS (or set GOOGLE_CLOUD_PROJECT in .env)")
+    parser.add_argument("--gcs-bucket", "--bucket", dest="gcs_bucket", default=None,
+                        help="Google Cloud Storage Bucket for audio staging (default: multicam-video-${PROJECT_ID})")
     parser.add_argument("--location", default=None,
-                        help="Google Cloud Location/Region for Vertex AI (default: us-central1)")
-    parser.add_argument("--fallback-studio", action="store_true",
-                        help="Allow automatic fallback to Google AI Studio (API Key) if Vertex AI / GCS fails")
+                        help="Vertex AI Gemini endpoint location (default: global)")
+    parser.add_argument("--region", default=None,
+                        help="GCS Bucket infrastructure region (default: us-central1)")
+    parser.add_argument("--cleanup-gcs", action="store_true",
+                        help="Immediately delete staged glossary audio from GCS after completion (chunk audio is always auto-cleaned)")
     parser.add_argument("--language", default="auto", help="Spoken language code for transcription (default: auto for acoustic auto-detection, or zh-TW, en, ja, ko, zh-CN)")
     parser.add_argument("--device", default="auto", choices=["auto", "mps", "mlx", "cuda", "cpu"],
                         help="Device acceleration backend for Whisper (default: auto for Apple Silicon GPU / Neural Engine)")
-    parser.add_argument("--api-key", default=None, help="API Key (or set GEMINI_API_KEY / OPENAI_API_KEY environment variable)")
     parser.add_argument("--chunk-size", type=int, default=80, help="Subtitle entries per proofread batch (default: 80, ~2-3 mins)")
     parser.add_argument("--workers", type=int, default=5, help="Concurrent workers for parallel proofreading (default: 5)")
     parser.add_argument("--force", action="store_true", help="Force re-running Whisper transcription and Gemini proofreading (bypasses acoustic baseline cache)")
@@ -1826,20 +1797,19 @@ def main():
         print(f"[Error] Input media not found: {args.input}", file=sys.stderr)
         sys.exit(1)
 
-    gcp_cfg = resolve_gcp_config(args.project, args.gcs_bucket, args.location)
-    resolved_key = resolve_api_key(args.api_key, args.base_url, args.model)
-    active_backend = args.backend
+    gcp_cfg = resolve_gcp_config(
+        cli_project=args.project,
+        cli_bucket=args.gcs_bucket,
+        cli_location=args.location,
+        cli_region=args.region,
+    )
 
-    if active_backend == "vertex" and not args.base_url and "gemini" in args.model.lower():
-        if not gcp_cfg.get("project"):
-            if args.fallback_studio and resolved_key:
-                print("\n  ⚠️ Incomplete GCP configuration (Project ID missing). Falling back to Google AI Studio...", file=sys.stderr)
-                active_backend = "studio"
-            else:
-                print("\n[Error] Missing Google Cloud Project ID for Vertex AI!", file=sys.stderr)
-                print(f"  Project : '{gcp_cfg.get('project')}'", file=sys.stderr)
-                print("  Please configure GOOGLE_CLOUD_PROJECT in .env, pass --project, or use --fallback-studio / --backend studio.", file=sys.stderr)
-                sys.exit(1)
+    if not gcp_cfg.get("project") or not gcp_cfg.get("bucket"):
+        print("\n[Error] Missing Google Cloud Project ID or GCS Bucket for Vertex AI!", file=sys.stderr)
+        print(f"  Project : '{gcp_cfg.get('project')}'", file=sys.stderr)
+        print(f"  Bucket  : '{gcp_cfg.get('bucket')}'", file=sys.stderr)
+        print("  Action Required: Run './setup.sh' to auto-provision GCP & .env, or pass --project / --gcs-bucket.", file=sys.stderr)
+        sys.exit(1)
 
     input_basename = os.path.splitext(os.path.basename(args.input))[0]
     out_dir = args.output_dir or os.path.dirname(os.path.abspath(args.input)) or "."
@@ -1865,24 +1835,16 @@ def main():
             user_script_text = f.read().strip()
 
     print("\n" + "=" * 78)
-    print("🎬  YouTube Subtitles Generator (Global Glossary + Whisper ASR + Gemini Audio Proofreading)")
+    print("🎬  YouTube Subtitles Generator (Global Glossary + Whisper ASR + Vertex AI Audio Proofreading)")
     print("=" * 78)
     print(f"  • Input Media   : {args.input}")
     print(f"  • LLM Model     : {args.model}")
-    if active_backend == "vertex" and not args.base_url and "gemini" in args.model.lower():
-        print(f"  • Active Backend: Google Cloud Vertex AI (Project: {gcp_cfg.get('project')}, Location: {gcp_cfg.get('location')})")
-        if gcp_cfg.get("bucket"):
-            print(f"  • GCS Storage   : gs://{gcp_cfg.get('bucket')}")
-    elif args.base_url:
-        print(f"  • Active Backend: Custom Endpoint ({args.base_url})")
-    else:
-        print(f"  • Active Backend: Google AI Studio (API Key)")
+    print(f"  • Active Backend: Google Cloud Vertex AI (Project: {gcp_cfg.get('project')}, Location: {gcp_cfg.get('location')})")
+    print(f"  • GCS Storage   : gs://{gcp_cfg.get('bucket')}/raw/ (Region: {gcp_cfg.get('region')}, 2-day Lifecycle)")
     if args.script:
         print(f"  • Source Script : {os.path.basename(args.script) if os.path.isfile(args.script) else 'Supplied text'} ({len(user_script_text or '')} chars)")
     if args.outline:
         print(f"  • User Outline  : {args.outline[:50]}...")
-    if args.base_url:
-        print(f"  • Base URL      : {args.base_url}")
     print(f"  • Whisper Model : {args.whisper_model} (Language: {args.language}, Device: {args.device})")
     print(f"  • Batch Settings: Chunk {args.chunk_size} lines | {args.workers} Parallel Workers")
     print(f"  • Target SRT    : {final_srt_path}")
@@ -1894,44 +1856,34 @@ def main():
         print("\n[Step 0] 🎙️ Extracting 16kHz mono audio from media...")
         extract_audio_16k_mono(args.input, tmp_wav)
 
-        has_llm = bool(
-            args.base_url or
-            (active_backend == "vertex" and gcp_cfg.get("project")) or
-            (active_backend == "studio" and resolved_key) or
-            resolved_key
-        )
-
         # Stage 1: Global Audio Context & Consistency Glossary Extraction (Full 1M Context Scan)
         global_glossary = None
-        if has_llm:
-            if os.path.exists(glossary_path) and not args.force_glossary:
-                print(f"\n[Stage 1/3] 📚 Found cached Global Glossary: {glossary_path}")
-                try:
-                    with open(glossary_path, "r", encoding="utf-8") as f:
-                        global_glossary = f.read().strip()
-                    print(f"  ✓ Successfully loaded global glossary from cache ({len(global_glossary)} chars).")
-                except Exception as e:
-                    print(f"  [Notice] Failed to read cached glossary ({e}), re-extracting...")
-                    global_glossary = None
+        if os.path.exists(glossary_path) and not args.force_glossary:
+            print(f"\n[Stage 1/3] 📚 Found cached Global Glossary: {glossary_path}")
+            try:
+                with open(glossary_path, "r", encoding="utf-8") as f:
+                    global_glossary = f.read().strip()
+                print(f"  ✓ Successfully loaded global glossary from cache ({len(global_glossary)} chars).")
+            except Exception as e:
+                print(f"  [Notice] Failed to read cached glossary ({e}), re-extracting...")
+                global_glossary = None
 
-            if not global_glossary:
-                global_glossary = extract_global_glossary(
-                    audio_wav=tmp_wav,
-                    user_outline=user_outline_text,
-                    user_script=user_script_text,
-                    api_key=args.api_key,
-                    base_url=args.base_url,
-                    model=args.model,
-                    backend=active_backend,
-                    project=gcp_cfg.get("project"),
-                    gcs_bucket=gcp_cfg.get("bucket"),
-                    location=gcp_cfg.get("location"),
-                    fallback_studio=args.fallback_studio
-                )
-                if global_glossary:
-                    with open(glossary_path, "w", encoding="utf-8") as f:
-                        f.write(global_glossary + "\n")
-                    print(f"  • Saved Global Glossary: {glossary_path}")
+        if not global_glossary:
+            global_glossary = extract_global_glossary(
+                audio_wav=tmp_wav,
+                user_outline=user_outline_text,
+                user_script=user_script_text,
+                model=args.model,
+                project=gcp_cfg.get("project"),
+                gcs_bucket=gcp_cfg.get("bucket"),
+                location=gcp_cfg.get("location"),
+                region=gcp_cfg.get("region"),
+                cleanup_gcs=args.cleanup_gcs,
+            )
+            if global_glossary:
+                with open(glossary_path, "w", encoding="utf-8") as f:
+                    f.write(global_glossary + "\n")
+                print(f"  • Saved Global Glossary: {glossary_path}")
 
         # Extract Whisper initial prompt from Global Glossary (Dual-track parsing)
         whisper_bias_prompt = extract_whisper_prompt(global_glossary, language=args.language)
@@ -1994,41 +1946,26 @@ def main():
             except Exception:
                 pass
 
-        alignment_stats = None
-        if not has_llm:
-            print(f"\n[Stage 3/3] ℹ️  No LLM credentials (Vertex AI ADC / GEMINI_API_KEY / OPENAI_API_KEY) configured.")
-            print(f"            Saving raw Whisper acoustic transcription directly as final SRT/VTT.")
-            final_srt = sanitize_subtitle_timings(
-                raw_srt, all_words=all_words, language=effective_lang,
-                max_chars_cjk=args.max_chars_cjk,
-                max_chars_korean=args.max_chars_korean,
-                max_chars_latin=args.max_chars_latin
-            )
-            alignment_stats = {"total": len(segments), "locked": len(segments), "fallback": 0, "fallback_indices": []}
-        else:
-            # Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading
-            final_srt, alignment_stats = proofread_srt_with_llm(
-                raw_srt=raw_srt,
-                audio_wav=tmp_wav,
-                global_glossary=global_glossary,
-                user_script=user_script_text,
-                api_key=args.api_key,
-                base_url=args.base_url,
-                model=args.model,
-                chunk_size=args.chunk_size,
-                max_workers=args.workers,
-                language=effective_lang,
-                all_words=all_words,
-                cache_path=chunk_cache_path,
-                backend=active_backend,
-                project=gcp_cfg.get("project"),
-                location=gcp_cfg.get("location"),
-                gcs_bucket=gcp_cfg.get("bucket"),
-                fallback_studio=args.fallback_studio,
-                max_chars_cjk=args.max_chars_cjk,
-                max_chars_korean=args.max_chars_korean,
-                max_chars_latin=args.max_chars_latin
-            )
+        # Stage 3: Multimodal Audio-Text Parallel Chunked Proofreading via Vertex AI & GCS
+        final_srt, alignment_stats = proofread_srt_with_llm(
+            raw_srt=raw_srt,
+            audio_wav=tmp_wav,
+            global_glossary=global_glossary,
+            user_script=user_script_text,
+            model=args.model,
+            chunk_size=args.chunk_size,
+            max_workers=args.workers,
+            language=effective_lang,
+            all_words=all_words,
+            cache_path=chunk_cache_path,
+            project=gcp_cfg.get("project"),
+            location=gcp_cfg.get("location"),
+            gcs_bucket=gcp_cfg.get("bucket"),
+            region=gcp_cfg.get("region"),
+            max_chars_cjk=args.max_chars_cjk,
+            max_chars_korean=args.max_chars_korean,
+            max_chars_latin=args.max_chars_latin,
+        )
 
         # Write Final SRT
         with open(final_srt_path, "w", encoding="utf-8") as f:

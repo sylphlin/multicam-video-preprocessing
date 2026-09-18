@@ -14,18 +14,42 @@
 
 ---
 
-## 📦 Antigravity 匯入與安裝 (Installation & Setup)
+## 📦 安裝與部署指南 (Installation & Deployment)
 
-本專案完全適配 Antigravity Skill 與 Workflow 標準結構，可直接 Clone 至 Antigravity 技能目錄下無縫啟用：
+本專案完全遵循 [Agent Plugins 1.0](https://agent-plugins.org/) 與 Antigravity Skill 標準結構，並採用 **100% Google Cloud Vertex AI (ADC) + Cloud Storage (GCS)** 雲端架構（免管理任何 API Key）。
+
+### 1. 安裝為 Antigravity Plugin 或 Skill
+
+- **安裝為全域外掛 (Global Plugin，推薦：自動載入 `plugin.json` 與常駐規則)**：
+  ```bash
+  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
+  ```
+- **或安裝為全域技能 (Global Skill)**：
+  ```bash
+  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+  ```
+
+### 2. 安裝相依套件與一鍵配置 GCP 雲端基礎設施 (`setup.sh`)
 
 ```bash
-git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+# 1. 安裝 Python 執行環境套件與 FFmpeg
+brew install ffmpeg
+pip install numpy google-genai google-cloud-storage mlx-whisper
+
+# 2. 執行 Google Cloud ADC 認證
+gcloud auth application-default login
+
+# 3. 透過 setup.sh 一鍵自動建置 GCS 儲存桶、2 天自動清理 Lifecycle、Vertex AI IAM 權限與 .env
+chmod +x setup.sh
+./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
 ### 📁 套件檔案結構
 ```text
 multicam-video-preprocessing/
 ├── GEMINI.md                          # Antigravity 根目錄常駐工作區規則
+├── setup.sh                          # 100% 原生 gcloud 一鍵建置腳本 (GCS 儲存桶、Lifecycle、IAM 與 .env)
+├── .env.example                       # Vertex AI (ADC) 與 GCS 環境變數範本
 ├── .agent/
 │   ├── rules/
 │   │   └── multicam_rules.md          # 常駐紀律規則 (Always-On Rules)
@@ -36,14 +60,14 @@ multicam-video-preprocessing/
 │       └── SKILL.md                   # Antigravity 技能能力定義清單
 ├── assets/                            # 提示詞樣板資產 (Prompt Assets)
 │   ├── edl_interview_template.md      # Gemini 訪談粗剪提示詞樣板
-│   └── subtitle_proofread_template.md # YouTube 字幕語意校對樣板
+│   └── subtitle_proofread_template.*.md # 多國語言 YouTube 字幕語意校對樣板
 ├── scripts/                           # 核心執行腳本與處理模組
 │   ├── multicam_pipeline.py           # 步驟 1: 多機時間同步、音量標準化、母帶導出與全集網格合成
-│   ├── generate_edl.py                # 步驟 2: Gemini 3.8 Flash Agentic Video 零切分 AI 剪輯決策生成
+│   ├── generate_edl.py                # 步驟 2: Vertex AI Gemini 3.8 Flash Agentic Video 零切分剪輯決策生成
 │   ├── export_fcp7_xml.py             # 步驟 3A: 匯出 FCP7 XML 時間線 (主路徑)
 │   ├── edl_to_video.py                # 步驟 3B: 一步到位硬體加速成片直接渲染 (次路徑)
-│   ├── generate_subtitles.py          # 步驟 4: 生成 YouTube 字幕 (Whisper+Gemini)
-│   └── modules/                       # 核心聲學與視訊演算法庫
+│   ├── generate_subtitles.py          # 步驟 4: 生成 YouTube 字幕 (Whisper + Vertex AI Gemini)
+│   └── modules/                       # 核心聲學、視訊與 GCP/Vertex AI 模組庫
 └── README.zh-TW.md
 ```
 
@@ -207,29 +231,20 @@ flowchart TD
    - **防呆門檻 (`--strict-edl`)**：預設僅發出警告並繼續執行；傳入 `--strict-edl` 則在偵測到任何 `ERROR` 時立即以 exit code 1 中斷，防止瑕疵 EDL 流入下游。
    - **報告多語言支援 (`--lang`)**：內建支援 `en`（預設）與 `zh-TW`。語言代碼具備寬容性，`zh-Hant`、`zh_TW`、`ZH-TW` 等變體自動歸一為 `zh-TW`；未支援語言靜默回退至 `en`，不拋錯。
    - **自訂參數**：`--edl-max-gap-sec`（預設 `0.05` 秒）；`--edl-known-cameras`（逗號分隔如 `CAM1,CAM2`，未指定時預設 `^CAM\d+$`）。
-6. **雙後端雲端架構 (Vertex AI + GCS 主要後端，AI Studio 備用)**：
-   - **主要後端**：Google Cloud Vertex AI 搭配 Application Default Credentials（ADC，免管 API Key）。網格影片上傳至 Google Cloud Storage（GCS），並內建 SHA-256 與檔案大小快取，跨次執行免重複上傳。
-   - **備用容錯**：加上 `--fallback-studio` 參數，若 Vertex AI / GCS 出現權限或配額錯誤時，自動無縫容錯切換至 Google AI Studio（`GEMINI_API_KEY`），確保流程不中斷。
+6. **100% 純淨 Vertex AI (ADC) 與 GCS 智慧快取／雙層 Lifecycle 架構**：
+   - **全面採用 ADC 與 Vertex AI**：透過 Google Cloud Application Default Credentials（`gcloud auth application-default login`）呼叫 Vertex AI Gemini 3.8 Flash（預設 `GOOGLE_CLOUD_LOCATION=global`），完全免管理任何 API Key。
+   - **GCS 儲存與雙層智慧生命週期管理（2 天 / 15 天）**：網格影片與音軌自動上傳至 `gs://multicam-video-${PROJECT_ID}/raw/`，具備 SHA-256 雜湊快取（同日重複調校免重傳數 GB 大檔）。Bucket Lifecycle 自動對 **`raw/` 暫存檔設定 2 天自動刪除（`age: 2`）**，並對 **`output/`、`deliverables/`、`multicam_assets/` 產出物設定 15 天自動刪除（`age: 15`）**；亦可加上 `--cleanup-gcs` 於執行後立即刪除。
    - **執行指令範例**：
      ```bash
-     # 主要 Vertex AI + GCS 執行（預設，讀取 .env / ADC）：
+     # 標準 Vertex AI + GCS 執行（讀取 .env / ADC）：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
 
-     # 啟用嚴格 EDL 驗證模式（出現 ERROR 即中斷）：
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
+     # 啟用嚴格 EDL 驗證模式與繁體中文報告（推薦）：
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl --lang zh-TW
 
-     # 指定繁體中文驗證報告：
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --lang zh-TW
-
-     # 自訂間隔容許門檻與指定相機白名單：
+     # 自訂間隔容許門檻、指定相機白名單，並於完成後立即清理 GCS 暫存：
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
-       --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
-
-     # 啟用 AI Studio 自動容錯降級：
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
-
-     # 直接指定 Google AI Studio 執行：
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --backend studio
+       --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2 --cleanup-gcs
      ```
 
 ---
@@ -277,7 +292,7 @@ flowchart TD
 
 ### 步驟 4：生成 YouTube 字幕 (`generate_subtitles.py`)
 
-本工具採用業界頂級的 **三階段黃金字幕生產線（Three-Stage Golden Subtitle Pipeline）**，結合 **Gemini 1M 全篇音訊宏觀理解**、**Whisper 聲學物理時間軸與專有名詞偏置** 與 **Gemini 局部音軌多模態精修**：
+本工具採用業界頂級的 **三階段黃金字幕生產線（Three-Stage Golden Subtitle Pipeline）**，結合 **Vertex AI Gemini 1M 全篇音訊宏觀理解**、**Whisper 聲學物理時間軸與專有名詞偏置** 與 **Vertex AI Gemini 局部音軌多模態精修（透過 GCS 暫存）**：
 
 #### 為什麼採用「全篇詞彙庫 + Whisper 物理時間碼 + Gemini 音訊多模態審稿」？
 
@@ -290,17 +305,17 @@ flowchart TD
 
 #### 三階段執行流程：
 1. **階段一（全篇音訊宏觀理解、雙軌專有名詞庫與 Whisper Initial Prompt 萃取）**：
-   - 提取全片音訊，由 Gemini 3.8 Flash（1M Context）一次聽完整集節目，可選注入訪綱筆記（`--outline`）或錄音完整講稿／逐字稿（`--script`）。
+   - 提取全片音訊並壓縮上傳至 GCS，由 Vertex AI Gemini 3.8 Flash（1M Context）一次聽完整集節目，可選注入訪綱筆記（`--outline`）或錄音完整講稿／逐字稿（`--script`）。
    - **雙軌解析產出**：不僅產出供 Gemini 審稿的完整 Markdown 詞彙庫（`final_cut_full_glossary.md`），更在文件頂部自動產出高密度、控制在 200 token（約 100～140 字元）內的 `> **Whisper Initial Prompt**: ...` 核心關鍵字列。
 2. **階段二（Whisper 聲學物理時間軸與專有名詞偏置）**：
    - 自動將 Stage 1 萃取的 `initial_prompt` 注入本地 `mlx-whisper`、`faster-whisper` 或 `openai-whisper`，大幅降低專有名詞首度聲學辨識錯誤率。
    - 透過硬體加速向量化提取每個段落與每個詞的真實物理起迄點（`word_timestamps=True`），產出 100% 零漂移的毫秒時間戳初稿與詞級聲學快取（`final_cut_full_raw_whisper.srt` 與 `final_cut_full_words.json`）。日後微調提示詞或排版時自動秒級載入快取，免去重複轉錄的漫長等待。
 3. **階段三（靜音感知語意切塊、微聲學錨定與多模態音訊審稿）**：
    - **靜音感知語意分塊 (Silence-Aware Semantic Chunking)**：淘汰死板的固定行數硬切，改在目標區間滑動窗口內搜尋講者**自然呼吸停頓**（Gap $\ge 0.4\text{s}$）與完整句尾語氣詞／標點（`？`、`！`、`。`、`來說`、`的話`），避開連詞前切斷，確保送交審稿之上下文語意完整。
-   - **文字語意與聲學時間徹底解耦**：Gemini 專注於口語語意自然斷句、排版標點淨化與同音錯字修正。
+   - **GCS 局部音軌暫存與即時清理**：每個切塊的音訊切片自動上傳至 `gs://<bucket>/raw/audio_chunks/` 供 Vertex AI 多模態聽音校對，並於該切塊推論完成後立即自動刪除雲端切片。
    - **子句微聲學錨定 (Micro-Acoustic Sub-clause Snapping)**：長句拆分為分句時，自動結合 Whisper 物理詞級時間戳 `all_words`，精確咬合口形發音的物理起迄點，拒絕均分比例導致的口形微偏差。
    - **日語發音與漢字音字同步規範**：講者口述唸出日文讀音時呈現「日文漢字（平假名）」（如 `改札（かいさつ）`）；純快速中文帶過未唸發音時呈現純漢字（如 `出改札`），並輔以括號剝離容錯比對演算法，杜絕聲學脫錨。
-   - **Gemini API 指數退避與隨機抖動重試機制 (Exponential Backoff & Jitter)**：面對併發請求或限流觸發 HTTP 429 (`RESOURCE_EXHAUSTED`)、503 / 500 等暫態錯誤時，自動進行最多 5 次指數退避重試（自動解析 `Retry-After` 並加上隨機 Jitter），防止並行 Worker 同時重打引發雷群效應，保證所有切塊字幕均能穩健完成審稿，不再輕易降級退回未校對的原始字幕。
+   - **Vertex AI 指數退避與隨機抖動重試機制 (Exponential Backoff & Jitter)**：面對併發請求或限流觸發 HTTP 429 (`RESOURCE_EXHAUSTED`)、503 / 500 等暫態錯誤時，自動進行最多 5 次指數退避重試，保證所有切塊字幕均能穩健完成審稿。
    - **區塊級持久化快取 (Chunk-Level Persistent Cache)**：結合模型、提示詞、詞彙庫與切塊文本產生唯一雜湊，校對區塊即時寫入 `.<basename>_chunk_cache.json`。若中途遇網路波動中斷，重新執行 100% 接續進度，零重複 token 消耗。
    - **防閃爍微間隙熔接與自然呼吸留白**：說話微小空隙（$< 0.6\text{s}$）自動平滑熔接為 0s Gap 消除畫面黑閃；講者真實停頓處保留 $+0.4\text{s}$ 閱讀呼吸緩衝後乾淨清空畫面，且單向時間鎖定保證字幕絕不遮蔽下一句話的發音。
 
@@ -325,12 +340,6 @@ flowchart TD
 ```bash
 # 基本執行（Google Cloud Vertex AI 與 ADC 認證，預設）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
-
-# 啟用 AI Studio 自動容錯降級：
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
-
-# 直接指定 Google AI Studio 執行：
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --backend studio
 
 # 提供訪綱或重點筆記偏置專有名詞（可選）：
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "講者: 來賓名稱, 主題: 核心議題、專有名詞列表"
@@ -357,31 +366,74 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 
 ---
 
-## 🛠️ 環境需求與雲端配置
+## 🛠️ 環境需求與 Google Cloud (ADC + GCS) 配置
 
 - **Google Antigravity IDE / Agent Framework**
 - **FFmpeg**（支援 `h264_videotoolbox` 硬體編碼與 `loudnorm` 濾鏡）
 - **Python 3.8+**（依賴 `numpy`、`google-genai`、`google-cloud-storage`）
+- **Google Cloud SDK (`gcloud`)**
 
-### 雲端認證與雙後端設定
+### 1. 一鍵雲端建置 (`./setup.sh`)
 
-本工具套件採用**雙後端雲端架構**：
+本工具套件 **100% 採用 Google Cloud Vertex AI 與 Cloud Storage (GCS)**，透過 Application Default Credentials (ADC) 驗證，不依賴任何 AI Studio API Key：
 
-1. **Google Cloud Vertex AI（主要後端，推薦）**：
-   - 透過 Google Cloud ADC 登入認證（免管 API Key）：
-     ```bash
-     gcloud auth application-default login
-     ```
-   - 複製 `.env.example` 為 `.env` 並填寫專案與儲存桶名稱：
-     ```bash
-     cp .env.example .env
-     ```
-     ```env
-     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
-     GCS_BUCKET=video-preprocessing-sylph-demo-505906
-     GOOGLE_CLOUD_LOCATION=us-central1
-     GEMINI_API_KEY=your_gemini_api_key_here
-     ```
-   - 具備智慧型 SHA-256 本機雜湊快取，大型影片上傳一次即可重複引用。
-2. **Google AI Studio（備用後端 / 輕量模式）**：
-   - 指定 `--backend studio` 或加上 `--fallback-studio`，系統在 Vertex AI / GCS 權限不足時自動切換至 Google AI Studio（使用 `GEMINI_API_KEY`）。
+```bash
+# 步驟 1：Google Cloud ADC 認證（若尚未登入）
+gcloud auth application-default login
+
+# 步驟 2：執行 setup.sh 自動完成 GCP API 啟用、GCS Bucket 建立、Lifecycle 規則掛載與 .env 寫入
+./setup.sh --project YOUR_GCP_PROJECT_ID
+```
+
+`setup.sh` 將使用 100% 原生 `gcloud` 自動完成：
+- 啟用 `aiplatform.googleapis.com` 與 `storage.googleapis.com` 服務。
+- 建立儲存桶 `gs://multicam-video-${PROJECT_ID}`（啟用 Uniform Bucket-Level Access 與 Public Access Prevention）。
+- 自動授予當前帳號與 **Vertex AI Service Agents** (`service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com`) 最小權限 `roles/storage.objectUser`。
+- 自動產生專案根目錄 `.env` 設定檔：
+  ```env
+  GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+  GOOGLE_CLOUD_LOCATION=global
+  GCP_REGION=us-central1
+  GCS_BUCKET=multicam-video-your-gcp-project-id
+  ```
+
+---
+
+### 2. 🗑️ GCS Bucket Lifecycle 自動清理規則 (自動儲存空間管理)
+
+為兼顧「同日重複調校免重傳大型檔案（SHA-256 快取）」與「避免雲端儲存費用無限累積」，`setup.sh` 與 `scripts/modules/gcp_client.py` 會在 GCS 儲存桶自動掛載以下 **分層自動清理規則（Object Lifecycle Management）**：
+
+| GCS 路徑前綴 (`matchesPrefix`) | 儲存檔案類型 | 保留期限 (`age`) | 清理方式 | 規則說明 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`raw/audio_chunks/`** | 字幕 Stage 3 切塊音訊切片 (`.m4a` / `.mp3`) | **推論後立即刪除** | Python `finally` 區塊即時刪除（雙重保險歸入 `raw/` 2 天清理） | 每個字幕切塊多模態聽音審稿完成後立即從 GCS 移除，不佔用空間。 |
+| **`raw/`** | 多合一全集網格影片 (`multicam_merged_full.mp4`)、全集主音軌 (`final_cut_full_audio.m4a`) | **2 天 (`age: 2`)** | GCS Lifecycle 自動 `Delete`（或傳入 `--cleanup-gcs` 立即刪除） | 作為 Vertex AI 多模態分析暫存。保留 2 天讓同專案重跑 Prompt 時可秒級命中 SHA-256 快取，**2 天後自動刪除**。 |
+| **`output/`**<br/>**`deliverables/`**<br/>**`multicam_assets/`** | 雲端備份之剪輯時間線 (`.xml` / `.csv`)、字幕檔 (`.srt` / `.vtt`)、分析報告與成片產出物 | **15 天 (`age: 15`)** | GCS Lifecycle 自動 `Delete` | 產出物與專案資產保留較長週期（**15 天**），方便團隊成員跨裝置下載、審閱與協作，**15 天後自動清理**。 |
+
+#### 📋 實際掛載之 GCS Lifecycle JSON 規則定義：
+```json
+{
+  "rule": [
+    {
+      "action": { "type": "Delete" },
+      "condition": {
+        "age": 2,
+        "matchesPrefix": ["raw/"]
+      }
+    },
+    {
+      "action": { "type": "Delete" },
+      "condition": {
+        "age": 15,
+        "matchesPrefix": ["output/", "deliverables/", "multicam_assets/"]
+      }
+    }
+  ]
+}
+```
+
+> 💡 **如何檢視或自訂保留天數**：
+> - 檢視當前儲存桶 Lifecycle 設定：
+>   ```bash
+>   gcloud storage buckets describe gs://multicam-video-YOUR_GCP_PROJECT_ID --format="json(lifecycle_config)"
+>   ```
+> - 若需調整保留天數，可直接修改 `setup.sh` 後重新執行 `./setup.sh --project YOUR_GCP_PROJECT_ID`，或透過 `gcloud storage buckets update gs://multicam-video-YOUR_GCP_PROJECT_ID --lifecycle-file=lifecycle.json` 即時套用。

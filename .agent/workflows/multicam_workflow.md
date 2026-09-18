@@ -55,22 +55,18 @@ flowchart TD
   - Passing `--strict-edl` halts execution with exit code 1 if any ERROR is detected (default warns and continues).
 - **Agent Policy (Dynamic Language Mirroring)**:
   - Per workspace rules, the Agent MUST pass `--lang` matching the active conversation language (e.g. `--lang zh-TW` when conversing in Traditional Chinese, `--lang en` or omit when in English; variants like `zh-Hant` or `zh_TW` automatically normalize, unsupported locales fall back to `en`).
-- **Backend Architecture**:
-  - **Primary**: Google Cloud Vertex AI (ADC + GCS hash-cached upload). Configure `GOOGLE_CLOUD_PROJECT` and `GCS_BUCKET` in `.env` (or pass `--project` / `--gcs-bucket`).
-  - **Secondary / Backup**: Google AI Studio via `--backend studio` or automatic failover via `--fallback-studio` (`GEMINI_API_KEY`).
+- **Backend Architecture (100% Vertex AI + GCS via ADC)**:
+  - Exclusively uses **Google Cloud Vertex AI** (`GOOGLE_CLOUD_LOCATION=global`) and **Google Cloud Storage** (`gs://multicam-video-${GOOGLE_CLOUD_PROJECT}/raw/`) via Application Default Credentials (`gcloud auth application-default login`).
+  - Media files are SHA-256 hash-cached on GCS to avoid redundant uploads on re-runs and automatically purged after 2 days by the GCS Bucket Lifecycle policy (or immediately via `--cleanup-gcs`).
 - **Execution Command**:
   ```bash
   # Primary with strict EDL gate & language mirroring (Recommended for Agent):
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4 \
     --strict-edl --lang zh-TW
 
-  # With Automatic Fallback to Google AI Studio:
+  # With custom gap threshold, camera whitelist, and immediate GCS cleanup:
   python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4 \
-    --fallback-studio --strict-edl --lang zh-TW
-
-  # Direct Google AI Studio Execution with custom gap threshold & camera list:
-  python3 scripts/generate_edl.py -v <OUTPUT_DIR>/multicam_merged_full.mp4 \
-    --backend studio --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
+    --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2 --cleanup-gcs
   ```
 - **Exit Gate 2 Verification**:
   - [x] `<OUTPUT_DIR>/edl_full.csv` (or `edl.csv`) exists and size $> 0\text{ bytes}$.
@@ -115,20 +111,13 @@ flowchart TD
 ---
 
 ### Stage 4: YouTube Subtitles Generation (📝 On-Demand / Subtitle Requests)
-- **Goal**: Three-Stage Golden Pipeline: Gemini 1M Context Global Audio Glossary Extraction + Local Whisper Zero-Drift Physical Timestamps + Multimodal Audio-Text Precision Proofreading.
-- **Backend Architecture**:
-  - **Primary**: Google Cloud Vertex AI (ADC + inline chunk audio / GCS for audio >20MB).
-  - **Secondary / Backup**: Google AI Studio via `--backend studio` or `--fallback-studio` (`GEMINI_API_KEY`).
+- **Goal**: Three-Stage Golden Pipeline: Vertex AI Gemini 1M Context Global Audio Glossary Extraction + Local Whisper Zero-Drift Physical Timestamps + Vertex AI Multimodal Audio-Text Precision Proofreading via GCS.
+- **Backend Architecture (100% Vertex AI + GCS via ADC)**:
+  - Exclusively uses **Google Cloud Vertex AI** and **Google Cloud Storage** (`gs://multicam-video-${GOOGLE_CLOUD_PROJECT}/raw/`). Chunk audio slices are automatically deleted from GCS upon completion, and global glossary audio follows the 2-day GCS Lifecycle policy (or immediate deletion via `--cleanup-gcs`).
 - **Execution Command**:
   ```bash
-  # Standard Execution (Google Cloud Vertex AI with ADC):
+  # Standard Execution (Google Cloud Vertex AI with ADC & GCS):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4
-
-  # With Automatic Fallback to Google AI Studio if GCP credentials encounter errors:
-  python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --fallback-studio
-
-  # Direct Google AI Studio Execution:
-  python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --backend studio
 
   # If user provided interview outline / guest notes (Optional Outline Injection):
   python3 scripts/generate_subtitles.py -i <OUTPUT_DIR>/final_cut_full.mp4 --outline "<OUTLINE_TEXT_OR_FILE>"

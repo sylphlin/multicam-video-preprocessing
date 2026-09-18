@@ -14,18 +14,42 @@ An end-to-end modular multi-camera (2 to 6 cameras) video preprocessing pipeline
 
 ---
 
-## 📦 Antigravity Installation & Structure
+## 📦 Installation & GCP Setup (`setup.sh`)
 
-Adheres to Antigravity Skill & Workflow standards. Clone directly into your Antigravity skills directory:
+Adheres to [Agent Plugins 1.0](https://agent-plugins.org/) and Antigravity Skill standards, operating on a **100% Google Cloud Vertex AI (ADC) + Cloud Storage (GCS)** architecture (zero API key management).
+
+### 1. Install as Antigravity Plugin or Skill
+
+- **Global Plugin (Recommended)**:
+  ```bash
+  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
+  ```
+- **Or Global Skill**:
+  ```bash
+  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+  ```
+
+### 2. Install Dependencies & One-Click GCP Provisioning (`setup.sh`)
 
 ```bash
-git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/skills/multicam-video-preprocessing
+# 1. Install FFmpeg and Python packages
+brew install ffmpeg
+pip install numpy google-genai google-cloud-storage mlx-whisper
+
+# 2. Authenticate with Google Cloud ADC
+gcloud auth application-default login
+
+# 3. Run setup.sh to auto-provision GCS bucket, tiered Lifecycle rules (raw: 2d, deliverables: 15d), IAM & .env
+chmod +x setup.sh
+./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
 ### 📁 Directory Structure
 ```text
 multicam-video-preprocessing/
 ├── GEMINI.md                          # Antigravity always-on root workspace rules
+├── setup.sh                           # 100% native gcloud setup script (GCS bucket, Lifecycle, IAM & .env)
+├── .env.example                       # Vertex AI (ADC) & GCS configuration template
 ├── .agent/
 │   ├── rules/
 │   │   └── multicam_rules.md          # Always-on execution policies & constraints
@@ -36,15 +60,14 @@ multicam-video-preprocessing/
 │       └── SKILL.md                   # Antigravity skill capability manifest
 ├── assets/                            # Prompt templates
 │   ├── edl_interview_template.md      # Gemini multimodal interview rough-cut rules
-│   └── subtitle_proofread_template.md # YouTube subtitle proofreading rules
-├── .env.example                       # Google Cloud Vertex AI & Gemini API configuration template
+│   └── subtitle_proofread_template.*.md # Multi-locale YouTube subtitle proofreading rules
 ├── scripts/                           # Core execution toolset
 │   ├── multicam_pipeline.py           # Step 1: Time sync, loudness norm, synced masters, full grid merge
-│   ├── generate_edl.py                # Step 2: Gemini 3.8 Flash Agentic Video EDL generation (Vertex AI / Studio)
+│   ├── generate_edl.py                # Step 2: Vertex AI Gemini 3.8 Flash Agentic Video EDL generation
 │   ├── export_fcp7_xml.py             # Step 3A: FCP7 XML timeline export (Primary)
 │   ├── edl_to_video.py                # Step 3B: Single-pass hardware-accelerated video rendering (Secondary)
-│   ├── generate_subtitles.py          # Step 4: YouTube subtitles (Whisper + Gemini)
-│   └── modules/                       # Core acoustic, video, and cloud algorithms
+│   ├── generate_subtitles.py          # Step 4: YouTube subtitles (Whisper + Vertex AI Gemini)
+│   └── modules/                       # Core acoustic, video, and GCP/Vertex AI modules
 └── README.md
 ```
 
@@ -208,13 +231,16 @@ Simply prompt the Antigravity Agent in plain conversational language:
    - **Fail-Fast Gate (`--strict-edl`)**: By default, validation issues only emit warnings and continue execution. Passing `--strict-edl` halts execution with exit code 1 if any `ERROR` is found.
    - **Multilingual Validation Report (`--lang`)**: Built-in support for `en` (default) and `zh-TW`. Locale aliases (`zh-Hant`, `zh_TW`, `ZH-TW`) automatically normalize to `zh-TW`; unsupported locales gracefully fall back to `en` without raising exceptions.
    - **Configurable Tolerances**: `--edl-max-gap-sec` (default `0.05`s) controls gap warning sensitivity; `--edl-known-cameras` accepts comma-separated lists (e.g. `CAM1,CAM2`).
-6. **Dual-Backend Cloud Architecture (Vertex AI + GCS Primary, AI Studio Backup)**:
-   - **Primary Backend**: Google Cloud Vertex AI using Application Default Credentials (ADC via `gcloud auth application-default login`). Grid videos are uploaded to Google Cloud Storage (GCS) with local SHA-256 and file size caching, avoiding redundant re-uploads.
-   - **Backup Fallback**: Pass `--fallback-studio` to automatically fall back to Google AI Studio (`GEMINI_API_KEY`) if Vertex AI / GCS permissions, quotas, or credentials encounter issues.
+6. **100% Pure Vertex AI (ADC) & GCS Smart Caching Architecture**:
+   - **Zero API Key Exposure**: Uses Google Cloud Vertex AI (`GOOGLE_CLOUD_LOCATION=global`) with Application Default Credentials (ADC via `gcloud auth application-default login`), eliminating AI Studio (`GEMINI_API_KEY`) and public File API uploads.
+   - **GCS Smart Caching & Two-Tier Lifecycle Auto-Cleanup**: Grid videos and audio tracks are staged to Google Cloud Storage (`gs://multicam-video-${PROJECT_ID}/raw/`) with local SHA-256 and file size caching to prevent redundant uploads. Ephemeral staging files (`raw/`) auto-delete after **2 days** (`age: 2`), while deliverables (`output/`, `deliverables/`, `multicam_assets/`) retain for **15 days** (`age: 15`). Pass `--cleanup-gcs` for immediate post-inference deletion.
    - **CLI Examples**:
      ```bash
-     # Primary: Google Cloud Vertex AI with ADC + GCS Caching (Default):
+     # Standard execution (Google Cloud Vertex AI with ADC + GCS Caching):
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4
+
+     # Immediately delete the GCS staging blob after EDL generation completes:
+     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --cleanup-gcs
 
      # Strict EDL validation mode (aborts with code 1 on ERROR):
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --strict-edl
@@ -225,12 +251,6 @@ Simply prompt the Antigravity Agent in plain conversational language:
      # Custom gap tolerance and explicit camera whitelist:
      python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 \
        --strict-edl --lang zh-TW --edl-max-gap-sec 0.05 --edl-known-cameras CAM1,CAM2
-
-     # With automatic failover to Google AI Studio:
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --fallback-studio
-
-     # Direct Google AI Studio execution:
-     python3 scripts/generate_edl.py -v output/multicam_merged_full.mp4 --backend studio
      ```
 
 ---
@@ -326,14 +346,11 @@ Employs the **Three-Stage Golden Subtitle Pipeline**, unifying **Gemini 1M Conte
 #### CLI Usage Examples:
 
 ```bash
-# Basic execution (Google Cloud Vertex AI with ADC, Default):
+# Standard execution (Google Cloud Vertex AI with ADC + GCS Staging):
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4
 
-# With automatic failover to Google AI Studio:
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --fallback-studio
-
-# Direct Google AI Studio execution:
-python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --backend studio
+# Immediately delete full-episode audio from GCS after Stage 1 completes:
+python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --cleanup-gcs
 
 # Bias proper nouns with interview outline or topic notes (optional):
 python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 --outline "Host: Guest Name, Topic: Key Discussion Concepts, Entity Glossary"
@@ -366,25 +383,67 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 - **FFmpeg** (with `h264_videotoolbox` hardware encoding and `loudnorm` filter)
 - **Python 3.8+** with `numpy`, `google-genai`, `google-cloud-storage`
 
-### Cloud Credentials & Dual-Backend Setup
+### One-Click Cloud Setup (`./setup.sh`)
 
-The suite adopts a **Dual-Backend Architecture**:
+The suite operates exclusively on **Google Cloud Vertex AI and Cloud Storage (GCS)** authenticated via Application Default Credentials (ADC), requiring zero AI Studio API keys:
 
-1. **Google Cloud Vertex AI (Primary, Recommended)**:
-   - Authenticate with Application Default Credentials (ADC):
-     ```bash
-     gcloud auth application-default login
-     ```
-   - Copy `.env.example` to `.env` and set your GCP Project, GCS Bucket, and Region:
-     ```bash
-     cp .env.example .env
-     ```
+1. **Authenticate with Google Cloud ADC**:
+   ```bash
+   gcloud auth application-default login
+   ```
+2. **Run `./setup.sh` for Automated Cloud Provisioning**:
+   ```bash
+   ./setup.sh --project YOUR_GCP_PROJECT_ID
+   ```
+   `setup.sh` uses 100% native `gcloud` commands to automatically:
+   - Enable `aiplatform.googleapis.com` and `storage.googleapis.com`.
+   - Provision `gs://multicam-video-${PROJECT_ID}` (with Uniform Bucket-Level Access & Public Access Prevention).
+   - Grant least-privilege `roles/storage.objectUser` to the active user and **Vertex AI Service Agents** (`service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com`).
+   - Generate the root `.env` configuration:
      ```env
-     GOOGLE_CLOUD_PROJECT=sylph-demo-505906
-     GCS_BUCKET=video-preprocessing-sylph-demo-505906
-     GOOGLE_CLOUD_LOCATION=us-central1
-     GEMINI_API_KEY=your_gemini_api_key_here
+     GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+     GOOGLE_CLOUD_LOCATION=global
+     GCP_REGION=us-central1
+     GCS_BUCKET=multicam-video-your-gcp-project-id
      ```
-   - Features SHA-256 local hash caching so grid videos and large audio files are uploaded to GCS only once.
-2. **Google AI Studio (Backup / Standalone)**:
-   - Use `--backend studio` or pass `--fallback-studio` to allow seamless automatic failover using your `GEMINI_API_KEY`.
+
+---
+
+### 2. 🗑️ GCS Bucket Lifecycle Auto-Cleanup Policy
+
+To balance **zero-reupload SHA-256 caching** with **automated cloud storage cost control**, `setup.sh` and `scripts/modules/gcp_client.py` automatically mount the following **two-tier Object Lifecycle Management rules** on `gs://multicam-video-${PROJECT_ID}`:
+
+| GCS Path Prefix (`matchesPrefix`) | Stored Assets | Retention Period (`age`) | Cleanup Mechanism | Rationale |
+| :--- | :--- | :--- | :--- | :--- |
+| **`raw/audio_chunks/`** | Subtitle Stage 3 audio slices (`.m4a` / `.mp3`) | **Immediate post-inference** | Python `finally` block immediate deletion (backed up by `raw/` 2-day rule) | Ephemeral slices used for multimodal audio proofreading are deleted immediately after each chunk completes. |
+| **`raw/`** | Composite grid video (`multicam_merged_full.mp4`), full episode audio (`final_cut_full_audio.m4a`) | **2 Days (`age: 2`)** | GCS Lifecycle `Delete` (or pass `--cleanup-gcs` for immediate deletion) | Retains staging media for 2 days so repeated prompt tuning hits the SHA-256 cache without re-uploading multi-GB files, then auto-purges. |
+| **`output/`**<br/>**`deliverables/`**<br/>**`multicam_assets/`** | Cloud-saved timelines (`.xml` / `.csv`), subtitles (`.srt` / `.vtt`), reports, and rendered deliverables | **15 Days (`age: 15`)** | GCS Lifecycle `Delete` | Retains project deliverables and assets for 15 days for team download and review before automatic cleanup. |
+
+#### 📋 Mounted GCS Lifecycle JSON Specification:
+```json
+{
+  "rule": [
+    {
+      "action": { "type": "Delete" },
+      "condition": {
+        "age": 2,
+        "matchesPrefix": ["raw/"]
+      }
+    },
+    {
+      "action": { "type": "Delete" },
+      "condition": {
+        "age": 15,
+        "matchesPrefix": ["output/", "deliverables/", "multicam_assets/"]
+      }
+    }
+  ]
+}
+```
+
+> 💡 **Inspecting or Customizing Retention Periods**:
+> - Inspect active bucket lifecycle rules:
+>   ```bash
+>   gcloud storage buckets describe gs://multicam-video-YOUR_GCP_PROJECT_ID --format="json(lifecycle_config)"
+>   ```
+> - Update rules anytime by editing `setup.sh` and re-running `./setup.sh --project YOUR_GCP_PROJECT_ID`, or via `gcloud storage buckets update gs://multicam-video-YOUR_GCP_PROJECT_ID --lifecycle-file=lifecycle.json`.
