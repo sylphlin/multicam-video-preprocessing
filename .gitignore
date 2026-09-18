@@ -29,3 +29,9 @@ env/
 .AppleDouble
 .LSOverride
 ._*
+
+# Local session & runtime caches
+*.ses
+:memory:.ses
+.gcs_upload_cache.json
+.*_chunk_cache.json
