@@ -29,6 +29,8 @@ try:
     from modules.gcp_client import (
         resolve_gcp_config,
         upload_file_to_gcs_with_cache,
+        is_gdrive_source,
+        transfer_gdrive_to_gcs_with_cache,
         delete_gcs_blob,
         guess_mime_type,
     )
@@ -43,6 +45,8 @@ except ImportError:
     from scripts.modules.gcp_client import (
         resolve_gcp_config,
         upload_file_to_gcs_with_cache,
+        is_gdrive_source,
+        transfer_gdrive_to_gcs_with_cache,
         delete_gcs_blob,
         guess_mime_type,
     )
@@ -279,7 +283,9 @@ def main():
 
     args = parser.parse_args()
 
-    if not os.path.exists(args.video):
+    is_gdrive = is_gdrive_source(args.video)
+    is_gcs_uri = str(args.video).startswith("gs://")
+    if not is_gdrive and not is_gcs_uri and not os.path.exists(args.video):
         print(f"[Error] Video file not found: {args.video}", file=sys.stderr)
         sys.exit(1)
 
@@ -297,7 +303,7 @@ def main():
         print("  Action Required: Run './setup.sh' to auto-provision GCP & .env, or pass --project / --gcs-bucket.", file=sys.stderr)
         sys.exit(1)
 
-    out_dir = args.output_dir or os.path.dirname(os.path.abspath(args.video)) or "."
+    out_dir = args.output_dir or ("." if (is_gdrive or is_gcs_uri) else (os.path.dirname(os.path.abspath(args.video)) or "."))
     os.makedirs(out_dir, exist_ok=True)
 
     edl_csv_path = args.output_csv or os.path.join(out_dir, "edl_full.csv")
@@ -314,14 +320,27 @@ def main():
     print(f"  • Target Report  : {report_path}")
     print("-" * 78)
 
-    video_uri = upload_file_to_gcs_with_cache(
-        args.video,
-        bucket_name=gcp_cfg["bucket"],
-        gcs_prefix="raw",
-        project=gcp_cfg["project"],
-        region=gcp_cfg["region"],
-        force_upload=args.force_upload,
-    )
+    if is_gcs_uri:
+        video_uri = args.video
+    elif is_gdrive:
+        video_uri, _ = transfer_gdrive_to_gcs_with_cache(
+            args.video,
+            bucket_name=gcp_cfg["bucket"],
+            gcs_prefix="raw",
+            local_cache_dir=os.path.join(out_dir, "gdrive_inputs"),
+            project=gcp_cfg["project"],
+            region=gcp_cfg["region"],
+            force=args.force_upload,
+        )
+    else:
+        video_uri = upload_file_to_gcs_with_cache(
+            args.video,
+            bucket_name=gcp_cfg["bucket"],
+            gcs_prefix="raw",
+            project=gcp_cfg["project"],
+            region=gcp_cfg["region"],
+            force_upload=args.force_upload,
+        )
     genai_client = get_vertex_client(
         project=gcp_cfg["project"],
         location=gcp_cfg["location"],

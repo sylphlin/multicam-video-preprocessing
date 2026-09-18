@@ -80,8 +80,14 @@ flowchart TD
 - **User Status Update**: `"🎬 正在進行多機位時間對齊與音量標準化..."` (localized to user's language)
 - **Execution Command**:
   ```bash
+  # Local Camera Files or Google Drive File Links:
   python3 "${SKILL_DIR}/scripts/multicam_pipeline.py" \
-    --ref <CAM1.mp4> --targets <CAM2.mp4...> \
+    --ref <CAM1.mp4_OR_GDRIVE_LINK> --targets <CAM2.mp4_OR_GDRIVE_LINK...> \
+    --normalize --merge -o <OUTPUT_DIR>
+
+  # Or Direct Google Drive Folder URL / Folder ID (Auto-discovers & sorts CAM1..CAMn via ADC):
+  python3 "${SKILL_DIR}/scripts/multicam_pipeline.py" \
+    --gdrive-folder "<GDRIVE_FOLDER_URL_OR_ID>" \
     --normalize --merge -o <OUTPUT_DIR>
   ```
 - **Exit Gate 1 Verification (Mandatory before Stage 2)**:

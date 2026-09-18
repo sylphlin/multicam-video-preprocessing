@@ -98,6 +98,11 @@ multicam-video-preprocessing/
     --targets CAM2.mp4 CAM3.mp4 \
     --normalize --merge -o output/
 
+  # Google Drive 폴더 URL 또는 Folder ID 직접 지정 (ADC를 통해 CAM1..CAMn 자동 탐색 및 정렬):
+  python3 scripts/multicam_pipeline.py \
+    --gdrive-folder "https://drive.google.com/drive/folders/YOUR_FOLDER_ID" \
+    --normalize --merge -o output/
+
   # 초고속 동기화 테스트 (시작 60초만 추출하여 동기화, 컨테이너 길이는 ffprobe로 자동 탐지):
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
@@ -264,7 +269,8 @@ multicam-video-preprocessing/
 ```
 
 1. **자동 프로비저닝 항목 (`setup.sh`)**:
-   - `aiplatform.googleapis.com` (Vertex AI) 및 `storage.googleapis.com` (GCS) API 자동 활성화.
+   - `aiplatform.googleapis.com` (Vertex AI), `storage.googleapis.com` (GCS) 및 `drive.googleapis.com` (Google Drive API) 자동 활성화.
+   - `drive.readonly` 스코프가 포함된 ADC 자격 증명 검증 및 자동 구성을 통해 Google Drive 폴더/파일 링크(`--gdrive-folder` 또는 `https://drive.google.com/...`)를 직접 가져와 GCS `raw/`에 스테이징 (원격 `gdrive_md5` 일치 시 다운로드 및 업로드 모두 즉시 생략).
    - 전용 GCS 버킷(`gs://multicam-video-${PROJECT_ID}`) 자동 생성 및 IAM 권한(`roles/aiplatform.user`, `roles/storage.objectAdmin`) 구성.
    - `.env` 환경변수 파일 자동 생성 (`GOOGLE_CLOUD_LOCATION=global`, `GCP_REGION=us-central1`).
 2. **🗑️ GCS 버킷 2단계 수명 주기(Lifecycle) 자동 삭제 규칙표**:

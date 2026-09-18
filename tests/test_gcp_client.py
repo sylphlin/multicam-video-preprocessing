@@ -4,7 +4,15 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
-from modules.gcp_client import resolve_gcp_config, parse_gcs_uri, guess_mime_type
+from modules.gcp_client import (
+    resolve_gcp_config,
+    parse_gcs_uri,
+    guess_mime_type,
+    is_gdrive_source,
+    parse_gdrive_url,
+    _natural_sort_key,
+    resolve_multicam_gdrive_inputs,
+)
 
 
 class TestGcpClient(unittest.TestCase):
@@ -42,6 +50,51 @@ class TestGcpClient(unittest.TestCase):
         self.assertEqual(cfg["bucket"], "multicam-video-auto-proj")
         self.assertEqual(cfg["location"], "global")
         self.assertEqual(cfg["region"], "us-central1")
+
+    def test_is_gdrive_source(self):
+        self.assertTrue(is_gdrive_source("https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456"))
+        self.assertTrue(is_gdrive_source("https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz123456/view?usp=sharing"))
+        self.assertTrue(is_gdrive_source("gdrive://1AbCdEfGhIjKlMnOpQrStUvWxYz123456"))
+        self.assertFalse(is_gdrive_source("/Users/sylph/Videos/cam1.mp4"))
+        self.assertFalse(is_gdrive_source("gs://my-bucket/raw/cam1.mp4"))
+        self.assertFalse(is_gdrive_source(None))
+
+    def test_parse_gdrive_url(self):
+        r1 = parse_gdrive_url("https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456?usp=drive_link")
+        self.assertEqual(r1, {"id": "1AbCdEfGhIjKlMnOpQrStUvWxYz123456", "type": "folder"})
+
+        r2 = parse_gdrive_url("https://drive.google.com/file/d/1XyZ9876543210AbCdEfGhIjKlMnOpQrS/view?usp=sharing")
+        self.assertEqual(r2, {"id": "1XyZ9876543210AbCdEfGhIjKlMnOpQrS", "type": "file"})
+
+        r3 = parse_gdrive_url("https://drive.google.com/open?id=1XyZ9876543210AbCdEfGhIjKlMnOpQrS")
+        self.assertEqual(r3, {"id": "1XyZ9876543210AbCdEfGhIjKlMnOpQrS", "type": "unknown"})
+
+        r4 = parse_gdrive_url("gdrive://folder/1AbCdEfGhIjKlMnOpQrStUvWxYz123456")
+        self.assertEqual(r4, {"id": "1AbCdEfGhIjKlMnOpQrStUvWxYz123456", "type": "folder"})
+
+    def test_natural_sort_key_for_cameras(self):
+        names = ["CAM10.mp4", "CAM2.mp4", "CAM1.mp4", "CAM3.mp4"]
+        sorted_names = sorted(names, key=_natural_sort_key)
+        self.assertEqual(sorted_names, ["CAM1.mp4", "CAM2.mp4", "CAM3.mp4", "CAM10.mp4"])
+
+    @patch("modules.gcp_client.download_gdrive_file_with_cache")
+    @patch("modules.gcp_client.list_gdrive_folder_videos")
+    def test_resolve_multicam_gdrive_inputs_folder(self, mock_list, mock_dl):
+        mock_list.return_value = [
+            {"id": "id_cam1", "name": "CAM1_main.mp4", "size": 1000},
+            {"id": "id_cam2", "name": "CAM2_side.mp4", "size": 1000},
+            {"id": "id_cam3", "name": "CAM3_wide.mp4", "size": 1000},
+        ]
+        mock_dl.side_effect = lambda file_id, **kwargs: f"/tmp/gdrive_inputs/{file_id}.mp4"
+
+        ref, targets = resolve_multicam_gdrive_inputs(
+            ref=None,
+            targets=None,
+            gdrive_folder="https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz123456",
+            output_dir="/tmp/out",
+        )
+        self.assertEqual(ref, "/tmp/gdrive_inputs/id_cam1.mp4")
+        self.assertEqual(targets, ["/tmp/gdrive_inputs/id_cam2.mp4", "/tmp/gdrive_inputs/id_cam3.mp4"])
 
 
 if __name__ == "__main__":

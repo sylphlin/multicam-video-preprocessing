@@ -208,7 +208,7 @@ def ensure_gcs_bucket(bucket_name, project=None, region="us-central1"):
     return bucket
 
 
-def upload_file_to_gcs_with_cache(local_path, bucket_name, gcs_prefix="raw", project=None, region="us-central1", force_upload=False):
+def upload_file_to_gcs_with_cache(local_path, bucket_name, gcs_prefix="raw", project=None, region="us-central1", force_upload=False, extra_metadata=None):
     """
     Upload a local media file to GCS with SHA-256 hash-based caching:
     1. Computes local file SHA-256 and size.
@@ -259,7 +259,12 @@ def upload_file_to_gcs_with_cache(local_path, bucket_name, gcs_prefix="raw", pro
 
     try:
         blob.content_type = mime_type
-        blob.metadata = {"sha256": local_hash, "original_filename": file_name}
+        meta = {"sha256": local_hash, "original_filename": file_name}
+        if isinstance(extra_metadata, dict):
+            for k, v in extra_metadata.items():
+                if v is not None:
+                    meta[str(k)] = str(v)
+        blob.metadata = meta
         blob.chunk_size = 16 * 1024 * 1024  # 16MB chunks
         blob.upload_from_filename(local_path, content_type=mime_type, timeout=effective_timeout)
         up_duration = time.time() - t_up_start
@@ -314,3 +319,374 @@ def delete_gcs_blob(gcs_uri, project=None):
         print(f"  ✓ [GCS Cleanup] Deleted remote blob: {gcs_uri}")
     except Exception:
         pass
+
+
+# ==============================================================================
+# Google Drive (ADC) Integration: URL/ID Parsing, Caching & GCS Transfer
+# ==============================================================================
+GDRIVE_MEDIA_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".m4a", ".wav", ".aac", ".mp3", ".webm"}
+GDRIVE_SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/cloud-platform",
+]
+
+
+def is_gdrive_source(val):
+    """
+    Return True if `val` is a Google Drive URL (`https://drive.google.com/...`)
+    or explicit `gdrive://` / `gdrive:` scheme.
+    """
+    if not val or not isinstance(val, str):
+        return False
+    s = val.strip()
+    return (
+        s.startswith("https://drive.google.com/")
+        or s.startswith("http://drive.google.com/")
+        or s.startswith("https://docs.google.com/")
+        or s.startswith("gdrive://")
+        or s.startswith("gdrive:")
+    )
+
+
+def parse_gdrive_url(url_or_id):
+    """
+    Parse a Google Drive file URL, folder URL, `gdrive://` URI, or raw Drive ID.
+    Returns:
+      {"id": "<drive_id>", "type": "folder" | "file" | "unknown"}
+    """
+    if not url_or_id or not isinstance(url_or_id, str):
+        raise ValueError(f"Invalid Google Drive URL or ID: {url_or_id!r}")
+
+    s = url_or_id.strip()
+
+    # 1. Explicit gdrive://folder/<ID> or gdrive://<ID>
+    if s.startswith("gdrive://"):
+        rest = s[len("gdrive://"):].strip("/")
+        if rest.startswith("folder/") or rest.startswith("folders/"):
+            fid = rest.split("/", 1)[1].split("?")[0].strip("/")
+            return {"id": fid, "type": "folder"}
+        if rest.startswith("file/"):
+            fid = rest.split("/", 1)[1].split("?")[0].strip("/")
+            return {"id": fid, "type": "file"}
+        return {"id": rest.split("?")[0].strip("/"), "type": "unknown"}
+
+    if s.startswith("gdrive:"):
+        fid = s[len("gdrive:"):].strip("/")
+        return {"id": fid, "type": "unknown"}
+
+    # 2. Folder URL: https://drive.google.com/drive/folders/<ID> or /drive/u/0/folders/<ID>
+    m_folder = re.search(r"/folders/([a-zA-Z0-9_-]{10,})", s)
+    if m_folder:
+        return {"id": m_folder.group(1), "type": "folder"}
+
+    # 3. File URL: https://drive.google.com/file/d/<ID>/view...
+    m_file = re.search(r"/(?:file|document|presentation|spreadsheets)/d/([a-zA-Z0-9_-]{10,})", s)
+    if m_file:
+        return {"id": m_file.group(1), "type": "file"}
+
+    # 4. Query param ?id=<ID> or &id=<ID>
+    m_query = re.search(r"[?&]id=([a-zA-Z0-9_-]{10,})", s)
+    if m_query:
+        return {"id": m_query.group(1), "type": "unknown"}
+
+    # 5. Raw Drive ID (alphanumeric/dash/underscore, >= 15 chars, no path slashes)
+    if "/" not in s and re.match(r"^[a-zA-Z0-9_-]{15,}$", s):
+        return {"id": s, "type": "unknown"}
+
+    raise ValueError(f"Could not extract Google Drive ID from: {url_or_id!r}")
+
+
+def _natural_sort_key(name):
+    """Natural sort helper so CAM1.mp4 < CAM2.mp4 < CAM10.mp4."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(name))]
+
+
+def get_gdrive_session(project=None):
+    """
+    Create an authenticated requests Session using Application Default Credentials (ADC)
+    with `drive.readonly` and `cloud-platform` scopes.
+    """
+    try:
+        from google.auth.transport.requests import AuthorizedSession
+    except ImportError:
+        raise RuntimeError(
+            "google-auth with requests support is required for Google Drive ADC integration. "
+            "Run: pip install google-auth requests"
+        )
+
+    if not HAS_GOOGLE_AUTH:
+        raise RuntimeError("google-auth is not installed. Run: pip install google-auth")
+
+    try:
+        creds, adc_project = google.auth.default(scopes=GDRIVE_SCOPES)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to load Application Default Credentials (ADC) for Google Drive: {exc}\n"
+            f"Please run:\n"
+            f"  gcloud auth application-default login --scopes=\"{','.join(GDRIVE_SCOPES)}\""
+        )
+
+    quota_project = project or adc_project or os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
+    if quota_project and hasattr(creds, "with_quota_project"):
+        try:
+            creds = creds.with_quota_project(quota_project)
+        except Exception:
+            pass
+
+    session = AuthorizedSession(creds)
+    if quota_project:
+        session.headers["X-Goog-User-Project"] = quota_project
+    return session
+
+
+def _raise_gdrive_api_error(resp, resource_id):
+    """Format clear actionable diagnostics when Google Drive API returns 401/403/404."""
+    status = getattr(resp, "status_code", 0)
+    body = ""
+    try:
+        body = resp.text
+    except Exception:
+        pass
+
+    if status in (401, 403):
+        print(
+            f"\n{'='*72}\n"
+            f"[❌ GOOGLE DRIVE ADC PERMISSION / SCOPE ERROR ({status})]\n"
+            f"Failed to access Google Drive resource '{resource_id}'.\n"
+            f"Details: {body[:400]}\n\n"
+            f"Action Required:\n"
+            f"  1. Ensure your ADC credentials include the Google Drive Read-Only scope:\n"
+            f"     gcloud auth application-default login \\\n"
+            f"       --scopes=\"https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly\"\n"
+            f"  2. Ensure drive.googleapis.com is enabled in your GCP project:\n"
+            f"     ./setup.sh --project YOUR_PROJECT_ID\n"
+            f"  3. Confirm your logged-in Google account has read access to the Drive file/folder.\n"
+            f"{'='*72}\n",
+            file=sys.stderr,
+        )
+    elif status == 404:
+        print(
+            f"\n[❌ GOOGLE DRIVE 404 NOT FOUND] File or folder '{resource_id}' not found or not shared with your ADC account.",
+            file=sys.stderr,
+        )
+    raise RuntimeError(f"Google Drive API error ({status}) for '{resource_id}': {body[:300]}")
+
+
+def get_gdrive_file_metadata(url_or_id, project=None):
+    """
+    Fetch file/folder metadata (id, name, mimeType, size, md5Checksum) from Google Drive API v3.
+    """
+    parsed = parse_gdrive_url(url_or_id)
+    file_id = parsed["id"]
+    session = get_gdrive_session(project=project)
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+    params = {
+        "fields": "id,name,mimeType,size,md5Checksum",
+        "supportsAllDrives": "true",
+    }
+    resp = session.get(url, params=params, timeout=30)
+    if resp.status_code != 200:
+        _raise_gdrive_api_error(resp, file_id)
+    return resp.json()
+
+
+def list_gdrive_folder_videos(folder_url_or_id, project=None):
+    """
+    List all video/audio files inside a Google Drive folder, sorted naturally by filename (e.g. CAM1.mp4, CAM2.mp4).
+    Returns a list of dicts: [{"id": ..., "name": ..., "mimeType": ..., "size": ..., "md5Checksum": ...}, ...]
+    """
+    parsed = parse_gdrive_url(folder_url_or_id)
+    folder_id = parsed["id"]
+    session = get_gdrive_session(project=project)
+    url = "https://www.googleapis.com/drive/v3/files"
+
+    media_files = []
+    page_token = None
+    while True:
+        params = {
+            "q": f"'{folder_id}' in parents and trashed = false",
+            "fields": "nextPageToken, files(id,name,mimeType,size,md5Checksum)",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+            "pageSize": 100,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        resp = session.get(url, params=params, timeout=30)
+        if resp.status_code != 200:
+            _raise_gdrive_api_error(resp, folder_id)
+
+        data = resp.json()
+        for item in data.get("files", []):
+            mime = (item.get("mimeType") or "").lower()
+            name = item.get("name") or ""
+            ext = os.path.splitext(name)[1].lower()
+            if mime == "application/vnd.google-apps.folder":
+                continue
+            if mime.startswith("video/") or mime.startswith("audio/") or ext in GDRIVE_MEDIA_EXTENSIONS:
+                media_files.append(item)
+
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+
+    media_files.sort(key=lambda x: _natural_sort_key(x.get("name", "")))
+    return media_files
+
+
+def compute_file_md5(filepath, chunk_size=8 * 1024 * 1024):
+    """Compute MD5 hash of a local file to match Google Drive's md5Checksum."""
+    h = hashlib.md5()
+    with open(filepath, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def download_gdrive_file_with_cache(url_or_id, dest_dir, project=None, force_download=False, metadata=None):
+    """
+    Download a single file from Google Drive to `dest_dir` via ADC with MD5 & size caching.
+    If the local file already exists and matches Google Drive's size & md5Checksum, skips downloading.
+    Returns the local file path.
+    """
+    meta = metadata or get_gdrive_file_metadata(url_or_id, project=project)
+    file_id = meta["id"]
+    file_name = meta.get("name") or f"{file_id}.mp4"
+    expected_size = int(meta.get("size") or 0)
+    expected_md5 = meta.get("md5Checksum")
+
+    os.makedirs(dest_dir, exist_ok=True)
+    local_path = os.path.join(dest_dir, file_name)
+    size_mb = expected_size / (1024 * 1024) if expected_size else 0.0
+
+    if not force_download and os.path.exists(local_path):
+        local_size = os.path.getsize(local_path)
+        if expected_size > 0 and local_size == expected_size:
+            if not expected_md5 or compute_file_md5(local_path) == expected_md5:
+                print(f"  ✓ [GDrive Cache Hit] {file_name} ({size_mb:.1f} MB) matches Google Drive MD5. Skipping download!")
+                return local_path
+
+    print(f"  ► [GDrive Download] Pulling {file_name} ({size_mb:.1f} MB) from Google Drive (ID: {file_id}) via ADC...")
+    session = get_gdrive_session(project=project)
+    download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+    params = {"alt": "media", "supportsAllDrives": "true"}
+
+    t0 = time.time()
+    part_path = local_path + ".part"
+    with session.get(download_url, params=params, stream=True, timeout=600) as resp:
+        if resp.status_code != 200:
+            _raise_gdrive_api_error(resp, file_id)
+        with open(part_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+
+    os.replace(part_path, local_path)
+    elapsed = max(0.1, time.time() - t0)
+    speed_mbps = (os.path.getsize(local_path) / (1024 * 1024)) / elapsed * 8
+    print(f"  ✓ Downloaded {file_name} to {local_path} in {elapsed:.1f}s ({speed_mbps:.1f} Mbps)")
+    return local_path
+
+
+def transfer_gdrive_to_gcs_with_cache(url_or_id, bucket_name, gcs_prefix="raw", project=None, region="us-central1", local_cache_dir=None, force_upload=False):
+    """
+    Ensure a Google Drive file is staged in GCS (`gs://<bucket_name>/<gcs_prefix>/<name>`):
+    1. Queries Google Drive metadata (`id`, `name`, `size`, `md5Checksum`).
+    2. Checks if the target GCS blob already exists with matching `size` and `gdrive_md5`.
+       If matched -> returns `gs://...` immediately with ZERO download and ZERO upload!
+    3. Otherwise -> downloads via `download_gdrive_file_with_cache` and uploads to GCS with `gdrive_md5` metadata.
+    Returns: ("gs://<bucket>/<blob>", "<local_cached_path>")
+    """
+    meta = get_gdrive_file_metadata(url_or_id, project=project)
+    file_id = meta["id"]
+    file_name = meta.get("name") or f"{file_id}.mp4"
+    expected_size = int(meta.get("size") or 0)
+    expected_md5 = meta.get("md5Checksum")
+
+    bucket_name = bucket_name.replace("gs://", "").strip("/")
+    blob_name = f"{gcs_prefix.strip('/')}/{file_name}" if gcs_prefix else file_name
+
+    ensure_gcs_bucket(bucket_name, project=project, region=region)
+    client = get_gcs_storage_client(project=project)
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    if not force_upload and expected_md5:
+        try:
+            blob.reload()
+            remote_meta = blob.metadata or {}
+            if blob.size == expected_size and remote_meta.get("gdrive_md5") == expected_md5:
+                print(
+                    f"  ✓ [GDrive -> GCS Cache Hit] gs://{bucket_name}/{blob_name} already matches Google Drive "
+                    f"(MD5: {expected_md5[:12]}...). Zero transfer needed!"
+                )
+                local_existing = os.path.join(local_cache_dir, file_name) if local_cache_dir else None
+                return f"gs://{bucket_name}/{blob_name}", (local_existing if local_existing and os.path.exists(local_existing) else None)
+        except Exception:
+            pass
+
+    cache_dir = local_cache_dir or os.path.join(os.getcwd(), "output", "gdrive_inputs")
+    local_path = download_gdrive_file_with_cache(
+        file_id, dest_dir=cache_dir, project=project, force_download=force_upload, metadata=meta
+    )
+    gcs_uri = upload_file_to_gcs_with_cache(
+        local_path=local_path,
+        bucket_name=bucket_name,
+        gcs_prefix=gcs_prefix,
+        project=project,
+        region=region,
+        force_upload=force_upload,
+        extra_metadata={"gdrive_id": file_id, "gdrive_md5": expected_md5},
+    )
+    return gcs_uri, local_path
+
+
+def resolve_multicam_gdrive_inputs(ref=None, targets=None, gdrive_folder=None, output_dir=None, project=None):
+    """
+    Resolve Google Drive folder or file links for Stage 1 (`multicam_pipeline.py`):
+    - If `gdrive_folder` is given (or `ref` is a Google Drive folder link and `targets` is empty):
+      lists all camera videos in the Drive folder, downloads them to `<output_dir>/gdrive_inputs/`,
+      and returns `(local_ref, local_targets)`.
+    - If `ref` or any entry in `targets` is a Google Drive file link:
+      downloads those files to `<output_dir>/gdrive_inputs/` and returns `(local_ref, local_targets)`.
+    """
+    cache_dir = os.path.join(output_dir or "output", "gdrive_inputs")
+
+    # Check if `ref` itself is a Google Drive folder link when gdrive_folder wasn't explicitly specified
+    if not gdrive_folder and ref and is_gdrive_source(ref):
+        parsed = parse_gdrive_url(ref)
+        if parsed["type"] == "folder" and not targets:
+            gdrive_folder = ref
+
+    if gdrive_folder:
+        print(f"\n[GDrive Folder] Scanning Google Drive folder for camera angles: {gdrive_folder}")
+        videos = list_gdrive_folder_videos(gdrive_folder, project=project)
+        if len(videos) < 2:
+            raise ValueError(
+                f"Google Drive folder '{gdrive_folder}' contains {len(videos)} media file(s); "
+                f"at least 2 camera files (e.g., CAM1.mp4, CAM2.mp4) are required."
+            )
+        print(f"  ✓ Discovered {len(videos)} camera files in Google Drive folder: {[v['name'] for v in videos]}")
+        local_files = [
+            download_gdrive_file_with_cache(v["id"], dest_dir=cache_dir, project=project, metadata=v)
+            for v in videos
+        ]
+        return local_files[0], local_files[1:]
+
+    resolved_ref = ref
+    if ref and is_gdrive_source(ref):
+        resolved_ref = download_gdrive_file_with_cache(ref, dest_dir=cache_dir, project=project)
+
+    resolved_targets = []
+    for t in (targets or []):
+        if is_gdrive_source(t):
+            resolved_targets.append(download_gdrive_file_with_cache(t, dest_dir=cache_dir, project=project))
+        else:
+            resolved_targets.append(t)
+
+    return resolved_ref, resolved_targets
+

@@ -48,9 +48,11 @@ def main():
         description="Multi-Camera Video Preprocessing CLI: Global Time Sync + EBU R128 Loudness Normalization + Full Synced Masters + Multi-in-One Grid Composition (Zero-Split Agentic Architecture)",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    # Camera Inputs (Supports 2 to 6+ Cameras)
-    parser.add_argument("--ref", required=True, help="Reference anchor camera video path (CAM1)")
-    parser.add_argument("--targets", "--target", nargs="+", required=True, help="One or more target camera video paths (CAM2, CAM3... up to CAM6)")
+    # Camera Inputs (Supports 2 to 6+ Cameras via Local Paths or Google Drive Links/Folder)
+    parser.add_argument("--ref", default=None, help="Reference anchor camera video path or Google Drive link (CAM1)")
+    parser.add_argument("--targets", "--target", nargs="+", default=None, help="One or more target camera video paths or Google Drive links (CAM2, CAM3... up to CAM6)")
+    parser.add_argument("--gdrive-folder", dest="gdrive_folder", default=None, help="Google Drive Folder URL or Folder ID containing 2-6 camera videos (auto-sorted as CAM1..CAMn via ADC)")
+    parser.add_argument("--project", default=None, help="Google Cloud Project ID for ADC Google Drive API quota (optional)")
 
     # Manual Trim Range (Optional)
     parser.add_argument("--ref-start", default=None, help="Reference camera manual start time (HH:MM:SS.mmm or seconds)")
@@ -87,8 +89,31 @@ def main():
 
     args = parser.parse_args()
 
+    # Resolve Google Drive Folder or File Links via ADC if provided
+    from modules.gcp_client import is_gdrive_source, resolve_multicam_gdrive_inputs
+    has_gdrive = bool(
+        args.gdrive_folder
+        or is_gdrive_source(args.ref)
+        or any(is_gdrive_source(t) for t in (args.targets or []))
+    )
+    if has_gdrive:
+        try:
+            args.ref, args.targets = resolve_multicam_gdrive_inputs(
+                ref=args.ref,
+                targets=args.targets,
+                gdrive_folder=args.gdrive_folder,
+                output_dir=args.output_dir,
+                project=args.project,
+            )
+        except Exception as e:
+            print(f"[Error] Failed to resolve Google Drive inputs: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if not args.ref or not args.targets:
+        parser.error("Either --gdrive-folder <FOLDER_URL_OR_ID> or both --ref and --targets must be specified.")
+
     # Validate input files
-    all_inputs = [args.ref] + args.targets
+    all_inputs = [args.ref] + list(args.targets)
     for p in all_inputs:
         if not os.path.exists(p):
             print(f"[Error] File not found: {p}", file=sys.stderr)

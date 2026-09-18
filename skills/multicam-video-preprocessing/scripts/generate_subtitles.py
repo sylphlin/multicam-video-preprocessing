@@ -38,11 +38,23 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from modules.llm_client import call_llm
-    from modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, delete_gcs_blob
+    from modules.gcp_client import (
+        resolve_gcp_config,
+        upload_file_to_gcs_with_cache,
+        is_gdrive_source,
+        download_gdrive_file_with_cache,
+        delete_gcs_blob,
+    )
     from modules.progress import LiveTicker
 except ImportError:
     from scripts.modules.llm_client import call_llm
-    from scripts.modules.gcp_client import resolve_gcp_config, upload_file_to_gcs_with_cache, delete_gcs_blob
+    from scripts.modules.gcp_client import (
+        resolve_gcp_config,
+        upload_file_to_gcs_with_cache,
+        is_gdrive_source,
+        download_gdrive_file_with_cache,
+        delete_gcs_blob,
+    )
     from scripts.modules.progress import LiveTicker
 
 
@@ -1793,10 +1805,6 @@ def main():
 
     args = parser.parse_args()
 
-    if not os.path.exists(args.input):
-        print(f"[Error] Input media not found: {args.input}", file=sys.stderr)
-        sys.exit(1)
-
     gcp_cfg = resolve_gcp_config(
         cli_project=args.project,
         cli_bucket=args.gcs_bucket,
@@ -1809,6 +1817,23 @@ def main():
         print(f"  Project : '{gcp_cfg.get('project')}'", file=sys.stderr)
         print(f"  Bucket  : '{gcp_cfg.get('bucket')}'", file=sys.stderr)
         print("  Action Required: Run './setup.sh' to auto-provision GCP & .env, or pass --project / --gcs-bucket.", file=sys.stderr)
+        sys.exit(1)
+
+    if is_gdrive_source(args.input):
+        out_dir = args.output_dir or "."
+        os.makedirs(out_dir, exist_ok=True)
+        try:
+            args.input = download_gdrive_file_with_cache(
+                args.input,
+                target_dir=os.path.join(out_dir, "gdrive_inputs"),
+                project=gcp_cfg.get("project"),
+                force_download=args.force,
+            )
+        except Exception as e:
+            print(f"[Error] Failed to download Google Drive media '{args.input}': {e}", file=sys.stderr)
+            sys.exit(1)
+    elif not os.path.exists(args.input):
+        print(f"[Error] Input media not found: {args.input}", file=sys.stderr)
         sys.exit(1)
 
     input_basename = os.path.splitext(os.path.basename(args.input))[0]

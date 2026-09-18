@@ -177,6 +177,11 @@ Simply prompt the Antigravity Agent in plain conversational language:
     --targets CAM2.mp4 CAM3.mp4 \
     --normalize --merge -o output/
 
+  # Direct Google Drive Folder URL or Folder ID (auto-discovers & sorts CAM1..CAMn via ADC):
+  python3 scripts/multicam_pipeline.py \
+    --gdrive-folder "https://drive.google.com/drive/folders/YOUR_FOLDER_ID" \
+    --normalize --merge -o output/
+
   # Fast alignment test (first 60s sample, container duration probed via ffprobe):
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
@@ -385,16 +390,18 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 
 The suite operates exclusively on **Google Cloud Vertex AI and Cloud Storage (GCS)** authenticated via Application Default Credentials (ADC), requiring zero AI Studio API keys:
 
-1. **Authenticate with Google Cloud ADC**:
+1. **Authenticate with Google Cloud ADC (including Google Drive Read-Only scope)**:
    ```bash
-   gcloud auth application-default login
+   gcloud auth application-default login \
+     --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
    ```
 2. **Run `./setup.sh` for Automated Cloud Provisioning**:
    ```bash
    ./setup.sh --project YOUR_GCP_PROJECT_ID
    ```
    `setup.sh` uses 100% native `gcloud` commands to automatically:
-   - Enable `aiplatform.googleapis.com` and `storage.googleapis.com`.
+   - Enable `aiplatform.googleapis.com` (Vertex AI), `storage.googleapis.com` (GCS), and `drive.googleapis.com` (Google Drive API).
+   - Verify and configure ADC credentials with `drive.readonly` scope so Google Drive file/folder links (`--gdrive-folder` or `https://drive.google.com/...`) can be directly pulled and staged to GCS `raw/` (with remote `gdrive_md5` metadata matching that skips both Drive download and GCS upload on cache hit).
    - Provision `gs://multicam-video-${PROJECT_ID}` (with Uniform Bucket-Level Access & Public Access Prevention).
    - Grant least-privilege `roles/storage.objectUser` to the active user and **Vertex AI Service Agents** (`service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com`).
    - Generate the root `.env` configuration:

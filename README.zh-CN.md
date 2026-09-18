@@ -156,6 +156,11 @@ flowchart TD
     --targets CAM2.mp4 CAM3.mp4 \
     --normalize --merge -o output/
 
+  # 直接粘贴 Google Drive 文件夹链接或 Folder ID（通过 ADC 自动扫描并按 CAM1..CAMn 排序下载与对齐）：
+  python3 scripts/multicam_pipeline.py \
+    --gdrive-folder "https://drive.google.com/drive/folders/YOUR_FOLDER_ID" \
+    --normalize --merge -o output/
+
   # 快速对齐采样测试（仅截取前 60 秒音频对齐，视频长度自动经由 ffprobe 探测保持全片长）：
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 --targets CAM2.mp4 \
@@ -372,7 +377,8 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 ```
 
 1. **`setup.sh` 自动部署内容**：
-   - 自动启用 `aiplatform.googleapis.com`（Vertex AI）与 `storage.googleapis.com`（GCS）API。
+   - 自动启用 `aiplatform.googleapis.com`（Vertex AI）、`storage.googleapis.com`（GCS）与 `drive.googleapis.com`（Google Drive API）。
+   - 自动验证并配置包含 `drive.readonly` 权限的 ADC 凭证，支持将 Google Drive 文件夹／文件链接（`--gdrive-folder` 或 `https://drive.google.com/...`）直接拉取并转存至 GCS `raw/`（具备远程 `gdrive_md5` 校验缓存，命中时秒级跳过下载与上传）。
    - 自动建立专属 GCS 存储桶（`gs://multicam-video-${PROJECT_ID}`）并配置 IAM 权限（`roles/aiplatform.user`, `roles/storage.objectAdmin`）。
    - 自动生成 `.env` 配置文件（`GOOGLE_CLOUD_LOCATION=global`, `GCP_REGION=us-central1`）。
 2. **🗑️ GCS 存储桶双阶生命周期 (Lifecycle) 自动清理规则表**：

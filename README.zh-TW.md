@@ -172,9 +172,15 @@ flowchart TD
 - **執行指令範例**：
   ```bash
   # 標準 4 合 1 完整前處理（對齊、正規化、母帶重編碼、網格合成）：
+  # 雙機位 / 三機位同步與多合一網格匯出（推薦）：
   python3 scripts/multicam_pipeline.py \
     --ref CAM1.mp4 \
     --targets CAM2.mp4 CAM3.mp4 \
+    --normalize --merge -o output/
+
+  # 直接貼上 Google Drive 資料夾連結或 Folder ID（透過 ADC 自動掃描並排序 CAM1..CAMn 下載與對齊）：
+  python3 scripts/multicam_pipeline.py \
+    --gdrive-folder "https://drive.google.com/drive/folders/YOUR_FOLDER_ID" \
     --normalize --merge -o output/
 
   # 快速對齊取樣測試（僅截取前 60 秒音訊對齊，影片長度自動經由 ffprobe 探測保持全片長）：
@@ -376,15 +382,17 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 本工具套件 **100% 採用 Google Cloud Vertex AI 與 Cloud Storage (GCS)**，透過 Application Default Credentials (ADC) 驗證，不依賴任何 AI Studio API Key：
 
 ```bash
-# 步驟 1：Google Cloud ADC 認證（若尚未登入）
-gcloud auth application-default login
+# 步驟 1：Google Cloud ADC 認證（含 Google Drive 唯讀權限，供直接讀取雲端硬碟素材）
+gcloud auth application-default login \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
 
 # 步驟 2：執行 setup.sh 自動完成 GCP API 啟用、GCS Bucket 建立、Lifecycle 規則掛載與 .env 寫入
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
 `setup.sh` 將使用 100% 原生 `gcloud` 自動完成：
-- 啟用 `aiplatform.googleapis.com` 與 `storage.googleapis.com` 服務。
+- 啟用 `aiplatform.googleapis.com`（Vertex AI）、`storage.googleapis.com`（GCS）與 `drive.googleapis.com`（Google Drive API）服務。
+- 驗證並自動引導配置含 `drive.readonly` 權限之 ADC 憑證，支援將 Google Drive 檔案／資料夾連結（`--gdrive-folder` 或 `https://drive.google.com/...`）直接拉取並轉存至 GCS `raw/`（具備遠端 `gdrive_md5` 比對快取，若雲端已存在相同 MD5 則秒級略過下載與上傳）。
 - 建立儲存桶 `gs://multicam-video-${PROJECT_ID}`（啟用 Uniform Bucket-Level Access 與 Public Access Prevention）。
 - 自動授予當前帳號與 **Vertex AI Service Agents** (`service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com`) 最小權限 `roles/storage.objectUser`。
 - 自動產生專案根目錄 `.env` 設定檔：

@@ -149,15 +149,26 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
-# Verify ADC authentication status
+# Verify ADC authentication status & Google Drive Read-Only scope
+ADC_SCOPES="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
 if [ "$DRY_RUN" = false ]; then
-    if ! gcloud auth application-default print-access-token &>/dev/null; then
+    TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+    if [ -z "$TOKEN" ]; then
         echo "[!] Warning: Application Default Credentials (ADC) not found or expired."
-        echo "    Launching: gcloud auth application-default login ..."
-        gcloud auth application-default login
+        echo "    Launching: gcloud auth application-default login (with Cloud Platform + Google Drive Read-Only scopes)..."
+        gcloud auth application-default login --scopes="$ADC_SCOPES"
     else
-        echo "[✓] Application Default Credentials (ADC) verified."
+        # Check if current ADC token includes Google Drive scope; if not, inform user
+        TOKEN_INFO="$(curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=${TOKEN}" 2>/dev/null || true)"
+        if echo "$TOKEN_INFO" | grep -q "drive"; then
+            echo "[✓] Application Default Credentials (ADC) verified (includes Google Drive scope)."
+        else
+            echo "[✓] Application Default Credentials (ADC) verified."
+            echo "    [i] Note: To enable direct Google Drive link ingestion, ensure ADC includes 'drive.readonly':"
+            echo "        gcloud auth application-default login --scopes=\"$ADC_SCOPES\""
+        fi
     fi
+    gcloud auth application-default set-quota-project "$PROJECT_ID" --quiet 2>/dev/null || true
 fi
 
 if [ -z "$PROJECT_NUMBER" ] && command -v gcloud &> /dev/null; then
@@ -191,13 +202,13 @@ fi
 # 4. Step 1: Enable Required Google Cloud APIs via gcloud
 # ------------------------------------------------------------------------------
 echo ""
-echo "[*] Step 1: Enabling Vertex AI & Cloud Storage APIs via gcloud..."
+echo "[*] Step 1: Enabling Vertex AI, Cloud Storage & Google Drive APIs via gcloud..."
 if [ "$DRY_RUN" = false ]; then
-    gcloud services enable aiplatform.googleapis.com storage.googleapis.com \
+    gcloud services enable aiplatform.googleapis.com storage.googleapis.com drive.googleapis.com \
         --project="$PROJECT_ID" --quiet
-    echo "    [✓] APIs enabled (aiplatform.googleapis.com, storage.googleapis.com)."
+    echo "    [✓] APIs enabled (aiplatform.googleapis.com, storage.googleapis.com, drive.googleapis.com)."
 else
-    echo "    [Dry-Run] Would run: gcloud services enable aiplatform.googleapis.com storage.googleapis.com --project=$PROJECT_ID"
+    echo "    [Dry-Run] Would run: gcloud services enable aiplatform.googleapis.com storage.googleapis.com drive.googleapis.com --project=$PROJECT_ID"
 fi
 
 # ------------------------------------------------------------------------------
