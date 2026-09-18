@@ -415,7 +415,8 @@ def build_fcp7_xml_sequence(all_part_clips, part_audio_list=None, seq_name="fina
 
 def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_json=None,
                              fps=DEFAULT_FPS, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
-                             use_raw_media=False, drop_frame=False, strict_edl=False):
+                             use_raw_media=False, drop_frame=False, strict_edl=False,
+                             lang="en"):
     """
     Main pipeline to convert sequential EDL CSVs into a continuous FCP7 XML sequence.
     """
@@ -495,8 +496,9 @@ def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_j
 
     for edl_idx, edl_path in enumerate(edl_files, start=1):
         edl_bname = os.path.basename(edl_path)
-        val_result = validate_edl_file(edl_path)
-        print(f"\n{format_validation_report(val_result)}")
+        known_cams = list(cam_map.keys()) if cam_map else None
+        val_result = validate_edl_file(edl_path, known_cameras=known_cams, lang=lang)
+        print(f"\n{format_validation_report(val_result, lang=lang)}")
         if val_result.has_error and strict_edl:
             print(f"\n[Error] EDL validation failed with errors for {edl_bname} under --strict-edl mode.", file=sys.stderr)
             sys.exit(1)
@@ -601,6 +603,8 @@ def main():
     parser.add_argument("--use-raw-media", action="store_true", help="Link to original raw camera footage instead of synchronized camera masters")
     parser.add_argument("--strict-edl", action="store_true",
                         help="EDL 驗證出現 ERROR 時中斷執行（預設僅警告並繼續）")
+    parser.add_argument("--lang", default="en",
+                        help="Language for the EDL validation report (default: en)")
 
     parser.add_argument("--fps", type=float, default=float(DEFAULT_FPS), help="Sequence frame rate (default: 30)")
     parser.add_argument("--drop-frame", action="store_true", help="Enable drop-frame timecode (DF) for NTSC sequences (default: NDF)")
@@ -646,7 +650,8 @@ def main():
             height=args.height,
             use_raw_media=args.use_raw_media,
             drop_frame=args.drop_frame,
-            strict_edl=args.strict_edl
+            strict_edl=args.strict_edl,
+            lang=args.lang
         )
     except Exception as e:
         print(f"\n[Error] FCP7 XML export failed: {e}", file=sys.stderr)

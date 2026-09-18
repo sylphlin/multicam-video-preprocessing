@@ -419,6 +419,8 @@ def main():
                         help="Keep uploaded video file on Gemini Files API")
     parser.add_argument("--strict-edl", action="store_true",
                         help="EDL 驗證出現 ERROR 時中斷執行（預設僅警告並繼續）")
+    parser.add_argument("--lang", default="en",
+                        help="Language for the EDL validation report (default: en)")
     parser.add_argument("--edl-max-gap-sec", type=float, default=0.05,
                         help="EDL 鏡頭間隔容許門檻秒數 (預設: 0.05)")
     parser.add_argument("--edl-known-cameras", default=None,
@@ -547,8 +549,8 @@ def main():
 
         # Validate EDL semantics
         known_cams = [c.strip() for c in args.edl_known_cameras.split(",") if c.strip()] if args.edl_known_cameras else None
-        validation_result = validate_edl_rows(csv_rows, known_cameras=known_cams, max_gap_sec=args.edl_max_gap_sec)
-        val_report_str = format_validation_report(validation_result)
+        validation_result = validate_edl_rows(csv_rows, known_cameras=known_cams, max_gap_sec=args.edl_max_gap_sec, lang=args.lang)
+        val_report_str = format_validation_report(validation_result, lang=args.lang)
         print(f"\n{val_report_str}")
 
         # Write CSV

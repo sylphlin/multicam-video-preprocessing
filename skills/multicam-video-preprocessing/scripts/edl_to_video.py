@@ -346,7 +346,7 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
                         re_encode=True, encoder="h264_videotoolbox",
                         video_bitrate="8000k", audio_bitrate="192k",
                         workers=4, keep_temp=False, temp_dir=None,
-                        strict_edl=False):
+                        strict_edl=False, lang="en"):
     """
     Main pipeline to render an EDL CSV file into a final cut video.
     Default: Frame-accurate hardware-accelerated re-encoding with h264_videotoolbox.
@@ -374,8 +374,8 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
         cam_mapping = auto_discover_camera_files(media_dir)
 
     known_cams = list(cam_mapping.keys()) if cam_mapping else None
-    val_result = validate_edl_file(edl_path, known_cameras=known_cams)
-    print(f"\n{format_validation_report(val_result)}")
+    val_result = validate_edl_file(edl_path, known_cameras=known_cams, lang=lang)
+    print(f"\n{format_validation_report(val_result, lang=lang)}")
     if val_result.has_error and strict_edl:
         print(f"\n[Error] EDL validation failed with errors for {edl_basename} under --strict-edl mode.", file=sys.stderr)
         sys.exit(1)
@@ -518,6 +518,8 @@ def main():
     parser.add_argument("--temp-dir", default=None, help="Custom temporary directory for segments")
     parser.add_argument("--strict-edl", action="store_true",
                         help="EDL 驗證出現 ERROR 時中斷執行（預設僅警告並繼續）")
+    parser.add_argument("--lang", default="en",
+                        help="Language for the EDL validation report (default: en)")
 
     args = parser.parse_args()
 
@@ -534,7 +536,8 @@ def main():
             workers=args.workers,
             keep_temp=args.keep_temp,
             temp_dir=args.temp_dir,
-            strict_edl=args.strict_edl
+            strict_edl=args.strict_edl,
+            lang=args.lang
         )
     except Exception as e:
         print(f"\n[Error] EDL rendering failed: {e}", file=sys.stderr)
