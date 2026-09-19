@@ -223,7 +223,7 @@ def upload_file_to_gcs_with_cache(local_path, bucket_name, gcs_prefix="raw", pro
     bucket_name = bucket_name.replace("gs://", "").strip("/")
     file_size = os.path.getsize(local_path)
     file_size_mb = file_size / (1024 * 1024)
-    file_name = os.path.basename(local_path)
+    file_name = fix_mojibake_filename(os.path.basename(local_path))
     blob_name = f"{gcs_prefix.strip('/')}/{file_name}" if gcs_prefix else file_name
     mime_type = guess_mime_type(local_path)
 
@@ -568,7 +568,7 @@ def list_public_gdrive_folder_fallback(folder_id):
     media_files = []
     for m in pattern.finditer(resp.text):
         fid = m.group(1)
-        fname = html.unescape(m.group(2).strip())
+        fname = fix_mojibake_filename(html.unescape(m.group(2).strip()))
         ext = os.path.splitext(fname)[1].lower()
         if ext in GDRIVE_MEDIA_EXTENSIONS:
             media_files.append({
@@ -582,6 +582,56 @@ def list_public_gdrive_folder_fallback(folder_id):
     return media_files
 
 
+def fix_mojibake_filename(name: str) -> str:
+    """
+    Recover UTF-8 filenames that were decoded as ISO-8859-1 (latin-1) by HTTP headers.
+    Leaves valid UTF-8 and ASCII filenames untouched.
+    """
+    if not name:
+        return ""
+    s = str(name)
+    if any(0x80 <= ord(c) <= 0xFF for c in s) and all(ord(c) <= 0xFF for c in s):
+        try:
+            return s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+
+    def _decode_run(m):
+        chunk = m.group(0)
+        try:
+            return chunk.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return chunk
+
+    if any(0x80 <= ord(c) <= 0xFF for c in s):
+        s = re.sub(r"[\x80-\xff]{2,}", _decode_run, s)
+    return s
+
+
+def extract_filename_from_content_disposition(cd: str, fallback_name: str) -> str:
+    """
+    Extract and decode filename from an HTTP Content-Disposition header.
+    Handles RFC 5987 filename*=UTF-8''... (case-insensitive) and ISO-8859-1 mojibake
+    inside filename="..." headers.
+    """
+    from urllib.parse import unquote
+    if not cd:
+        return fix_mojibake_filename(fallback_name)
+    m_utf8 = re.search(r"filename\*\s*=\s*(?:UTF-8|utf-8)''([^;\r\n]+)", cd, re.IGNORECASE)
+    if m_utf8:
+        raw_val = m_utf8.group(1).strip().strip("\"'")
+        return fix_mojibake_filename(unquote(raw_val, encoding="utf-8", errors="replace"))
+    m_quoted = re.search(r'filename\s*=\s*"([^"]+)"', cd, re.IGNORECASE)
+    if m_quoted:
+        raw_val = m_quoted.group(1).strip()
+        return fix_mojibake_filename(unquote(raw_val, encoding="utf-8", errors="replace"))
+    m_plain = re.search(r'filename\s*=\s*([^;\r\n]+)', cd, re.IGNORECASE)
+    if m_plain:
+        raw_val = m_plain.group(1).strip().strip("\"'")
+        return fix_mojibake_filename(unquote(raw_val, encoding="utf-8", errors="replace"))
+    return fix_mojibake_filename(fallback_name)
+
+
 def download_public_gdrive_file(file_id, dest_dir, preferred_name=None):
     """
     Direct public stream download for 'Open to all' Google Drive files via
@@ -589,7 +639,6 @@ def download_public_gdrive_file(file_id, dest_dir, preferred_name=None):
     page automatically with confirm=t, requiring zero OAuth scopes).
     """
     import requests
-    from urllib.parse import unquote
 
     os.makedirs(dest_dir, exist_ok=True)
     dl_url = "https://drive.usercontent.google.com/download"
@@ -597,16 +646,9 @@ def download_public_gdrive_file(file_id, dest_dir, preferred_name=None):
     with requests.get(dl_url, params=params, stream=True, timeout=600) as r:
         r.raise_for_status()
         cd = r.headers.get("Content-Disposition", "")
-        detected_name = preferred_name
+        detected_name = fix_mojibake_filename(preferred_name) if preferred_name else ""
         if not detected_name:
-            m_utf8 = re.search(r"filename\*=UTF-8''([^;]+)", cd)
-            m_ascii = re.search(r'filename="([^"]+)"', cd)
-            if m_utf8:
-                detected_name = unquote(m_utf8.group(1).strip())
-            elif m_ascii:
-                detected_name = unquote(m_ascii.group(1).strip())
-            else:
-                detected_name = f"gdrive_{file_id}.mp4"
+            detected_name = extract_filename_from_content_disposition(cd, f"gdrive_{file_id}.mp4")
 
         local_path = os.path.join(dest_dir, detected_name)
         if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
@@ -748,7 +790,7 @@ def download_gdrive_file_with_cache(url_or_id, dest_dir, project=None, force_dow
     try:
         meta = metadata if (metadata and metadata.get("md5Checksum")) else get_gdrive_file_metadata(url_or_id, project=project)
         file_id = meta["id"]
-        file_name = meta.get("name") or f"{file_id}.mp4"
+        file_name = fix_mojibake_filename(meta.get("name") or f"{file_id}.mp4")
         expected_size = int(meta.get("size") or 0)
         expected_md5 = meta.get("md5Checksum")
     except Exception:
@@ -799,7 +841,7 @@ def transfer_gdrive_to_gcs_with_cache(url_or_id, bucket_name, gcs_prefix="raw", 
     """
     meta = get_gdrive_file_metadata(url_or_id, project=project)
     file_id = meta["id"]
-    file_name = meta.get("name") or f"{file_id}.mp4"
+    file_name = fix_mojibake_filename(meta.get("name") or f"{file_id}.mp4")
     expected_size = int(meta.get("size") or 0)
     expected_md5 = meta.get("md5Checksum")
 

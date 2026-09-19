@@ -12,10 +12,20 @@ from modules.gcp_client import (
     parse_gdrive_url,
     _natural_sort_key,
     resolve_multicam_gdrive_inputs,
+    fix_mojibake_filename,
+    extract_filename_from_content_disposition,
 )
 
 
 class TestGcpClient(unittest.TestCase):
+    def test_fix_mojibake_filename_and_content_disposition(self):
+        original = "CAM1_主機位訪談錄影_4K.mp4"
+        latin1_mojibake = original.encode("utf-8").decode("latin-1")
+        self.assertEqual(fix_mojibake_filename(latin1_mojibake), original)
+        self.assertEqual(
+            extract_filename_from_content_disposition(f'attachment; filename="{latin1_mojibake}"', "fallback.mp4"),
+            original,
+        )
     def test_guess_mime_type(self):
         self.assertEqual(guess_mime_type("multicam_merged_full.mp4"), "video/mp4")
         self.assertEqual(guess_mime_type("chunk_001.mp3"), "audio/mpeg")
