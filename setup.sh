@@ -149,24 +149,15 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
-# Verify ADC authentication status & Google Drive Read-Only scope
-ADC_SCOPES="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
-if [ "$DRY_RUN" = false ]; then
+# Verify Application Default Credentials (ADC) using standard cloud-platform scope (zero OAuth block)
+if [ "$DRY_RUN" = false ] && command -v gcloud &> /dev/null; then
     TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
     if [ -z "$TOKEN" ]; then
         echo "[!] Warning: Application Default Credentials (ADC) not found or expired."
-        echo "    Launching: gcloud auth application-default login (with Cloud Platform + Google Drive Read-Only scopes)..."
-        gcloud auth application-default login --scopes="$ADC_SCOPES"
+        echo "    Launching: gcloud auth application-default login..."
+        gcloud auth application-default login
     else
-        # Check if current ADC token includes Google Drive scope; if not, inform user
-        TOKEN_INFO="$(curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=${TOKEN}" 2>/dev/null || true)"
-        if echo "$TOKEN_INFO" | grep -q "drive"; then
-            echo "[✓] Application Default Credentials (ADC) verified (includes Google Drive scope)."
-        else
-            echo "[✓] Application Default Credentials (ADC) verified."
-            echo "    [i] Note: To enable direct Google Drive link ingestion, ensure ADC includes 'drive.readonly':"
-            echo "        gcloud auth application-default login --scopes=\"$ADC_SCOPES\""
-        fi
+        echo "[✓] Application Default Credentials (ADC) verified."
     fi
     gcloud auth application-default set-quota-project "$PROJECT_ID" --quiet 2>/dev/null || true
 fi
@@ -185,15 +176,19 @@ if [ -n "$BUCKET_NAME" ]; then
     BUCKET_NAME="${BUCKET_NAME#gs://}"
 fi
 
-# Set deterministic default bucket name
+# Set deterministic default bucket name and service account
 if [ -z "$BUCKET_NAME" ]; then
     BUCKET_NAME="multicam-video-${PROJECT_ID}"
+fi
+if [ -z "$SERVICE_ACCOUNT" ]; then
+    SERVICE_ACCOUNT="multicam-video-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 fi
 
 echo "[✓] Target GCP Project:   $PROJECT_ID (Number: ${PROJECT_NUMBER:-unknown})"
 echo "[✓] Vertex AI Location:   $LOCATION"
 echo "[✓] GCS Storage Region:   $REGION"
 echo "[✓] GCS Storage Bucket:   gs://$BUCKET_NAME"
+echo "[✓] Drive/GCS Service SA: $SERVICE_ACCOUNT"
 if [ -n "$ACTIVE_ACCOUNT" ]; then
     echo "[✓] Active GCP Identity:  $ACTIVE_ACCOUNT"
 fi
@@ -202,13 +197,13 @@ fi
 # 4. Step 1: Enable Required Google Cloud APIs via gcloud
 # ------------------------------------------------------------------------------
 echo ""
-echo "[*] Step 1: Enabling Vertex AI, Cloud Storage & Google Drive APIs via gcloud..."
+echo "[*] Step 1: Enabling Vertex AI, Cloud Storage, Google Drive & IAM APIs via gcloud..."
 if [ "$DRY_RUN" = false ]; then
-    gcloud services enable aiplatform.googleapis.com storage.googleapis.com drive.googleapis.com \
+    gcloud services enable aiplatform.googleapis.com storage.googleapis.com drive.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
         --project="$PROJECT_ID" --quiet
-    echo "    [✓] APIs enabled (aiplatform.googleapis.com, storage.googleapis.com, drive.googleapis.com)."
+    echo "    [✓] APIs enabled (aiplatform, storage, drive, iam, iamcredentials)."
 else
-    echo "    [Dry-Run] Would run: gcloud services enable aiplatform.googleapis.com storage.googleapis.com drive.googleapis.com --project=$PROJECT_ID"
+    echo "    [Dry-Run] Would run: gcloud services enable aiplatform.googleapis.com storage.googleapis.com drive.googleapis.com iam.googleapis.com iamcredentials.googleapis.com --project=$PROJECT_ID"
 fi
 
 # ------------------------------------------------------------------------------
@@ -230,9 +225,6 @@ if [ "$DRY_RUN" = false ]; then
         echo "    [✓] Storage bucket gs://$BUCKET_NAME already exists."
     fi
 
-    # Configure Lifecycle Rules:
-    # - raw/: Auto-delete after 2 days (ephemeral staging for multimodal video & audio)
-    # - output/, deliverables/, multicam_assets/: Auto-delete after 15 days (deliverable retention)
     LIFECYCLE_FILE="$(mktemp 2>/dev/null || echo "/tmp/multicam_lifecycle_$$.json")"
     cat << 'EOF' > "$LIFECYCLE_FILE"
 {
@@ -262,24 +254,37 @@ else
 fi
 
 # ------------------------------------------------------------------------------
-# 6. Step 3: Ensure Least-Privilege IAM (roles/storage.objectUser) via gcloud
+# 6. Step 3: Ensure Service Account & Least-Privilege IAM via gcloud
 # ------------------------------------------------------------------------------
 echo ""
-echo "[*] Step 3: Ensuring Least-Privilege IAM bindings (roles/storage.objectUser) on gs://$BUCKET_NAME..."
+echo "[*] Step 3: Ensuring Service Account ($SERVICE_ACCOUNT) & IAM bindings..."
+SA_NAME="${SERVICE_ACCOUNT%%@*}"
 if [ "$DRY_RUN" = false ]; then
-    # 1. Grant to current authenticated user
+    if ! gcloud iam service-accounts describe "$SERVICE_ACCOUNT" --project="$PROJECT_ID" &>/dev/null; then
+        echo "    [*] Creating Service Account: $SERVICE_ACCOUNT..."
+        gcloud iam service-accounts create "$SA_NAME" \
+            --display-name="Multicam Video Preprocessing Service Account" \
+            --project="$PROJECT_ID" \
+            --quiet 2>/dev/null || true
+    fi
+
     if [ -n "$ACTIVE_ACCOUNT" ]; then
         MEMBER_PREFIX="user"
         if [[ "$ACTIVE_ACCOUNT" == *.gserviceaccount.com ]]; then
             MEMBER_PREFIX="serviceAccount"
         fi
+        echo "    Granting roles/iam.serviceAccountTokenCreator on $SERVICE_ACCOUNT to ${MEMBER_PREFIX}:${ACTIVE_ACCOUNT}..."
+        gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT" \
+            --member="${MEMBER_PREFIX}:${ACTIVE_ACCOUNT}" \
+            --role="roles/iam.serviceAccountTokenCreator" \
+            --project="$PROJECT_ID" --quiet 2>/dev/null || true
+
         echo "    Granting roles/storage.objectUser to ${MEMBER_PREFIX}:${ACTIVE_ACCOUNT}..."
         gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
             --member="${MEMBER_PREFIX}:${ACTIVE_ACCOUNT}" \
             --role="roles/storage.objectUser" --quiet 2>/dev/null || true
     fi
 
-    # 2. Grant to custom Service Account if specified
     if [ -n "$SERVICE_ACCOUNT" ]; then
         echo "    Granting roles/storage.objectUser to serviceAccount:${SERVICE_ACCOUNT}..."
         gcloud storage buckets add-iam-policy-binding "gs://$BUCKET_NAME" \
@@ -287,7 +292,6 @@ if [ "$DRY_RUN" = false ]; then
             --role="roles/storage.objectUser" --quiet 2>/dev/null || true
     fi
 
-    # 3. Grant to Vertex AI Service Agents (so Vertex AI Gemini can read gs:// media directly)
     if [ -n "$PROJECT_NUMBER" ]; then
         VERTEX_AGENTS=(
             "service-${PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com"
@@ -302,7 +306,7 @@ if [ "$DRY_RUN" = false ]; then
         done
     fi
 else
-    echo "    [Dry-Run] Would grant roles/storage.objectUser on gs://$BUCKET_NAME to active user and Vertex AI service agents."
+    echo "    [Dry-Run] Would provision $SERVICE_ACCOUNT and grant roles/iam.serviceAccountTokenCreator and roles/storage.objectUser."
 fi
 
 # ------------------------------------------------------------------------------
@@ -317,6 +321,7 @@ GOOGLE_CLOUD_PROJECT=$PROJECT_ID
 GOOGLE_CLOUD_LOCATION=$LOCATION
 GCP_REGION=$REGION
 GCS_BUCKET=$BUCKET_NAME
+GCP_SERVICE_ACCOUNT=$SERVICE_ACCOUNT
 EOF
     echo "    [✓] Saved $REPO_ROOT/.env"
 else
@@ -330,4 +335,8 @@ echo "   • Project  : $PROJECT_ID"
 echo "   • Location : $LOCATION (Vertex AI)"
 echo "   • Bucket   : gs://$BUCKET_NAME (raw/: 2d | deliverables: 15d)"
 echo "   • Config   : $REPO_ROOT/.env"
+echo "   • Google Drive 3-Tier Support:"
+echo "     - Scenario B ('Open to all' public links): Ready out-of-the-box via $SERVICE_ACCOUNT"
+echo "     - Scenario A (Private links shared ONLY with your personal account): Run once:"
+echo "         gcloud auth login --enable-gdrive-access"
 echo "=================================================================="
