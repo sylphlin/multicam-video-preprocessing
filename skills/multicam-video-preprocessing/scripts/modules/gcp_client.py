@@ -401,18 +401,81 @@ def _natural_sort_key(name):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(name))]
 
 
+def _load_gcloud_user_drive_credentials():
+    """
+    Attempt to load personal user Google Drive credentials (user@gmail.com) from
+    ~/.config/gcloud/legacy_credentials/<account>/adc.json (populated when user runs
+    `gcloud auth login --enable-gdrive-access`, which uses Google Cloud SDK's
+    whitelisted first-party CLOUDSDK_CLIENT_ID and never triggers 'This app is blocked').
+    Returns refreshed Credentials if valid for Drive access, or None otherwise.
+    """
+    if not HAS_GOOGLE_AUTH:
+        return None
+
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+
+    gcloud_dir = os.path.expanduser("~/.config/gcloud")
+    legacy_dir = os.path.join(gcloud_dir, "legacy_credentials")
+    if not os.path.isdir(legacy_dir):
+        return None
+
+    active_account = None
+    try:
+        active_cfg_name = "default"
+        active_cfg_file = os.path.join(gcloud_dir, "active_config")
+        if os.path.isfile(active_cfg_file):
+            with open(active_cfg_file, "r", encoding="utf-8") as f:
+                active_cfg_name = f.read().strip() or "default"
+        cfg_path = os.path.join(gcloud_dir, "configurations", f"config_{active_cfg_name}")
+        if os.path.isfile(cfg_path):
+            cfg_vars = _parse_env_file(cfg_path)
+            active_account = cfg_vars.get("account")
+    except Exception:
+        pass
+
+    candidate_accounts = []
+    if active_account:
+        candidate_accounts.append(active_account)
+    try:
+        for entry in sorted(os.listdir(legacy_dir)):
+            if entry not in candidate_accounts:
+                candidate_accounts.append(entry)
+    except Exception:
+        pass
+
+    drive_scopes = [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/cloud-platform",
+    ]
+    for acct in candidate_accounts:
+        adc_file = os.path.join(legacy_dir, acct, "adc.json")
+        if os.path.isfile(adc_file):
+            try:
+                creds, _ = google.auth.load_credentials_from_file(adc_file, scopes=drive_scopes)
+                creds.refresh(GoogleAuthRequest())
+                if creds.valid:
+                    return creds
+            except Exception:
+                continue
+    return None
+
+
 def get_gdrive_session(project=None):
     """
-    Create an HTTP session for Google Drive access WITHOUT triggering Google's
-    'This app is blocked' OAuth error on personal gcloud logins:
-    1. If running directly as a Service Account, uses its native credentials with GDRIVE_SCOPES.
-    2. Otherwise uses standard `cloud-platform` ADC to impersonate the project's Service Account
-       (`multicam-video-sa@...`, `video-trimmer-sa@...`, `meeting-transcribe-sa@...`) via
-       `google.auth.impersonated_credentials`. Because 'Open to all' (Anyone with the link)
-       files/folders grant read access to any valid Google identity, the project's Service Account
-       can call Drive API v3 (folder listing + md5Checksum) on ANY 'Open to all' link!
-    3. If no Service Account is available, falls back to a public `requests.Session()` so
-       `Open to all` files/folders still work via direct public endpoints.
+    Create an HTTP session for Google Drive access using a 3-Tier Waterfall (zero 'This app is blocked'):
+    1. Tier 1 (Personal Account Identity - `user@gmail.com`):
+       Loads personal credentials from `gcloud auth login --enable-gdrive-access`
+       (`~/.config/gcloud/legacy_credentials/<account>/adc.json`) or native Service Account.
+       Supports Scenario 1 (private files/folders shared ONLY with the user's personal account)
+       as well as Scenario 2 (`Open to all` public links).
+    2. Tier 2 (GCP Service Account Impersonation - `multicam-video-sa@...`):
+       Uses standard `cloud-platform` ADC to impersonate the project's Service Account via
+       `google.auth.impersonated_credentials`. Directly supports Scenario 2 (`Open to all`
+       files/folders with full Drive API v3 folder listing & md5Checksum) and Scenario 1
+       when the folder is shared with the Service Account email.
+    3. Tier 3 (Public Direct Stream Fallback):
+       Falls back to an unauthenticated `requests.Session()` paired with `embeddedfolderview`
+       and `drive.usercontent.google.com` so `Open to all` links always work.
     """
     import requests
     from google.auth.transport.requests import AuthorizedSession, Request as GoogleAuthRequest
@@ -434,7 +497,15 @@ def get_gdrive_session(project=None):
         except Exception:
             pass
 
-    # 1. Native Service Account credentials
+    # Tier 1A: Personal Google Account credentials (`gcloud auth login --enable-gdrive-access`)
+    user_drive_creds = _load_gcloud_user_drive_credentials()
+    if user_drive_creds is not None:
+        sess = AuthorizedSession(user_drive_creds)
+        if quota_project:
+            sess.headers["X-Goog-User-Project"] = quota_project
+        return sess
+
+    # Tier 1B: Native Service Account credentials
     if source_creds and hasattr(source_creds, "service_account_email"):
         sa_creds, _ = google.auth.default(scopes=GDRIVE_SCOPES)
         sess = AuthorizedSession(sa_creds)
@@ -442,7 +513,7 @@ def get_gdrive_session(project=None):
             sess.headers["X-Goog-User-Project"] = quota_project
         return sess
 
-    # 2. Impersonate project Service Account using standard cloud-platform ADC (zero OAuth block)
+    # Tier 2: Impersonate project Service Account using standard cloud-platform ADC (zero OAuth block)
     if source_creds and quota_project:
         try:
             from google.auth import impersonated_credentials
@@ -472,7 +543,7 @@ def get_gdrive_session(project=None):
         except Exception:
             pass
 
-    # 3. Fallback to unauthenticated requests.Session() for public 'Open to all' links
+    # Tier 3: Fallback to unauthenticated requests.Session() for public 'Open to all' links
     return requests.Session()
 
 
@@ -565,22 +636,24 @@ def _raise_gdrive_api_error(resp, resource_id):
     if status in (401, 403):
         print(
             f"\n{'='*72}\n"
-            f"[❌ GOOGLE DRIVE ADC PERMISSION / SCOPE ERROR ({status})]\n"
+            f"[❌ GOOGLE DRIVE PERMISSION / ACCESS ERROR ({status})]\n"
             f"Failed to access Google Drive resource '{resource_id}'.\n"
             f"Details: {body[:400]}\n\n"
-            f"Action Required:\n"
-            f"  1. Ensure your ADC credentials include the Google Drive Read-Only scope:\n"
-            f"     gcloud auth application-default login \\\n"
-            f"       --scopes=\"https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly\"\n"
-            f"  2. Ensure drive.googleapis.com is enabled in your GCP project:\n"
-            f"     ./setup.sh --project YOUR_PROJECT_ID\n"
-            f"  3. Confirm your logged-in Google account has read access to the Drive file/folder.\n"
+            f"Action Required (Choose Scenario 1 or Scenario 2):\n"
+            f"  • Scenario 1 (Private link shared ONLY with your personal Google Account):\n"
+            f"    Run Google Cloud SDK's whitelisted user login (never triggers 'This app is blocked'):\n"
+            f"      gcloud auth login --enable-gdrive-access\n"
+            f"  • Scenario 2 (Public link or Team Folder):\n"
+            f"    Set link sharing to 'Anyone with the link (Viewer)' OR share with your project's\n"
+            f"    Service Account provisioned by `./setup.sh --project YOUR_PROJECT_ID`.\n"
             f"{'='*72}\n",
             file=sys.stderr,
         )
     elif status == 404:
         print(
-            f"\n[❌ GOOGLE DRIVE 404 NOT FOUND] File or folder '{resource_id}' not found or not shared with your ADC account.",
+            f"\n[❌ GOOGLE DRIVE 404 NOT FOUND] File or folder '{resource_id}' is private and not accessible.\n"
+            f"  -> If shared ONLY with your personal account, run: gcloud auth login --enable-gdrive-access\n"
+            f"  -> Or set the link to 'Anyone with the link' / share with your project Service Account.",
             file=sys.stderr,
         )
     raise RuntimeError(f"Google Drive API error ({status}) for '{resource_id}': {body[:300]}")
