@@ -383,8 +383,7 @@ python3 scripts/generate_subtitles.py -i output/final_cut_full.mp4 \
 
 ```bash
 # 步驟 1：Google Cloud ADC 認證（含 Google Drive 唯讀權限，供直接讀取雲端硬碟素材）
-gcloud auth application-default login \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+gcloud auth application-default login
 
 # 步驟 2：執行 setup.sh 自動完成 GCP API 啟用、GCS Bucket 建立、Lifecycle 規則掛載與 .env 寫入
 ./setup.sh --project YOUR_GCP_PROJECT_ID

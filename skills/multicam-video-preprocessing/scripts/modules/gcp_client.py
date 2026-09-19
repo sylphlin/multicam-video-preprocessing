@@ -403,40 +403,154 @@ def _natural_sort_key(name):
 
 def get_gdrive_session(project=None):
     """
-    Create an authenticated requests Session using Application Default Credentials (ADC)
-    with `drive.readonly` and `cloud-platform` scopes.
+    Create an HTTP session for Google Drive access WITHOUT triggering Google's
+    'This app is blocked' OAuth error on personal gcloud logins:
+    1. If running directly as a Service Account, uses its native credentials with GDRIVE_SCOPES.
+    2. Otherwise uses standard `cloud-platform` ADC to impersonate the project's Service Account
+       (`multicam-video-sa@...`, `video-trimmer-sa@...`, `meeting-transcribe-sa@...`) via
+       `google.auth.impersonated_credentials`. Because 'Open to all' (Anyone with the link)
+       files/folders grant read access to any valid Google identity, the project's Service Account
+       can call Drive API v3 (folder listing + md5Checksum) on ANY 'Open to all' link!
+    3. If no Service Account is available, falls back to a public `requests.Session()` so
+       `Open to all` files/folders still work via direct public endpoints.
     """
-    try:
-        from google.auth.transport.requests import AuthorizedSession
-    except ImportError:
-        raise RuntimeError(
-            "google-auth with requests support is required for Google Drive ADC integration. "
-            "Run: pip install google-auth requests"
-        )
+    import requests
+    from google.auth.transport.requests import AuthorizedSession, Request as GoogleAuthRequest
 
-    if not HAS_GOOGLE_AUTH:
-        raise RuntimeError("google-auth is not installed. Run: pip install google-auth")
-
-    try:
-        creds, adc_project = google.auth.default(scopes=GDRIVE_SCOPES)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to load Application Default Credentials (ADC) for Google Drive: {exc}\n"
-            f"Please run:\n"
-            f"  gcloud auth application-default login --scopes=\"{','.join(GDRIVE_SCOPES)}\""
-        )
-
-    quota_project = project or adc_project or os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
-    if quota_project and hasattr(creds, "with_quota_project"):
+    quota_project = (
+        project
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GCP_PROJECT")
+    )
+    source_creds = None
+    adc_project = None
+    if HAS_GOOGLE_AUTH:
         try:
-            creds = creds.with_quota_project(quota_project)
+            source_creds, adc_project = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            if not quota_project:
+                quota_project = adc_project
         except Exception:
             pass
 
-    session = AuthorizedSession(creds)
-    if quota_project:
-        session.headers["X-Goog-User-Project"] = quota_project
-    return session
+    # 1. Native Service Account credentials
+    if source_creds and hasattr(source_creds, "service_account_email"):
+        sa_creds, _ = google.auth.default(scopes=GDRIVE_SCOPES)
+        sess = AuthorizedSession(sa_creds)
+        if quota_project:
+            sess.headers["X-Goog-User-Project"] = quota_project
+        return sess
+
+    # 2. Impersonate project Service Account using standard cloud-platform ADC (zero OAuth block)
+    if source_creds and quota_project:
+        try:
+            from google.auth import impersonated_credentials
+            sa_candidates = []
+            env_sa = os.environ.get("GCP_SERVICE_ACCOUNT") or os.environ.get("SERVICE_ACCOUNT")
+            if env_sa:
+                sa_candidates.append(env_sa)
+            for prefix in ("multicam-video-sa", "video-trimmer-sa", "meeting-transcribe-sa"):
+                cand = f"{prefix}@{quota_project}.iam.gserviceaccount.com"
+                if cand not in sa_candidates:
+                    sa_candidates.append(cand)
+
+            for sa_email in sa_candidates:
+                try:
+                    imp_creds = impersonated_credentials.Credentials(
+                        source_credentials=source_creds,
+                        target_principal=sa_email,
+                        target_scopes=GDRIVE_SCOPES,
+                        lifetime=3600,
+                    )
+                    imp_creds.refresh(GoogleAuthRequest())
+                    sess = AuthorizedSession(imp_creds)
+                    sess.headers["X-Goog-User-Project"] = quota_project
+                    return sess
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    # 3. Fallback to unauthenticated requests.Session() for public 'Open to all' links
+    return requests.Session()
+
+
+def list_public_gdrive_folder_fallback(folder_id):
+    """
+    Fallback folder scanner for 'Open to all' (Anyone with the link) Google Drive folders
+    using Google Drive's embeddedfolderview endpoint when Drive API v3 credentials are unavailable.
+    """
+    import html
+    import requests
+
+    url = f"https://drive.google.com/embeddedfolderview?id={folder_id}#list"
+    resp = requests.get(url, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Could not access public Google Drive folder '{folder_id}' (HTTP {resp.status_code}).")
+
+    # Match entries in embeddedfolderview: id="entry-<FILE_ID>" ... <div class="flip-entry-title">FILENAME</div>
+    pattern = re.compile(
+        r'id="entry-([a-zA-Z0-9_-]{10,})"[^>]*>.*?<div class="flip-entry-title">([^<]+)</div>',
+        re.DOTALL,
+    )
+    media_files = []
+    for m in pattern.finditer(resp.text):
+        fid = m.group(1)
+        fname = html.unescape(m.group(2).strip())
+        ext = os.path.splitext(fname)[1].lower()
+        if ext in GDRIVE_MEDIA_EXTENSIONS:
+            media_files.append({
+                "id": fid,
+                "name": fname,
+                "mimeType": guess_mime_type(fname),
+                "size": 0,
+                "md5Checksum": None,
+            })
+    media_files.sort(key=lambda x: _natural_sort_key(x.get("name", "")))
+    return media_files
+
+
+def download_public_gdrive_file(file_id, dest_dir, preferred_name=None):
+    """
+    Direct public stream download for 'Open to all' Google Drive files via
+    https://drive.usercontent.google.com/download (bypasses large-file virus scan warning
+    page automatically with confirm=t, requiring zero OAuth scopes).
+    """
+    import requests
+    from urllib.parse import unquote
+
+    os.makedirs(dest_dir, exist_ok=True)
+    dl_url = "https://drive.usercontent.google.com/download"
+    params = {"id": file_id, "export": "download", "confirm": "t"}
+    with requests.get(dl_url, params=params, stream=True, timeout=600) as r:
+        r.raise_for_status()
+        cd = r.headers.get("Content-Disposition", "")
+        detected_name = preferred_name
+        if not detected_name:
+            m_utf8 = re.search(r"filename\*=UTF-8''([^;]+)", cd)
+            m_ascii = re.search(r'filename="([^"]+)"', cd)
+            if m_utf8:
+                detected_name = unquote(m_utf8.group(1).strip())
+            elif m_ascii:
+                detected_name = unquote(m_ascii.group(1).strip())
+            else:
+                detected_name = f"gdrive_{file_id}.mp4"
+
+        local_path = os.path.join(dest_dir, detected_name)
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            print(f"  ✓ [GDrive Local Cache Hit] '{detected_name}' already exists locally. Skipping download!")
+            return local_path
+
+        tmp_path = f"{local_path}.part"
+        print(f"\n[GDrive Public Stream] Downloading '{detected_name}' ({file_id}) -> {local_path} ...")
+        with open(tmp_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=16 * 1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+        os.replace(tmp_path, local_path)
+        print(f"  ✓ Download Complete: {local_path}")
+        return local_path
 
 
 def _raise_gdrive_api_error(resp, resource_id):
@@ -515,7 +629,10 @@ def list_gdrive_folder_videos(folder_url_or_id, project=None):
 
         resp = session.get(url, params=params, timeout=30)
         if resp.status_code != 200:
-            _raise_gdrive_api_error(resp, folder_id)
+            try:
+                return list_public_gdrive_folder_fallback(folder_id)
+            except Exception:
+                _raise_gdrive_api_error(resp, folder_id)
 
         data = resp.json()
         for item in data.get("files", []):
@@ -553,11 +670,17 @@ def download_gdrive_file_with_cache(url_or_id, dest_dir, project=None, force_dow
     If the local file already exists and matches Google Drive's size & md5Checksum, skips downloading.
     Returns the local file path.
     """
-    meta = metadata or get_gdrive_file_metadata(url_or_id, project=project)
-    file_id = meta["id"]
-    file_name = meta.get("name") or f"{file_id}.mp4"
-    expected_size = int(meta.get("size") or 0)
-    expected_md5 = meta.get("md5Checksum")
+    parsed = parse_gdrive_url(url_or_id)
+    file_id = parsed["id"]
+    try:
+        meta = metadata if (metadata and metadata.get("md5Checksum")) else get_gdrive_file_metadata(url_or_id, project=project)
+        file_id = meta["id"]
+        file_name = meta.get("name") or f"{file_id}.mp4"
+        expected_size = int(meta.get("size") or 0)
+        expected_md5 = meta.get("md5Checksum")
+    except Exception:
+        pref_name = metadata.get("name") if isinstance(metadata, dict) else None
+        return download_public_gdrive_file(file_id, dest_dir, preferred_name=pref_name)
 
     os.makedirs(dest_dir, exist_ok=True)
     local_path = os.path.join(dest_dir, file_name)

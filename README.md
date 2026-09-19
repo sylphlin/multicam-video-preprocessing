@@ -392,8 +392,7 @@ The suite operates exclusively on **Google Cloud Vertex AI and Cloud Storage (GC
 
 1. **Authenticate with Google Cloud ADC (including Google Drive Read-Only scope)**:
    ```bash
-   gcloud auth application-default login \
-     --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/drive.readonly"
+   gcloud auth application-default login
    ```
 2. **Run `./setup.sh` for Automated Cloud Provisioning**:
    ```bash
