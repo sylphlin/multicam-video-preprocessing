@@ -14,12 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from modules.edl_validator import (
-    SEVERITY_ERROR,
-    SEVERITY_WARN,
     DEFAULT_LANG,
-    EDLIssue,
-    EDLValidationResult,
-    parse_edl_time_to_seconds,
     validate_edl_rows,
     validate_edl_file,
     format_validation_report,

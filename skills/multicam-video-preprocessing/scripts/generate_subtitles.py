@@ -28,7 +28,6 @@ import difflib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -58,9 +57,6 @@ except ImportError:
     from scripts.modules.progress import LiveTicker
 
 
-
-
-
 def format_timestamp_srt(seconds):
     """Format seconds (float) into SRT timestamp: HH:MM:SS,mmm"""
     if seconds < 0:
@@ -71,18 +67,6 @@ def format_timestamp_srt(seconds):
     if ms >= 1000:
         ms = 999
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d},{ms:03d}"
-
-
-def format_timestamp_vtt(seconds):
-    """Format seconds (float) into WebVTT timestamp: HH:MM:SS.mmm"""
-    if seconds < 0:
-        seconds = 0
-    m, s = divmod(seconds, 60)
-    h, m = divmod(m, 60)
-    ms = int(round((s - int(s)) * 1000))
-    if ms >= 1000:
-        ms = 999
-    return f"{int(h):02d}:{int(m):02d}:{int(s):02d}.{ms:03d}"
 
 
 def srt_to_vtt(srt_content):

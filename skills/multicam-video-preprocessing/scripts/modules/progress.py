@@ -1,5 +1,4 @@
 """Progress and Live Ticker Utility Module (progress.py)."""
-import sys
 import time
 import threading
 
@@ -9,9 +8,6 @@ class LiveTicker:
         self.stop_event = threading.Event()
         self.thread = None
         self.t0 = time.time()
-
-    def update_prefix(self, new_prefix):
-        self.prefix = new_prefix
 
     def _run(self):
         spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]

@@ -9,7 +9,6 @@ import os
 import random
 import sys
 import time
-import uuid
 
 try:
     from .gcp_client import (

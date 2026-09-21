@@ -28,7 +28,6 @@ import argparse
 import csv
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -45,24 +44,14 @@ try:
         validate_edl_file,
         format_validation_report,
     )
+    from modules.time_utils import format_seconds
 except ImportError:
     from scripts.modules.edl_validator import (
         parse_edl_time_to_seconds,
         validate_edl_file,
         format_validation_report,
     )
-
-
-def format_seconds(sec):
-    """
-    Format float seconds into HH:MM:SS.mmm format.
-    """
-    if sec < 0:
-        sec = 0.0
-    h = int(sec // 3600)
-    m = int((sec % 3600) // 60)
-    s = sec % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}"
+    from scripts.modules.time_utils import format_seconds
 
 
 def parse_camera_map(map_str):

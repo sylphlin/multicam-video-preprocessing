@@ -5,7 +5,6 @@ Prints formatted terminal matrices and exports JSON and CSV alignment metadata.
 
 import csv
 import json
-import os
 from .time_utils import format_seconds
 
 

@@ -106,20 +106,6 @@ def time_str_to_frames(time_str, fps=DEFAULT_FPS):
         return 0
 
 
-def clean_input_path(raw_path):
-    """Clean path by stripping file:// prefixes, decoding URLs, and making absolute."""
-    if raw_path.startswith("file://localhost"):
-        raw_path = raw_path.replace("file://localhost", "")
-    elif raw_path.startswith("file://"):
-        raw_path = raw_path.replace("file://", "")
-
-    decoded_path = urllib.parse.unquote(raw_path)
-    if os.name == "nt" and decoded_path.startswith("/") and ":" in decoded_path:
-        decoded_path = decoded_path.lstrip("/")
-
-    return os.path.abspath(decoded_path)
-
-
 def format_path_for_xml(system_path):
     """Convert absolute path to URL-encoded file://localhost URI format for XML."""
     path_obj = Path(system_path)
@@ -216,27 +202,6 @@ def load_edl_csv_records(csv_path):
             "reason": reason_str
         })
     return records
-
-
-_DURATION_CACHE = {}
-
-
-def probe_media_duration_frames(file_path, fps=DEFAULT_FPS):
-    """Probe actual duration in frames of a video file using ffprobe."""
-    if not file_path or not os.path.exists(file_path):
-        return 200000
-    if file_path in _DURATION_CACHE:
-        return _DURATION_CACHE[file_path]
-    try:
-        import subprocess
-        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file_path]
-        res = subprocess.check_output(cmd, text=True).strip()
-        sec = float(res)
-        dur_frames = int(round(sec * fps))
-        _DURATION_CACHE[file_path] = dur_frames
-        return dur_frames
-    except Exception:
-        return 200000
 
 
 def create_file_node(file_id, filename, file_url, timebase, duration, width, height, drop_frame=False):
