@@ -32,6 +32,10 @@ chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
+### 디렉터리 구조 (Agent Plugins 1.0 표준)
+- **SSOT 실제 디렉터리**: `skills/multicam-video-preprocessing/`(`SKILL.md`, `scripts/`, `assets/` 포함)를 단일 진실 공급원(SSOT)으로 사용하며 루트 `scripts` 및 `assets`는 POSIX 심볼릭 링크로 연결됩니다.
+- **2계층 `AGENTS.md` 구성**: 루트 `AGENTS.md`는 워크스페이스 및 개발 표준(Part I & Part II)을 정의하고, 플러그인 내부의 `rules/AGENTS.md`는 AI 클라이언트 실행 규칙(`<PLUGIN_ROOT>` 직접 CLI 호출, 읽기 전용, Fail-Fast)을 정의합니다.
+
 ---
 
 ## 4단계 핵심 워크플로 및 CLI 명령

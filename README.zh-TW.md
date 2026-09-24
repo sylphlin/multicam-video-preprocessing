@@ -44,6 +44,23 @@ chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
+### 專案目錄結構（Agent Plugins 1.0 標準規範）
+```text
+multicam-video-preprocessing/
+├── plugin.json                                           # Agent Plugins 1.0 宣告清單
+├── rules/
+│   └── AGENTS.md                                         # 打包於 Plugin 內的客戶端執行期守則（唯讀、直接呼叫 CLI 與 Fail-Fast）
+├── skills/
+│   └── multicam-video-preprocessing/                     # 標準技能套件主幹（Single Source of Truth）
+│       ├── SKILL.md                                      # 技能規範與四階段自動化執行手冊
+│       ├── scripts/                                      # 核心執行腳本與模組實體目錄 (SSOT)
+│       └── assets/                                       # 提示詞規範實體目錄 (SSOT)
+├── scripts -> skills/multicam-video-preprocessing/scripts # 根目錄 POSIX Symlink（供 CLI 與測試直接引用）
+├── assets -> skills/multicam-video-preprocessing/assets   # 根目錄 POSIX Symlink
+├── AGENTS.md                                             # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
+└── setup.sh                                              # 原生 gcloud 雲端環境一鍵配置腳本
+```
+
 ---
 
 ## 四階段端到端工作流架構

@@ -32,6 +32,10 @@ chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
+### 项目目录结构（Agent Plugins 1.0 标准规范）
+- **SSOT 实体目录**：`skills/multicam-video-preprocessing/`（内含 `SKILL.md`、`scripts/` 与 `assets/`），根目录 `scripts` 与 `assets` 为指向该目录的 POSIX symlinks。
+- **双层 `AGENTS.md` 规范**：根目录 `AGENTS.md` 定义工作区与工程开发规范（Part I & Part II），`rules/AGENTS.md` 随 Plugin 打包注入 AI 客户端执行期守则（定位 `<PLUGIN_ROOT>` 直接调用 CLI、只读与 Fail-Fast）。
+
 ---
 
 ## 四阶段核心流程与 CLI 命令

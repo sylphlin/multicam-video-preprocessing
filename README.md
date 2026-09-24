@@ -44,29 +44,31 @@ chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
-### Directory Structure
+### Directory Structure (Agent Plugins 1.0 Specification)
 ```text
 multicam-video-preprocessing/
-├── AGENTS.md                          # Workspace and repository engineering rules
-├── plugin.json                        # Agent Plugins 1.0 manifest
-├── setup.sh                           # Native gcloud setup script (GCS, Lifecycle, IAM, .env)
-├── .env.example                       # Vertex AI (ADC) and GCS configuration template
+├── plugin.json                                           # Agent Plugins 1.0 manifest
 ├── rules/
-│   └── AGENTS.md                      # Operational invariants for AI clients
+│   └── AGENTS.md                                         # Packaged client execution invariants (<PLUGIN_ROOT> direct CLI & fail-fast)
 ├── skills/
-│   └── multicam-video-preprocessing/
-│       └── SKILL.md                   # Antigravity skill manifest and 4-stage gated runbook
-├── assets/                            # Prompt templates (symlink to skills/.../assets)
-│   ├── edl_interview_template.md      # Gemini multimodal interview rough-cut rules
-│   └── subtitle_proofread_template.*.md # Multi-locale YouTube subtitle proofreading rules
-├── scripts/                           # Execution scripts (symlink to skills/.../scripts)
-│   ├── multicam_pipeline.py           # Stage 1: MFCC sync, -14 LUFS norm, synced masters, grid merge
-│   ├── generate_edl.py                # Stage 2: Vertex AI Gemini 3.8 Flash Agentic Video EDL generation
-│   ├── export_fcp7_xml.py             # Stage 3A: FCP7 XML timeline export (Primary)
-│   ├── edl_to_video.py                # Stage 3B: Single-pass hardware video rendering (Secondary)
-│   ├── generate_subtitles.py          # Stage 4: 3-stage YouTube subtitle generation
-│   └── modules/                       # Acoustic, video, validator, and GCP/Vertex AI modules
-└── README.md
+│   └── multicam-video-preprocessing/                     # Canonical Skill Bundle (Single Source of Truth)
+│       ├── SKILL.md                                      # Antigravity skill manifest and 4-stage gated runbook
+│       ├── scripts/                                      # Canonical execution scripts & modules (SSOT)
+│       │   ├── multicam_pipeline.py                      # Stage 1: MFCC sync, -14 LUFS norm, synced masters, grid merge
+│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 3.8 Flash Agentic Video EDL generation
+│       │   ├── export_fcp7_xml.py                        # Stage 3A: FCP7 XML timeline export (Primary)
+│       │   ├── edl_to_video.py                           # Stage 3B: Single-pass hardware video rendering (Secondary)
+│       │   ├── generate_subtitles.py                     # Stage 4: 3-stage YouTube subtitle generation
+│       │   └── modules/                                  # Acoustic, video, validator, and GCP/Vertex AI modules
+│       └── assets/                                       # Canonical prompt templates (SSOT)
+│           ├── edl_interview_template.md                 # Gemini multimodal interview rough-cut rules
+│           └── subtitle_proofread_template.*.md          # Multi-locale YouTube subtitle proofreading rules
+├── scripts -> skills/multicam-video-preprocessing/scripts # Root POSIX symlink for CLI & test compatibility
+├── assets -> skills/multicam-video-preprocessing/assets   # Root POSIX symlink for prompt resolution
+├── AGENTS.md                                             # Workspace & engineering development rules (Part I & Part II)
+├── setup.sh                                              # Native gcloud setup script (GCS, Lifecycle, IAM, .env)
+├── .env.example                                          # Vertex AI (ADC) and GCS configuration template
+└── tests/                                                # Offline unit test suite (41 tests)
 ```
 
 ---
