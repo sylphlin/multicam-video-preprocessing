@@ -126,12 +126,22 @@ flowchart TD
 
 ---
 
-## 使用情境與 Agent 指令範例 (User Scenarios & Agent Prompts)
+## Antigravity 操作方式與使用情境 (Usage & Scenarios)
+
+在 Antigravity 中有兩種呼叫方式：
+1. **極簡指令（`/skill` + `@檔案`）**：輸入 `/multicam-video-preprocessing` 綁定技能，並用 `@` 指定多機位影片檔案或雲端資料夾連結，無需額外贅述。
+2. **自然語言口語描述**：直接用口語描述需求並附上 `@` 檔案或雲端連結，Agent 會自動載入對應插件。
 
 ### 情境 1：匯出專業 NLE XML 時間軸（建議主要工作流）
 - **適用場景**：將 AI 多機位粗剪決策匯入 DaVinci Resolve、Adobe Premiere Pro 或 Final Cut Pro 進行精剪與調色。
-- **Agent 指令範例**：
-  > *「幫我同步 `CAM1.mp4` 與 `CAM2.mp4`，將響度標準化至 -14 LUFS，並產生可匯入 DaVinci Resolve 的 FCP7 XML 粗剪時間軸。」*
+- **方式 A（`/ + @` 極簡指令）**：
+  ```text
+  /multicam-video-preprocessing 機位1: @CAM1.mp4, 機位2: @CAM2.mp4
+  ```
+- **方式 B（口語描述）**：
+  ```text
+  幫我同步 @CAM1.mp4 與 @CAM2.mp4，將響度標準化至 -14 LUFS，並產生可匯入 DaVinci Resolve 的 FCP7 XML 粗剪時間軸。
+  ```
 - **交付成果**：
   1. `final_cut_full.xml`（包含機位切換切點與剪輯理由標記的時間軸）。
   2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（已完成毫秒級對齊與 `-14 LUFS` 響度標準化之同步母帶）。
@@ -142,16 +152,28 @@ flowchart TD
 
 ### 情境 2：直接渲染多機位粗剪成品影片
 - **適用場景**：不進入剪輯軟體，直接輸出完成機位切換的 MP4 預覽或成品影片。
-- **Agent 指令範例**：
-  > *「幫我把這幾支多機位影片做 AI 粗剪，並直接渲染出 `final_cut_full.mp4`。」*
+- **方式 A（`/ + @` 極簡指令）**：
+  ```text
+  /multicam-video-preprocessing 機位1: @CAM1.mp4, 機位2: @CAM2.mp4, 輸出: 直接渲染 MP4
+  ```
+- **方式 B（口語描述）**：
+  ```text
+  幫我把 @CAM1.mp4 和 @CAM2.mp4 做多機位 AI 粗剪，並直接渲染出 final_cut_full.mp4。
+  ```
 - **交付成果**：
   1. `final_cut_full.mp4`（單次硬體加速渲染之完整影片）。
   2. `edl_full.csv` 與 `edl_full_report.md`（機位切換決策表與 8 項語意驗證報告）。
 
 ### 情境 3：直接從 Google Drive 資料夾進行多機位同步與粗剪
 - **適用場景**：直接提供存放多機位素材的 Google Drive 資料夾連結，由 Agent 自動下載（具備 `md5Checksum` 快取驗證）、同步並產生粗剪時間軸。
-- **Agent 指令範例**：
-  > *「從這個 Google Drive 資料夾 `https://drive.google.com/drive/folders/FOLDER_ID` 下載多機位素材，完成音訊同步與 -14 LUFS 標準化，並匯出 FCP7 XML 時間軸。」*
+- **方式 A（`/ + @` 極簡指令）**：
+  ```text
+  /multicam-video-preprocessing 資料夾: https://drive.google.com/drive/folders/FOLDER_ID
+  ```
+- **方式 B（口語描述）**：
+  ```text
+  從這個 Google Drive 資料夾 https://drive.google.com/drive/folders/FOLDER_ID 下載多機位素材，完成音訊同步與 -14 LUFS 標準化，並匯出 FCP7 XML 時間軸。
+  ```
 - **交付成果**：
   1. `CAM1_synced.mp4` .. `CAMn_synced.mp4`（同步與響度標準化母帶）。
   2. `edl_full.csv`、`edl_full_report.md` 與 `final_cut_full.xml`。
@@ -163,14 +185,14 @@ flowchart TD
 ### Stage 1：多機位同步與前處理
 1. **MFCC 聲學時間對齊與次影格微調（`<0.125 ms`）**：採用三階掃描（120 秒快速掃描 $\rightarrow$ 全長 MFCC $\rightarrow$ 原始波形 1D FFT）並將精準度鎖定至單一音訊取樣點。
 2. **EBU R128 (`-14 LUFS`) 雙階段線性響度標準化**：第一階段測量 `I`、`LRA` 與 `TP`，第二階段套用純線性增益（`linear=true`），消除動態壓縮呼吸感。
-3. **逐幀精準同步母帶匯出 (`CAM*_synced.mp4`)**：預設採用硬體加速重編碼（`h264_videotoolbox` 或 `libx264 -crf 18`，`20 Mbps`），杜絕關鍵影格偏移。
-4. **全長輕量網格合成 (`multicam_merged_full.mp4`)**：將 2 至 6 機位合成為單一多視角畫布（$\le 1920 \times 1080$，每機位 $\ge 640 \times 480$），採用 `10 fps`、`1.2 Mbps` 與 1 秒短 GOP（`-g 10`）編碼，支援秒級無損切分與高速雲端讀取。
+3. **逐幀精準同步母帶匯出 (`CAM*_synced.mp4`)**：預設採用硬體加速重編碼（`h264_videotoolbox` 或 `libx264`，`20 Mbps`），杜絕關鍵影格偏移。
+4. **全長輕量網格合成 (`multicam_merged_full.mp4`)**：將 2 至 6 機位合成為單一多視角畫布（$\le 1920 \times 1080$，每機位 $\ge 640 \times 480$），採用 `10 fps`、`1.2 Mbps` 與 1 秒短 GOP 編碼，支援秒級無損切分與高速雲端讀取。
 
 ### Stage 2：Gemini 3.8 Flash 多模態粗剪決策與靜音感知智慧分段
 1. **片頭倒數與場記板零容忍剔除**：自動切除開拍倒數並驗證 `[Global_Start_Time, Global_Start_Time + 2.0s]` 區間，同時於 `Global_End_Time` 切除收工閒聊。
 2. **標準多模態推論與靜音感知智慧分段（30–40 分鐘視窗）**：
-   - 預設採用 **Vertex AI Gemini 3.8 Flash** 標準多模態模式（`--processing standard`，`MEDIA_RESOLUTION_LOW` + 動態 `thinking_budget` `1024–4096`）。
-   - 當影片長度超過 40 分鐘（`2400s`）時，`generate_edl.py` 內部自動透過 `ffmpeg silencedetect` 與 RMS 能量波谷偵測自然語音停頓點，無損切分（`-c copy`）至暫存目錄 `<output_dir>/_edl_chunks/` 並平行上傳至 `gs://<bucket>/raw/edl_chunks/` 推論，完成後自動平移時間碼並縫合為單一 `edl_full.csv`，最後於 `finally` 區塊自動清除本機與雲端暫存分段檔。
+   - 預設採用 **Vertex AI Gemini 3.8 Flash** 標準多模態模式（`MEDIA_RESOLUTION_LOW` + 動態 `thinking_budget` `1024–4096`）。
+   - 當影片長度超過 40 分鐘（`2400s`）時，系統內部自動透過 `ffmpeg silencedetect` 與 RMS 能量波谷偵測自然語音停頓點，無損切分至暫存目錄 `<output_dir>/_edl_chunks/` 並平行上傳至 `gs://<bucket>/raw/edl_chunks/` 推論，完成後自動平移時間碼並縫合為單一 `edl_full.csv`，最後於 `finally` 區塊自動清除本機與雲端暫存分段檔。
 3. **8 項確定性 EDL 語意驗證**：檢查 `E_NO_ROWS`、`E_PARSE_TIME`、`E_NEGATIVE_DURATION`、`E_NON_MONOTONIC`、`E_OVERLAP`、`E_EMPTY_CAMERA`、`W_UNKNOWN_CAMERA` 與 `W_GAP`，並產出 `edl_full.csv` 與 `edl_full_report.md`。
 
 ### Stage 3A & 3B：匯出 FCP7 XML 時間軸與硬體加速渲染

@@ -131,3 +131,58 @@ flowchart TD
   ```
 - **Exit Gate 3B Verification**:
   - `<OUTPUT_DIR>/final_cut_full.mp4` exists with duration $> 0$.
+
+---
+
+## CLI Options Reference
+
+### 1. Stage 1 — `multicam_pipeline.py`
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `--ref` | `None` | Reference anchor camera video path or Google Drive link (`CAM1`) |
+| `--targets`, `--target` | `None` | Target camera video paths or Google Drive links (`CAM2..CAM6`) |
+| `--gdrive-folder` | `None` | Google Drive Folder URL or ID containing 2–6 camera videos |
+| `-o`, `--output-dir` | `output` | Output directory for synced camera masters, grid video, and reports |
+| `--normalize` | `False` | Enable EBU R128 (`-14.0 LUFS`) two-pass linear audio normalization |
+| `--merge`, `--multi-in-one` | `False` | Render merged multi-in-one grid video (`multicam_merged_full.mp4`) |
+| `--lufs` / `--lra` / `--tp` | `-14.0` / `11.0` / `-1.5` | EBU R128 integrated loudness, loudness range, and true peak targets |
+| `--encoder` | `h264_videotoolbox` | Hardware video encoder (fallback: `libx264`) |
+| `--stream-copy` | `False` | Export synced masters using `-c copy` instead of frame-accurate re-encoding |
+| `--strict-sync` | `False` | Exit non-zero if any camera alignment confidence score is low (`Z < 7.0`) |
+
+### 2. Stage 2 — `generate_edl.py`
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `-v`, `--video`, `-i`, `--input` | *(Required)* | Path to composite grid video (`multicam_merged_full.mp4`) |
+| `-o`, `--output-dir` | `<video_dir>` | Output directory for `edl_full.csv` and `edl_full_report.md` |
+| `-t`, `--template` | `assets/edl_interview_template.md` | Custom prompt template file path |
+| `--model` | `gemini-3.8-flash` | Vertex AI Gemini model name |
+| `--processing` | `standard` | Video processing mode: `standard` (Low-Res + silence segmentation) or `agentic` |
+| `--chunk-min-dur` / `--chunk-max-dur` | `1800.0` / `2400.0` | Min/Max chapter duration in seconds (`30–40 min`) for silence splitting |
+| `--strict-edl` | `False` | Exit with code `1` when EDL validation finds `ERROR` issues |
+| `--lang` | `en` | Language for the EDL validation report (`en`, `zh-TW`) |
+| `--edl-max-gap-sec` | `0.05` | Maximum allowed gap in seconds between consecutive EDL cuts |
+| `--edl-known-cameras` | `^CAM\d+$` | Comma-separated expected camera names (`CAM1,CAM2,...`) |
+| `--cleanup-gcs` | `False` | Immediately delete staged grid video from GCS after completion |
+
+### 3. Stage 3A — `export_fcp7_xml.py`
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `-d`, `--dir` | `None` | Directory containing `edl_full.csv` and synced camera masters |
+| `-e`, `--edl` | `None` | Explicit path(s) to EDL CSV file(s) |
+| `-o`, `--output` | `final_cut_full.xml` | Output FCP7 XML timeline path |
+| `-m`, `--media-dir` | `<edl_dir>` | Directory containing camera media files |
+| `--fps` | `30.0` | Sequence frame rate (`23.976`, `24`, `25`, `29.97`, `30`, `50`, `59.94`, `60`) |
+| `--drop-frame` | `False` | Enable drop-frame timecode (`DF`) for NTSC sequences |
+| `--use-raw-media` | `False` | Link to original raw camera files using `multicam_sync.json` offsets |
+| `--strict-edl` / `--lang` | `False` / `en` | Enforce strict EDL validation and set report language |
+
+### 4. Stage 3B — `edl_to_video.py`
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `--edl` | *(Required)* | Path to input EDL CSV file (`edl_full.csv`) |
+| `--media-dir` | `<edl_dir>` | Directory containing synchronized camera masters (`CAM*_synced.mp4`) |
+| `-o`, `--output` | `final_cut_full.mp4` | Output rendered MP4 path |
+| `--encoder` | `h264_videotoolbox` | Hardware video encoder for single-pass rendering |
+| `--strict-edl` / `--lang` | `False` / `en` | Enforce strict EDL validation and set report language |
+

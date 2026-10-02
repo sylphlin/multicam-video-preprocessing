@@ -126,12 +126,22 @@ flowchart TD
 
 ---
 
-## User Scenarios & Agent Prompts
+## Antigravity Usage & Scenarios
+
+Interact with the Agent in Antigravity using two methods:
+1. **Concise Slash + Mention (`/skill` + `@file`)**: Select `/multicam-video-preprocessing` and attach your camera files or Google Drive folder link.
+2. **Natural Language Prompt**: Describe your multi-camera synchronization and editing goals in plain language and attach `@` files or cloud links.
 
 ### Scenario 1: Export NLE XML Timeline (Recommended Primary Workflow)
 - **Use Case**: Import AI rough-cut camera decisions into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro for fine editing and color grading.
-- **Agent Prompt**:
-  > *"Synchronize `CAM1.mp4` and `CAM2.mp4`, normalize loudness to -14 LUFS, and export an FCP7 XML rough-cut timeline for DaVinci Resolve."*
+- **Mode A (`/ + @` Concise Command)**:
+  ```text
+  /multicam-video-preprocessing CAM1: @CAM1.mp4, CAM2: @CAM2.mp4
+  ```
+- **Mode B (Natural Language Prompt)**:
+  ```text
+  Synchronize @CAM1.mp4 and @CAM2.mp4, normalize loudness to -14 LUFS, and export an FCP7 XML rough-cut timeline for DaVinci Resolve.
+  ```
 - **Deliverables**:
   1. `final_cut_full.xml` (Timeline with camera cut points and reason markers).
   2. `CAM1_synced.mp4`, `CAM2_synced.mp4` (Time-aligned and `-14 LUFS` normalized camera masters).
@@ -142,16 +152,28 @@ flowchart TD
 
 ### Scenario 2: Direct Video Render
 - **Use Case**: Render a finished MP4 rough-cut video without opening an NLE.
-- **Agent Prompt**:
-  > *"Rough-cut these multi-camera videos and render `final_cut_full.mp4` directly."*
+- **Mode A (`/ + @` Concise Command)**:
+  ```text
+  /multicam-video-preprocessing CAM1: @CAM1.mp4, CAM2: @CAM2.mp4, Output: Render MP4
+  ```
+- **Mode B (Natural Language Prompt)**:
+  ```text
+  Rough-cut @CAM1.mp4 and @CAM2.mp4 and render final_cut_full.mp4 directly.
+  ```
 - **Deliverables**:
   1. `final_cut_full.mp4` (Single-pass hardware-rendered full video).
   2. `edl_full.csv` and `edl_full_report.md` (Camera switching decisions and semantic validation report).
 
 ### Scenario 3: Multi-Camera Rough-Cut from a Google Drive Folder
 - **Use Case**: Process all camera angles stored in a shared Google Drive folder with automatic `md5Checksum` cache verification.
-- **Agent Prompt**:
-  > *"Download the multi-camera footage from `https://drive.google.com/drive/folders/FOLDER_ID`, synchronize and normalize the audio, and generate an FCP7 XML timeline."*
+- **Mode A (`/ + @` Concise Command)**:
+  ```text
+  /multicam-video-preprocessing Folder: https://drive.google.com/drive/folders/FOLDER_ID
+  ```
+- **Mode B (Natural Language Prompt)**:
+  ```text
+  Download the multi-camera footage from https://drive.google.com/drive/folders/FOLDER_ID, synchronize and normalize the audio, and generate an FCP7 XML timeline.
+  ```
 - **Deliverables**:
   1. `CAM1_synced.mp4` .. `CAMn_synced.mp4` (Synchronized and loudness-normalized masters).
   2. `edl_full.csv`, `edl_full_report.md`, and `final_cut_full.xml`.
@@ -173,9 +195,9 @@ flowchart TD
    - **Pass 1**: Measures Integrated Loudness (`I`), Loudness Range (`LRA = 11.0 LU`), and True Peak (`TP = -1.5 dBTP`).
    - **Pass 2**: Applies linear gain (`linear=true`) to lock integrated loudness at `-14.0 LUFS` without dynamic pumping or peak clipping.
 3. **Frame-Accurate Synchronized Masters (`CAM*_synced.mp4`)**:
-   - Re-encodes camera masters at `20 Mbps` using hardware acceleration (`h264_videotoolbox` on Apple Silicon or `libx264 -crf 18`) to eliminate keyframe drift.
+   - Re-encodes camera masters at `20 Mbps` using hardware acceleration (`h264_videotoolbox` on Apple Silicon or `libx264`) to eliminate keyframe drift.
 4. **Full-Length Compact Grid Composition (`multicam_merged_full.mp4`)**:
-   - Combines 2 to 6 synchronized cameras into one labeled canvas ($\le 1920 \times 1080$, each cell $\ge 640 \times 480$) at `10 fps`, `1.2 Mbps`, and 1-second GOP (`-g 10`) for fast lossless slicing and cloud scanning.
+   - Combines 2 to 6 synchronized cameras into one labeled canvas ($\le 1920 \times 1080$, each cell $\ge 640 \times 480$) at `10 fps`, `1.2 Mbps`, and 1-second GOP for fast lossless slicing and cloud scanning.
 
 ---
 
@@ -185,8 +207,8 @@ flowchart TD
    - Removes clapperboards, mic checks, and on-set countdowns (`5, 4, 3, 2, 1`).
    - Verifies `[Global_Start_Time, Global_Start_Time + 2.0s]` to ensure zero countdown residue and trims post-interview chatter at `Global_End_Time`.
 2. **Standard Multimodal Inference & Silence-Aware Smart Segmentation (`30–40 min` Windows)**:
-   - Runs **Vertex AI Gemini 3.8 Flash** in Standard Multimodal mode (`--processing standard`, `MEDIA_RESOLUTION_LOW` + dynamic `thinking_budget` `1024–4096`) by default.
-   - For videos longer than 40 minutes (`2400s`), `generate_edl.py` detects natural speech pauses (`ffmpeg silencedetect` + RMS energy minimum fallback), slices lossless temporary chunks (`-c copy`) into `<output_dir>/_edl_chunks/`, runs parallel inference via `gs://<bucket>/raw/edl_chunks/`, stitches all shifted timestamps into `edl_full.csv`, and deletes all temporary local and GCS chunks in `finally` blocks.
+   - Runs **Vertex AI Gemini 3.8 Flash** in Standard Multimodal mode (`MEDIA_RESOLUTION_LOW` + dynamic `thinking_budget` `1024–4096`) by default.
+   - For videos longer than 40 minutes (`2400s`), the pipeline detects natural speech pauses (`ffmpeg silencedetect` + RMS energy minimum fallback), slices lossless temporary chunks into `<output_dir>/_edl_chunks/`, runs parallel inference via `gs://<bucket>/raw/edl_chunks/`, stitches all shifted timestamps into `edl_full.csv`, and deletes all temporary local and GCS chunks in `finally` blocks.
 3. **8-Check Deterministic EDL Semantic Validation**:
    - Validates `E_NO_ROWS`, `E_PARSE_TIME`, `E_NEGATIVE_DURATION`, `E_NON_MONOTONIC`, `E_OVERLAP`, `E_EMPTY_CAMERA`, `W_UNKNOWN_CAMERA`, and `W_GAP`.
    - Writes `edl_full.csv` and `edl_full_report.md` to disk for review.

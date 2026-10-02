@@ -96,28 +96,50 @@ flowchart TD
 
 ---
 
-## 利用シナリオと Agent プロンプト例 (User Scenarios & Agent Prompts)
+## Antigravity の操作方法と利用シナリオ (Usage & Scenarios)
+
+Antigravity では以下の 2 つの方法で実行できます：
+1. **ショートカット指定（`/skill` + `@ファイル`）**：`/multicam-video-preprocessing` を選択し、`@` でカメラ映像や Google Drive フォルダを指定するだけで実行できます。
+2. **自然言語プロンプト**：通常の会話文で要望を伝え、`@` ファイルやクラウドリンクを添付すると自動的にプラグインが呼び出されます。
 
 ### シナリオ 1：NLE 用 FCP7 XML タイムライン出力（推奨メインワークフロー）
 - **ユースケース**：AI ラフカットのカメラ切り替え判定を DaVinci Resolve、Adobe Premiere Pro、または Final Cut Pro に読み込み、本編集やカラーグレーディングを行います。
-- **Agent プロンプト例**：
-  > *「`CAM1.mp4` と `CAM2.mp4` を同期してラウドネスを -14 LUFS に正規化し、DaVinci Resolve 用の FCP7 XML ラフカットタイムラインを出力して。」*
+- **方法 A（`/ + @` ショートカット指定）**：
+  ```text
+  /multicam-video-preprocessing CAM1: @CAM1.mp4, CAM2: @CAM2.mp4
+  ```
+- **方法 B（自然言語プロンプト）**：
+  ```text
+  @CAM1.mp4 と @CAM2.mp4 を同期してラウドネスを -14 LUFS に正規化し、DaVinci Resolve 用の FCP7 XML ラフカットタイムラインを出力して。
+  ```
 - **生成される成果物**：
   1. `final_cut_full.xml`（カメラ切り替え点と理由マーカーを含むタイムライン）。
   2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（時間同期および `-14 LUFS` 正規化済みカメラマスター）。
 
 ### シナリオ 2：ラフカット動画の直接レンダリング
 - **ユースケース**：NLE を開かずに、カメラ切り替え済みの MP4 プレビュー動画を直接レンダリングします。
-- **Agent プロンプト例**：
-  > *「これらのマルチカメラ映像を AI ラフカットして、`final_cut_full.mp4` を直接レンダリングして。」*
+- **方法 A（`/ + @` ショートカット指定）**：
+  ```text
+  /multicam-video-preprocessing CAM1: @CAM1.mp4, CAM2: @CAM2.mp4, 出力: MP4 直接レンダリング
+  ```
+- **方法 B（自然言語プロンプト）**：
+  ```text
+  @CAM1.mp4 と @CAM2.mp4 をマルチカメラ AI ラフカットして、final_cut_full.mp4 を直接レンダリングして。
+  ```
 - **生成される成果物**：
   1. `final_cut_full.mp4`（シングルパス・ハードウェアレンダリング済み動画）。
   2. `edl_full.csv` および `edl_full_report.md`（カメラ切り替えリストと 8 項目検証レポート）。
 
 ### シナリオ 3：Google Drive フォルダからのマルチカメラ同期＆ラフカット
 - **ユースケース**：Google Drive 共有フォルダ内の全カメラ映像を MD5 キャッシュ検証付きで自動取得し、同期からタイムライン出力まで一括実行します。
-- **Agent プロンプト例**：
-  > *「Google Drive フォルダ `https://drive.google.com/drive/folders/FOLDER_ID` のマルチカメラ素材を同期・正規化して、FCP7 XML タイムラインを生成して。」*
+- **方法 A（`/ + @` ショートカット指定）**：
+  ```text
+  /multicam-video-preprocessing フォルダ: https://drive.google.com/drive/folders/FOLDER_ID
+  ```
+- **方法 B（自然言語プロンプト）**：
+  ```text
+  Google Drive フォルダ https://drive.google.com/drive/folders/FOLDER_ID のマルチカメラ素材を同期・正規化して、FCP7 XML タイムラインを生成して。
+  ```
 - **生成される成果物**：
   1. `CAM1_synced.mp4` .. `CAMn_synced.mp4`（同期・ラウドネス正規化済みマスター）。
   2. `edl_full.csv`、`edl_full_report.md`、`final_cut_full.xml`。
@@ -126,8 +148,8 @@ flowchart TD
 
 ## 3 ステージ技術概要
 
-1. **Stage 1（マルチカメラ同期＆前処理）**：MFCC 音響アライメント＆サブフレーム微調整（`<0.125 ms`）、EBU R128（`-14 LUFS`）2 パス線形ラウドネス正規化、フレーム精度同期マスター出力（`CAM*_synced.mp4`, `20 Mbps`）、および軽量全編グリッド合成（`multicam_merged_full.mp4`, `10 fps`, `1.2 Mbps`, 1 秒短 GOP `-g 10`）を実行します。
-2. **Stage 2（Gemini 3.8 Flash マルチモーダルラフカット＆無音検出スマート分割）**：デフォルトで **Vertex AI Gemini 3.8 Flash** 標準マルチモーダルモード（`--processing standard`, `MEDIA_RESOLUTION_LOW` + 動的 `thinking_budget` `1024–4096`）を使用します。40 分を超える動画では 30〜40 分の自然な無音箇所で `<output_dir>/_edl_chunks/` に一時分割して並列推論し、`edl_full.csv` に統合した後、`finally` ブロックでローカルと GCS の一時チャンクを自動削除し、8 項目の決定論的 EDL 検証（`6 ERROR + 2 WARN`）を実行します。
+1. **Stage 1（マルチカメラ同期＆前処理）**：MFCC 音響アライメント＆サブフレーム微調整（`<0.125 ms`）、EBU R128（`-14 LUFS`）2 パス線形ラウドネス正規化、フレーム精度同期マスター出力（`CAM*_synced.mp4`, `20 Mbps`）、および軽量全編グリッド合成（`multicam_merged_full.mp4`, `10 fps`, `1.2 Mbps`, 1 秒短 GOP）を実行します。
+2. **Stage 2（Gemini 3.8 Flash マルチモーダルラフカット＆無音検出スマート分割）**：デフォルトで **Vertex AI Gemini 3.8 Flash** 標準マルチモーダルモード（`MEDIA_RESOLUTION_LOW` + 動的 `thinking_budget` `1024–4096`）を使用します。40 分を超える動画では 30〜40 分の自然な無音箇所で `<output_dir>/_edl_chunks/` に一時分割して並列推論し、`edl_full.csv` に統合した後、`finally` ブロックでローカルと GCS の一時チャンクを自動削除し、8 項目の決定論的 EDL 検証（`6 ERROR + 2 WARN`）を実行します。
 3. **Stage 3A & 3B（FCP7 XML タイムライン出力 / シングルパス動画レンダリング）**：NTSC 非整数フレームレート（`23.976`, `29.97`, `59.94`）やドロップフレームに対応した `final_cut_full.xml` の出力、または `final_cut_full.mp4` の直接レンダリングを行います。
 
 ---

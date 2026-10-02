@@ -96,28 +96,50 @@ flowchart TD
 
 ---
 
-## 使用场景与 Agent 指令示例 (User Scenarios & Agent Prompts)
+## Antigravity 操作方式与使用场景 (Usage & Scenarios)
+
+在 Antigravity 中有两种调用方式：
+1. **极简指令（`/skill` + `@文件`）**：输入 `/multicam-video-preprocessing` 绑定技能，并用 `@` 指定多机位视频文件或云端文件夹链接，无需额外解释。
+2. **自然语言口语描述**：直接用口语描述需求并附上 `@` 文件或云端链接，Agent 会自动加载对应插件。
 
 ### 场景 1：导出专业 NLE XML 时间线（推荐主要工作流）
 - **适用场景**：将 AI 多机位粗剪决策导入 DaVinci Resolve、Adobe Premiere Pro 或 Final Cut Pro 进行精剪与调色。
-- **Agent 指令示例**：
-  > *“帮我同步 `CAM1.mp4` 和 `CAM2.mp4`，将响度标准化到 -14 LUFS，并导出可导入 DaVinci Resolve 的 FCP7 XML 粗剪时间线。”*
+- **方式 A（`/ + @` 极简指令）**：
+  ```text
+  /multicam-video-preprocessing 机位1: @CAM1.mp4, 机位2: @CAM2.mp4
+  ```
+- **方式 B（口语描述）**：
+  ```text
+  帮我同步 @CAM1.mp4 和 @CAM2.mp4，将响度标准化到 -14 LUFS，并导出可导入 DaVinci Resolve 的 FCP7 XML 粗剪时间线。
+  ```
 - **交付成果**：
   1. `final_cut_full.xml`（包含机位切换切点与剪辑理由标记的时间线）。
   2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（已完成毫秒级对齐与 `-14 LUFS` 响度标准化的同步母带）。
 
 ### 场景 2：直接渲染多机位粗剪成品视频
 - **适用场景**：无需打开剪辑软件，直接输出完成机位切换的 MP4 预览或成品视频。
-- **Agent 指令示例**：
-  > *“帮我把这几支多机位视频做 AI 粗剪，并直接渲染生成 `final_cut_full.mp4`。”*
+- **方式 A（`/ + @` 极简指令）**：
+  ```text
+  /multicam-video-preprocessing 机位1: @CAM1.mp4, 机位2: @CAM2.mp4, 输出: 直接渲染 MP4
+  ```
+- **方式 B（口语描述）**：
+  ```text
+  帮我把 @CAM1.mp4 和 @CAM2.mp4 做多机位 AI 粗剪，并直接渲染生成 final_cut_full.mp4。
+  ```
 - **交付成果**：
   1. `final_cut_full.mp4`（单次硬件加速渲染的完整视频）。
   2. `edl_full.csv` 与 `edl_full_report.md`（机位切换决策表与 8 项语义验证报告）。
 
 ### 场景 3：从 Google Drive 文件夹执行多机位同步与粗剪
 - **适用场景**：直接提供存放多机位素材的 Google Drive 文件夹链接，由 Agent 自动下载（含远程 MD5 缓存校验）、同步并导出粗剪时间线。
-- **Agent 指令示例**：
-  > *“从这个 Google Drive 文件夹 `https://drive.google.com/drive/folders/FOLDER_ID` 下载多机位视频，完成音频同步与 -14 LUFS 标准化，并导出 FCP7 XML 时间线。”*
+- **方式 A（`/ + @` 极简指令）**：
+  ```text
+  /multicam-video-preprocessing 文件夹: https://drive.google.com/drive/folders/FOLDER_ID
+  ```
+- **方式 B（口语描述）**：
+  ```text
+  从这个 Google Drive 文件夹 https://drive.google.com/drive/folders/FOLDER_ID 下载多机位视频，完成音频同步与 -14 LUFS 标准化，并导出 FCP7 XML 时间线。
+  ```
 - **交付成果**：
   1. `CAM1_synced.mp4` .. `CAMn_synced.mp4`（同步与响度标准化母带）。
   2. `edl_full.csv`、`edl_full_report.md` 与 `final_cut_full.xml`。
@@ -126,8 +148,8 @@ flowchart TD
 
 ## 三阶段核心技术说明
 
-1. **Stage 1（多机位同步与预处理）**：执行 MFCC 声学时间对齐与亚帧微调（`<0.125 ms`）、EBU R128（`-14 LUFS`）双阶段线性响度标准化、逐帧精准同步母带导出（`CAM*_synced.mp4`，`20 Mbps`）与全长轻量网格合成（`multicam_merged_full.mp4`，`10 fps`、`1.2 Mbps`、1 秒短 GOP `-g 10`）。
-2. **Stage 2（Gemini 3.8 Flash 多模态粗剪与静音感知智能分段）**：默认采用 **Vertex AI Gemini 3.8 Flash** 标准多模态模式（`--processing standard`，`MEDIA_RESOLUTION_LOW` + 动态 `thinking_budget` `1024–4096`）。当视频超过 40 分钟时，自动在 30–40 分钟自然静音点无损切分至 `<output_dir>/_edl_chunks/` 并行推理，自动平移缝合为 `edl_full.csv` 并在 `finally` 块清理本地与云端临时分段，同时执行 8 项确定性语义检查（`6 ERROR + 2 WARN`）。
+1. **Stage 1（多机位同步与预处理）**：执行 MFCC 声学时间对齐与亚帧微调（`<0.125 ms`）、EBU R128（`-14 LUFS`）双阶段线性响度标准化、逐帧精准同步母带导出（`CAM*_synced.mp4`，`20 Mbps`）与全长轻量网格合成（`multicam_merged_full.mp4`，`10 fps`、`1.2 Mbps`、1 秒短 GOP）。
+2. **Stage 2（Gemini 3.8 Flash 多模态粗剪与静音感知智能分段）**：默认采用 **Vertex AI Gemini 3.8 Flash** 标准多模态模式（`MEDIA_RESOLUTION_LOW` + 动态 `thinking_budget` `1024–4096`）。当视频超过 40 分钟时，自动在 30–40 分钟自然静音点无损切分至 `<output_dir>/_edl_chunks/` 并行推理，自动平移缝合为 `edl_full.csv` 并在 `finally` 块清理本地与云端临时分段，同时执行 8 项确定性语义检查（`6 ERROR + 2 WARN`）。
 3. **Stage 3A & 3B（导出 FCP7 XML 时间线 / 硬件加速视频渲染）**：支持 NTSC 分数帧率（`23.976`, `29.97`, `59.94`）与丢帧时间码（Drop-Frame）导出 `final_cut_full.xml`，或直接单次硬件渲染 `final_cut_full.mp4`。
 
 ---
