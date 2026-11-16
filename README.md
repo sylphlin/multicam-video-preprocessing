@@ -18,30 +18,27 @@
 
 This project complies with [Agent Plugins 1.0](https://agent-plugins.org/) and runs on **Google Cloud Vertex AI (ADC)** and **Cloud Storage (GCS)** with zero API key files.
 
-### 1. Install as an Antigravity Plugin or Skill
-
-- **Global Plugin (Recommended)**:
-  ```bash
-  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
-  ```
-- **Legacy Single-Skill Installation (`~/.gemini/config/skills/`)**:
-  Link the inner `skills/multicam-video-preprocessing` directory into the legacy skills directory:
-  ```bash
-  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
-  ln -s ~/.gemini/config/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing ~/.gemini/config/skills/multicam-video-preprocessing
-  ```
-
-### 2. Install Dependencies and Provision Cloud Resources (`setup.sh`)
+### Step 1 — Install the Antigravity Plugin
 
 ```bash
-# 1. Install FFmpeg and Python packages
-brew install ffmpeg
-pip install numpy google-genai google-cloud-storage requests
+agy plugin install https://github.com/sylphlin/multicam-video-preprocessing
+```
 
-# 2. Authenticate Application Default Credentials (ADC)
+### Step 2 — Install Python and Media Dependencies
+
+Install `requirements.txt`. The `static-ffmpeg` package automatically provides cross-platform `ffmpeg` and `ffprobe` binaries when system FFmpeg is absent, while preserving native system FFmpeg and hardware acceleration (`h264_videotoolbox`) when already installed.
+
+```bash
+pip install -r ~/.gemini/config/plugins/multicam-video-preprocessing/requirements.txt
+```
+
+### Step 3 — Authenticate ADC and Provision Google Cloud Resources (`setup.sh`)
+
+Authenticate Application Default Credentials and run `setup.sh` to provision the GCS bucket, two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days), IAM bindings, and `.env`:
+
+```bash
 gcloud auth application-default login
-
-# 3. Provision GCS bucket, two-tier lifecycle rules (raw: 2d, deliverables: 15d), IAM, and .env
+cd ~/.gemini/config/plugins/multicam-video-preprocessing
 chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
@@ -50,6 +47,7 @@ chmod +x setup.sh
 ```text
 multicam-video-preprocessing/
 ├── plugin.json                                           # Agent Plugins 1.0 manifest
+├── requirements.txt                                      # Python & cross-platform static-ffmpeg dependencies
 ├── rules/
 │   └── AGENTS.md                                         # Packaged client execution invariants (<PLUGIN_ROOT> direct CLI & fail-fast)
 ├── skills/
@@ -66,7 +64,7 @@ multicam-video-preprocessing/
 ├── AGENTS.md                                             # Workspace & engineering development rules (Part I & Part II)
 ├── setup.sh                                              # Native gcloud setup script (GCS, Lifecycle, IAM, .env)
 ├── .env.example                                          # Vertex AI (ADC) and GCS configuration template
-└── tests/                                                # Offline unit test suite (46 tests)
+└── tests/                                                # Offline unit test suite (50 tests)
 ```
 
 ---

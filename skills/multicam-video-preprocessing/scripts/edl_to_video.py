@@ -44,14 +44,14 @@ try:
         validate_edl_file,
         format_validation_report,
     )
-    from modules.time_utils import format_seconds
+    from modules.time_utils import format_seconds, ensure_ffmpeg_in_path
 except ImportError:
     from scripts.modules.edl_validator import (
         parse_edl_time_to_seconds,
         validate_edl_file,
         format_validation_report,
     )
-    from scripts.modules.time_utils import format_seconds
+    from scripts.modules.time_utils import format_seconds, ensure_ffmpeg_in_path
 
 
 def parse_camera_map(map_str):
@@ -259,6 +259,7 @@ def cut_segment_stream_copy(input_path, output_path, start_sec, end_sec):
     """
     Extract a segment using fast lossless stream copying.
     """
+    ensure_ffmpeg_in_path()
     dur_sec = end_sec - start_sec if end_sec is not None else None
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
 
@@ -280,6 +281,7 @@ def cut_segment_reencode(input_path, output_path, start_sec, end_sec,
     """
     Extract a segment using frame-accurate hardware-accelerated decoding and re-encoding with fast input seeking.
     """
+    ensure_ffmpeg_in_path()
     dur_sec = max(0.001, end_sec - start_sec)
 
     def _build_cmd(enc, use_hwaccel=True):
@@ -320,6 +322,7 @@ def concatenate_segments(segment_paths, output_path, concat_list_path=None):
     if not segment_paths:
         raise ValueError("No segments provided for concatenation.")
 
+    ensure_ffmpeg_in_path()
     list_path = concat_list_path or os.path.join(os.path.dirname(output_path), "concat_manifest.txt")
     with open(list_path, "w", encoding="utf-8") as f:
         for p in segment_paths:
@@ -351,6 +354,7 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
     Main pipeline to render an EDL CSV file into a final cut video.
     Default: Frame-accurate hardware-accelerated re-encoding with h264_videotoolbox.
     """
+    ensure_ffmpeg_in_path()
     t0 = time.time()
     segments = load_edl_csv(edl_path)
     if not segments:
@@ -501,6 +505,7 @@ def render_edl_to_video(edl_path, output_path=None, media_dir=None, camera_map=N
 
 
 def main():
+    ensure_ffmpeg_in_path()
     parser = argparse.ArgumentParser(
         description="EDL CSV to Video Renderer: Convert an Edit Decision List (CSV format like 1.csv) into a final edited video.",
         formatter_class=argparse.RawDescriptionHelpFormatter)

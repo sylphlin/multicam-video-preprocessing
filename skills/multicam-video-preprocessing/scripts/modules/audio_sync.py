@@ -24,6 +24,11 @@ import time
 import wave
 import numpy as np
 
+try:
+    from .time_utils import ensure_ffmpeg_in_path
+except ImportError:
+    from modules.time_utils import ensure_ffmpeg_in_path
+
 # BBC standard confidence thresholds (Single Source of Truth)
 SCORE_HIGH = 12.0  # BBC High confidence threshold (Fast ladder qualification)
 SCORE_LOW = 7.0   # BBC Medium/Low boundary (Fallback to raw waveform & low warning)
@@ -34,6 +39,7 @@ def probe_media_duration(media_path):
     """
     Query the true total duration of a media file in seconds using ffprobe.
     """
+    ensure_ffmpeg_in_path()
     cmd_fmt = [
         "ffprobe", "-v", "error",
         "-show_entries", "format=duration",
@@ -71,6 +77,7 @@ def extract_audio_track(video_path, output_wav, sr=8000, max_duration=None):
     """
     Extract mono 16-bit PCM audio from a video file.
     """
+    ensure_ffmpeg_in_path()
     cmd = ["ffmpeg", "-y"]
     if max_duration:
         cmd.extend(["-t", str(max_duration)])

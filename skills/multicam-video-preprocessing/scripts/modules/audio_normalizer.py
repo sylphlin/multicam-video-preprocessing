@@ -14,6 +14,11 @@ import re
 import subprocess
 import time
 
+try:
+    from .time_utils import ensure_ffmpeg_in_path
+except ImportError:
+    from modules.time_utils import ensure_ffmpeg_in_path
+
 
 def extract_loudnorm_stats(stderr_text):
     """
@@ -35,6 +40,7 @@ def normalize_single_audio_track(input_video, output_audio_m4a, lufs=-14.0, lra=
     Extract audio track from video and normalize to EBU R128 (-14 LUFS) as AAC .m4a
     using broadcast-grade Two-Pass linear normalization.
     """
+    ensure_ffmpeg_in_path()
     t0 = time.time()
 
     # Pass 1: Rapid acoustic measurement decoding to null sink
@@ -88,6 +94,7 @@ def normalize_all_audio_tracks(all_videos, tmpdir, lufs=-14.0, lra=11.0, tp=-1.5
     """
     Normalize audio tracks for all camera sources in parallel using two-pass EBU R128.
     """
+    ensure_ffmpeg_in_path()
     t0 = time.time()
     audio_map = {}
 

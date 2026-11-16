@@ -37,8 +37,10 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from modules.edl_validator import validate_edl_file, format_validation_report
+    from modules.time_utils import ensure_ffmpeg_in_path
 except ImportError:
     from scripts.modules.edl_validator import validate_edl_file, format_validation_report
+    from scripts.modules.time_utils import ensure_ffmpeg_in_path
 
 
 DEFAULT_FPS = 30
@@ -556,6 +558,7 @@ def export_fcp7_xml_pipeline(edl_files, output_path=None, media_dir=None, sync_j
 
 
 def main():
+    ensure_ffmpeg_in_path()
     parser = argparse.ArgumentParser(
         description="FCP7 XML Exporter CLI: Convert multi-camera EDL CSV files into Final Cut Pro 7 XML for DaVinci Resolve / Premiere Pro.",
         formatter_class=argparse.RawDescriptionHelpFormatter)

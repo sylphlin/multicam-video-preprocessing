@@ -18,26 +18,54 @@
 
 本プロジェクトは [Agent Plugins 1.0](https://agent-plugins.org/) に準拠し、**Google Cloud Vertex AI (ADC)** と **Cloud Storage (GCS)** 上で動作します（API キー管理不要）。
 
+### ステップ 1 — Antigravity Plugin のインストール
+
 ```bash
-# 1a. グローバル Antigravity Plugin としてクローン（推奨）
-git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
+agy plugin install https://github.com/sylphlin/multicam-video-preprocessing
+```
 
-# 1b. 旧来の単一 Skill ディレクトリへのインストール（任意：skills/multicam-video-preprocessing をシンボリックリンク）
-ln -s ~/.gemini/config/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing ~/.gemini/config/skills/multicam-video-preprocessing
+### ステップ 2 — Python およびメディア依存関係のインストール
 
-# 2. 依存パッケージのインストールと ADC 認証
-brew install ffmpeg
-pip install numpy google-genai google-cloud-storage requests
+`requirements.txt` をインストールします。システムに FFmpeg がない場合、`static-ffmpeg` がクロスプラットフォームの `ffmpeg` と `ffprobe` バイナリを自動提供します。ネイティブの FFmpeg がインストール済みの場合は、既存の FFmpeg とハードウェアアクセラレーション（`h264_videotoolbox`）を優先保持します。
+
+```bash
+pip install -r ~/.gemini/config/plugins/multicam-video-preprocessing/requirements.txt
+```
+
+### ステップ 3 — ADC 認証と Google Cloud リソースの構成 (`setup.sh`)
+
+Application Default Credentials を認証し、`setup.sh` を実行して GCS バケット、2 階層ライフサイクルルール（`raw/`: 2 日、成果物: 15 日）、IAM 権限、および `.env` を構成します：
+
+```bash
 gcloud auth application-default login
-
-# 3. setup.sh を実行して GCS バケット、2 階層ライフサイクル（raw: 2 日、成果物: 15 日）、IAM、.env を構成
+cd ~/.gemini/config/plugins/multicam-video-preprocessing
 chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
 
 ### ディレクトリ構造（Agent Plugins 1.0 準拠）
-- **SSOT 実体ディレクトリ**：`skills/multicam-video-preprocessing/`（`SKILL.md`、`scripts/`、`assets/` を格納）を単一の信頼できる情報源（Single Source of Truth）として構成しています。
-- **2 層 `AGENTS.md` 構成**：ルートの `AGENTS.md` は開発・エンジニアリング規約（Part I & Part II）を定義し、`rules/AGENTS.md` はプラグインに同梱される AI クライアント実行時ルール（`<PLUGIN_ROOT>` からの直接 CLI 実行、読み取り専用、Fail-Fast）を定義します。
+```text
+multicam-video-preprocessing/
+├── plugin.json                                           # Agent Plugins 1.0 マニフェスト
+├── requirements.txt                                      # Python およびクロスプラットフォーム static-ffmpeg 依存関係
+├── rules/
+│   └── AGENTS.md                                         # 同梱クライアント実行ルール（<PLUGIN_ROOT> 直接 CLI 実行・Fail-Fast）
+├── skills/
+│   └── multicam-video-preprocessing/                     # 標準スキルバンドル（Single Source of Truth）
+│       ├── SKILL.md                                      # スキル仕様および 3 ステージ実行ランブック
+│       ├── scripts/                                      # コア実行スクリプト＆モジュール (SSOT)
+│       │   ├── multicam_pipeline.py                      # Stage 1: MFCC 同期、-14 LUFS 正規化、同期マスター、グリッド合成
+│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 3.8 Flash EDL 生成＆無音スマート分割
+│       │   ├── export_fcp7_xml.py                        # Stage 3A: FCP7 XML タイムライン出力（主要ルート）
+│       │   ├── edl_to_video.py                           # Stage 3B: シングルパス・ハードウェア動画レンダリング（副ルート）
+│       │   └── modules/                                  # 音響、動画、無音分割、検証、GCP/Vertex AI モジュール
+│       └── assets/                                       # プロンプトテンプレート (SSOT)
+│           └── edl_interview_template.md                 # Gemini マルチモーダル・インタビューラフカット規則
+├── AGENTS.md                                             # ワークスペース＆開発規約（Part I & Part II）
+├── setup.sh                                              # ネイティブ gcloud セットアップスクリプト（GCS、ライフサイクル、IAM、.env）
+├── .env.example                                          # Vertex AI (ADC) および GCS 環境変数テンプレート
+└── tests/                                                # オフライン単体テストスイート (50 テスト)
+```
 
 ---
 

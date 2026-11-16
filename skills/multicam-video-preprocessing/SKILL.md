@@ -18,11 +18,12 @@ Universal end-to-end toolkit for multi-camera video production (2 to 6 Cameras),
 ## Prerequisites & Environment
 
 - **Google Antigravity IDE / Agent Framework**
-- **FFmpeg** (with `h264_videotoolbox` hardware encoding and `loudnorm` filter support)
-- **Python 3.8+** with `numpy`, `google-genai`, `google-cloud-storage`, `requests`
+- **Python 3.8+ & Media Dependencies (`requirements.txt`)**:
+  - Run `pip install -r requirements.txt` (`numpy`, `google-genai`, `google-cloud-storage`, `google-auth`, `requests`, `static-ffmpeg`).
+  - `static-ffmpeg` automatically supplies cross-platform `ffmpeg` and `ffprobe` binaries (with `loudnorm` filter support) when system FFmpeg is not installed, while preserving native system FFmpeg and `h264_videotoolbox` hardware encoding when installed.
 - **Cloud Credentials (100% ADC + Vertex AI & GCS)**:
-  - Authenticate via `gcloud auth application-default login`
-  - Run `./setup.sh` once to automatically provision the GCS bucket (`gs://multicam-video-${GOOGLE_CLOUD_PROJECT}`), two-tier Lifecycle auto-cleanup rules (`raw/` staging: 2 days; `output/`, `deliverables/`, `multicam_assets/` deliverables: 15 days), Vertex AI Service Agent IAM (`roles/storage.objectUser`), and `.env` configuration.
+  - Authenticate via `gcloud auth application-default login`.
+  - Run `./setup.sh --project YOUR_GCP_PROJECT_ID` once to provision the GCS bucket (`gs://multicam-video-${GOOGLE_CLOUD_PROJECT}`), two-tier Lifecycle auto-cleanup rules (`raw/` staging: 2 days; `output/`, `deliverables/`, `multicam_assets/` deliverables: 15 days), Vertex AI Service Agent IAM (`roles/storage.objectUser`), and `.env` configuration.
 
 ---
 

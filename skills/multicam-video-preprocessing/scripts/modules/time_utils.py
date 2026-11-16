@@ -1,6 +1,20 @@
 """
-Time utility module for bidirectional conversion between time strings (HH:MM:SS.mmm) and float seconds.
+Time utility module for bidirectional conversion between time strings (HH:MM:SS.mmm) and float seconds,
+plus cross-platform FFmpeg binary resolution.
 """
+
+import shutil
+
+
+def ensure_ffmpeg_in_path() -> None:
+    """Add static-ffmpeg binaries to PATH when system ffmpeg or ffprobe is missing."""
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+    try:
+        import static_ffmpeg
+        static_ffmpeg.add_paths(weak=True)
+    except ImportError:
+        pass
 
 
 def parse_time_to_seconds(ts_str):

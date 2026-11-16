@@ -32,7 +32,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from modules.time_utils import parse_time_to_seconds, format_seconds
+from modules.time_utils import parse_time_to_seconds, format_seconds, ensure_ffmpeg_in_path
 from modules.audio_sync import sync_all_targets, compute_common_overlap_range, SCORE_LOW
 from modules.audio_normalizer import normalize_all_audio_tracks
 from modules.video_composer import (
@@ -44,6 +44,7 @@ from modules.reporter import (
 
 
 def main():
+    ensure_ffmpeg_in_path()
     parser = argparse.ArgumentParser(
         description="Multi-Camera Video Preprocessing CLI: Global Time Sync + EBU R128 Loudness Normalization + Full Synced Masters + Multi-in-One Grid Composition (Zero-Split Agentic Architecture)",
         formatter_class=argparse.RawDescriptionHelpFormatter)

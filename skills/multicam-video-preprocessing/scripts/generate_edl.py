@@ -51,6 +51,7 @@ try:
         shift_and_merge_chunk_edl_rows,
         format_edl_timestamp,
     )
+    from modules.time_utils import ensure_ffmpeg_in_path
 except ImportError:
     from scripts.modules.llm_client import get_vertex_client
     from scripts.modules.gcp_client import (
@@ -73,6 +74,7 @@ except ImportError:
         shift_and_merge_chunk_edl_rows,
         format_edl_timestamp,
     )
+    from scripts.modules.time_utils import ensure_ffmpeg_in_path
 
 
 DEFAULT_PROMPT_TEMPLATE_PATHS = [
@@ -103,6 +105,7 @@ def _probe_video_duration_sec(video_path: str) -> float:
     """Probe duration of a local video file in seconds using ffprobe."""
     if not video_path or not os.path.isfile(video_path):
         return 0.0
+    ensure_ffmpeg_in_path()
     try:
         cmd = [
             "ffprobe", "-v", "error",
@@ -226,6 +229,7 @@ def ensure_agentic_ready_video(video_path, max_size_mb=900.0, encoder="h264_vide
         f"  • Input video is {size_mb:.1f} MB (> {max_size_mb:.0f} MB). "
         f"Transcoding short-GOP faststart proxy (10 fps, -g 10, 1200k)..."
     )
+    ensure_ffmpeg_in_path()
     t0 = time.time()
     for enc in ([encoder, "libx264"] if encoder != "libx264" else ["libx264"]):
         cmd = [
@@ -466,6 +470,7 @@ def parse_edl_csv_and_report(raw_text):
 
 
 def main():
+    ensure_ffmpeg_in_path()
     parser = argparse.ArgumentParser(
         description="AI Multimodal Video to EDL Decision Generator (Vertex AI ADC + GCS + Silence-Aware Segmentation).",
         formatter_class=argparse.RawDescriptionHelpFormatter,

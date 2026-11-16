@@ -12,8 +12,12 @@ import tempfile
 import wave
 import numpy as np
 
-from .edl_validator import parse_edl_time_to_seconds
-from .time_utils import format_seconds
+try:
+    from .edl_validator import parse_edl_time_to_seconds
+    from .time_utils import format_seconds, ensure_ffmpeg_in_path
+except ImportError:
+    from modules.edl_validator import parse_edl_time_to_seconds
+    from modules.time_utils import format_seconds, ensure_ffmpeg_in_path
 
 
 def _safe_parse_time(val):
@@ -56,6 +60,7 @@ def detect_all_silences(
     Scan audio track for silence intervals using FFmpeg silencedetect.
     Seek to candidate window (start_sec, dur_sec) to avoid full-file scan.
     """
+    ensure_ffmpeg_in_path()
     cmd = ["ffmpeg"]
     if start_sec is not None and start_sec > 0:
         cmd.extend(["-ss", str(start_sec)])
@@ -107,6 +112,7 @@ def find_rms_energy_minimum(
     """
     Scan candidate window for the lowest RMS audio energy point when no silence is detected.
     """
+    ensure_ffmpeg_in_path()
     dur_sec = max(1.0, end_sec - start_sec)
     with tempfile.TemporaryDirectory() as tmpdir:
         wav_path = os.path.join(tmpdir, "window.wav")
@@ -211,6 +217,7 @@ def slice_video_into_temp_chunks(
     Slice full grid video at split_points into chunks_dir using lossless stream copy (-c copy).
     Return list of chunk metadata dicts.
     """
+    ensure_ffmpeg_in_path()
     os.makedirs(chunks_dir, exist_ok=True)
     chunks = []
     num_parts = len(split_points) - 1

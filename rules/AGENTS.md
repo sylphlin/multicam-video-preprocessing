@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # Multi-Camera Video Preprocessing - Operational Invariants for AI Clients
 
 When you execute tasks or skills from this plugin, you MUST follow these operational rules:
@@ -13,7 +17,7 @@ When you execute tasks or skills from this plugin, you MUST follow these operati
 - If a script fails (exit code is not 0) or an external error occurs (such as 401 Unauthorized, 403 Forbidden, Quota Exceeded, missing Application Default Credentials, or missing FFmpeg):
   - Stop immediately.
   - Show the exact error message and exit status to the user.
-  - Give a clear, actionable solution to the user (for example, run `./setup.sh --project YOUR_PROJECT_ID`, run `gcloud auth application-default login`, or install FFmpeg).
+  - Give a clear, actionable solution to the user (for example, run `./setup.sh --project YOUR_PROJECT_ID`, run `gcloud auth application-default login`, run `pip install -r requirements.txt`, or install FFmpeg).
   - Do NOT try to modify the script, probe different code paths, or rewrite logic.
 
 ## 3. Strict Zero-Emoji Policy in Technical Reports & Dynamic Language Mirroring

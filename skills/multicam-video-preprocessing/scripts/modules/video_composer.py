@@ -16,10 +16,10 @@ import time
 
 try:
     from .progress import LiveTicker
-    from .time_utils import format_seconds
+    from .time_utils import format_seconds, ensure_ffmpeg_in_path
 except ImportError:
     from modules.progress import LiveTicker
-    from modules.time_utils import format_seconds
+    from modules.time_utils import format_seconds, ensure_ffmpeg_in_path
 
 
 def compute_grid_spec(num_inputs):
@@ -116,6 +116,7 @@ def compose_multicam_video(video_paths, output_path,
     if len(video_paths) == 0:
         return 0.0
 
+    ensure_ffmpeg_in_path()
     t0 = time.time()
     num_inputs = len(video_paths)
 
@@ -196,6 +197,7 @@ def cut_single_clip(video_path, output_path, start_sec, end_sec,
         start_sec = 0.0
     dur_sec = max(0.0, end_sec - start_sec)
 
+    ensure_ffmpeg_in_path()
     # Optimization 1: When start_sec == 0.0, frame 0 is already an IDR keyframe; stream-copy is 100% frame-accurate.
     effective_copy = bool(copy_codec or start_sec <= 1e-3)
 

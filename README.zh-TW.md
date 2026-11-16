@@ -16,32 +16,29 @@
 
 ## 安裝與 Google Cloud 環境設定 (`setup.sh`)
 
-本專案符合 [Agent Plugins 1.0](https://agent-plugins.org/) 規範，全程基於 **Google Cloud Vertex AI (ADC)** 與 **Cloud Storage (GCS)** 運作，免除管理 API Key。
+本專案符合 [Agent Plugins 1.0](https://agent-plugins.org/) 規範，基於 **Google Cloud Vertex AI (ADC)** 與 **Cloud Storage (GCS)** 運作，免除管理 API Key。
 
-### 1. 安裝為 Antigravity Plugin 或 Skill
-
-- **全域 Plugin（建議）**：
-  ```bash
-  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
-  ```
-- **舊式單一 Skill 安裝（`~/.gemini/config/skills/`）**：
-  將儲存庫內的 `skills/multicam-video-preprocessing` 子目錄連結至舊版 Skills 目錄：
-  ```bash
-  git clone https://github.com/sylphlin/multicam-video-preprocessing.git ~/.gemini/config/plugins/multicam-video-preprocessing
-  ln -s ~/.gemini/config/plugins/multicam-video-preprocessing/skills/multicam-video-preprocessing ~/.gemini/config/skills/multicam-video-preprocessing
-  ```
-
-### 2. 安裝相依套件與一鍵配置雲端環境 (`setup.sh`)
+### 步驟 1 — 安裝 Antigravity Plugin
 
 ```bash
-# 1. 安裝 FFmpeg 與 Python 套件
-brew install ffmpeg
-pip install numpy google-genai google-cloud-storage requests
+agy plugin install https://github.com/sylphlin/multicam-video-preprocessing
+```
 
-# 2. 授權 Google Cloud ADC 憑證
+### 步驟 2 — 安裝 Python 與影音相依套件
+
+安裝 `requirements.txt`。當系統未安裝 FFmpeg 時，`static-ffmpeg` 會自動提供跨平台 `ffmpeg` 與 `ffprobe` 執行檔；若系統已安裝原生 FFmpeg，則優先保留原生環境與硬體加速（`h264_videotoolbox`）。
+
+```bash
+pip install -r ~/.gemini/config/plugins/multicam-video-preprocessing/requirements.txt
+```
+
+### 步驟 3 — 授權 ADC 並配置 Google Cloud 資源 (`setup.sh`)
+
+授權 Application Default Credentials 並執行 `setup.sh`，自動建立 GCS 儲存桶、雙層生命週期規則（`raw/`: 2 天；交付產物: 15 天）、IAM 權限與 `.env`：
+
+```bash
 gcloud auth application-default login
-
-# 3. 執行 setup.sh 自動配置 GCS 儲存桶、雙層生命週期規則（raw: 2 天、產出物: 15 天）、IAM 與 .env
+cd ~/.gemini/config/plugins/multicam-video-preprocessing
 chmod +x setup.sh
 ./setup.sh --project YOUR_GCP_PROJECT_ID
 ```
@@ -50,6 +47,7 @@ chmod +x setup.sh
 ```text
 multicam-video-preprocessing/
 ├── plugin.json                                           # Agent Plugins 1.0 宣告清單
+├── requirements.txt                                      # Python 與跨平台 static-ffmpeg 相依套件清單
 ├── rules/
 │   └── AGENTS.md                                         # 打包於 Plugin 內的客戶端執行期守則（唯讀、直接呼叫 CLI 與 Fail-Fast）
 ├── skills/
@@ -66,7 +64,7 @@ multicam-video-preprocessing/
 ├── AGENTS.md                                             # 工作區與開發工程規範（Part I 執行守則 & Part II 開發規範）
 ├── setup.sh                                              # 原生 gcloud 雲端環境一鍵配置腳本
 ├── .env.example                                          # Vertex AI (ADC) 與 GCS 環境變數範本
-└── tests/                                                # 離線單元測試套件 (46 項測試)
+└── tests/                                                # 離線單元測試套件 (50 項測試)
 ```
 
 ---
