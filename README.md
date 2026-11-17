@@ -46,10 +46,15 @@ chmod +x setup.sh
 ### Directory Structure (Agent Plugins 1.0 Specification)
 ```text
 multicam-video-preprocessing/
-├── plugin.json                                           # Agent Plugins 1.0 manifest
+├── plugin.json                                           # Antigravity plugin manifest
+├── assets/
+│   └── logo.svg                                          # Plugin vector icon
 ├── requirements.txt                                      # Python & cross-platform static-ffmpeg dependencies
 ├── rules/
 │   └── AGENTS.md                                         # Packaged client execution invariants (<PLUGIN_ROOT> direct CLI & fail-fast)
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # Workspace & engineering development rules (Part I & Part II)
 ├── skills/
 │   └── multicam-video-preprocessing/                     # Canonical Skill Bundle (Single Source of Truth)
 │       ├── SKILL.md                                      # Antigravity skill manifest and 3-stage gated runbook
@@ -61,7 +66,6 @@ multicam-video-preprocessing/
 │       │   └── modules/                                  # Acoustic, video, segmenter, validator, and GCP/Vertex AI modules
 │       └── assets/                                       # Canonical prompt templates (SSOT)
 │           └── edl_interview_template.md                 # Gemini multimodal interview rough-cut rules
-├── AGENTS.md                                             # Workspace & engineering development rules (Part I & Part II)
 ├── setup.sh                                              # Native gcloud setup script (GCS, Lifecycle, IAM, .env)
 ├── .env.example                                          # Vertex AI (ADC) and GCS configuration template
 └── tests/                                                # Offline unit test suite (50 tests)

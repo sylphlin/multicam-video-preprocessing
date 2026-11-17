@@ -46,10 +46,15 @@ chmod +x setup.sh
 ### 项目目录结构（Agent Plugins 1.0 标准规范）
 ```text
 multicam-video-preprocessing/
-├── plugin.json                                           # Agent Plugins 1.0 清单文件
+├── plugin.json                                           # Antigravity 插件清单文件
+├── assets/
+│   └── logo.svg                                          # 插件矢量图标
 ├── requirements.txt                                      # Python 与跨平台 static-ffmpeg 依赖清单
 ├── rules/
 │   └── AGENTS.md                                         # 随 Plugin 打包的客户端执行期守则（只读、直接调用 CLI 与 Fail-Fast）
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # 工作区与开发工程规范（Part I 执行守则 & Part II 开发规范）
 ├── skills/
 │   └── multicam-video-preprocessing/                     # 标准技能包主干（Single Source of Truth）
 │       ├── SKILL.md                                      # 技能规范与三阶段自动化执行手册
@@ -61,7 +66,6 @@ multicam-video-preprocessing/
 │       │   └── modules/                                  # 声学、视频、静音分段、验证器与 GCP/Vertex AI 模块
 │       └── assets/                                       # 提示词规范实体目录 (SSOT)
 │           └── edl_interview_template.md                 # Gemini 多模态访谈粗剪规则
-├── AGENTS.md                                             # 工作区与开发工程规范（Part I 执行守则 & Part II 开发规范）
 ├── setup.sh                                              # 原生 gcloud 云端环境一键配置脚本
 ├── .env.example                                          # Vertex AI (ADC) 与 GCS 环境变量模板
 └── tests/                                                # 离线单元测试套件 (50 项测试)

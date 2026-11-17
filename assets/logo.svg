@@ -1,0 +1,19 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="aiSpark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="55%" stop-color="#FBBC04"/>
+      <stop offset="100%" stop-color="#EA580C"/>
+    </linearGradient>
+    <linearGradient id="mcGradA" x1="28" y1="28" x2="228" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+  <rect x="28" y="32" width="88" height="72" rx="18" stroke="url(#mcGradA)" stroke-width="16"/>
+  <rect x="140" y="32" width="88" height="72" rx="18" fill="url(#mcGradA)" fill-opacity="0.22" stroke="#EC4899" stroke-width="16"/>
+  <rect x="28" y="124" width="88" height="72" rx="18" stroke="url(#mcGradA)" stroke-width="16"/>
+  <rect x="140" y="124" width="88" height="72" rx="18" stroke="url(#mcGradA)" stroke-width="16"/>
+  <path d="M44 224H88L104 206L124 236L144 202L160 224H212" stroke="#38BDF8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 184.0 46.0 Q 190.2 61.8 206.0 68.0 Q 190.2 74.2 184.0 90.0 Q 177.8 74.2 162.0 68.0 Q 177.8 61.8 184.0 46.0 Z" fill="url(#aiSpark)"/>
+</svg>

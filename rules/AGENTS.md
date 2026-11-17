@@ -10,7 +10,7 @@ When you execute tasks or skills from this plugin, you MUST follow these operati
 - All Python scripts (`skills/multicam-video-preprocessing/scripts/*.py`), prompt specifications (`skills/multicam-video-preprocessing/assets/*.md`), and configuration files are read-only tools.
 - Do NOT edit, patch, or rewrite any files in this plugin with `replace_file_content`, `write_to_file`, or shell commands.
 - Do NOT write ad-hoc temporary Python scripts, custom synchronization code, or one-off shell algorithms.
-- Resolve `<PLUGIN_ROOT>` as two directory levels above `skills/multicam-video-preprocessing/SKILL.md` (`../../`, e.g., `/Users/sylph/.gemini/config/plugins/multicam-video-preprocessing`).
+- Resolve `<PLUGIN_ROOT>` as two directory levels above `skills/multicam-video-preprocessing/SKILL.md` (`../../`, e.g., `~/.gemini/config/plugins/multicam-video-preprocessing`).
 - Set `Cwd` to `<PLUGIN_ROOT>` and run the official scripts (`python3 skills/multicam-video-preprocessing/scripts/...`) directly with `run_command` using the specified arguments. Do NOT search for global CLI aliases with `find_by_name` or `list_dir`.
 
 ## 2. Fail-Fast on Errors (Do Not Debug or Rewrite Code)

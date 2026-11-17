@@ -1,6 +1,9 @@
-# Multi-Camera AI Preprocessing & Editing Suite — Workspace & Development Rules (AGENTS.md)
+---
+trigger: always_on
+---
+# Multi-Camera AI Preprocessing & Editing Suite — Workspace & Development Rules
 
-This file defines the authoritative rules for AI Coding Agents (Google Antigravity / Jetski, Claude Code, Codex, etc.) working in this repository. It covers both **Client Execution Invariants** (when running the multi-camera pipeline for end users) and **Repository Engineering Standards** (when developing, maintaining, or extending this project).
+This file defines the authoritative rules for AI Coding Agents working in this repository. It covers both **Client Execution Invariants** (when running the multi-camera pipeline for end users) and **Repository Engineering Standards** (when developing, maintaining, or extending this project).
 
 ---
 
@@ -9,7 +12,7 @@ This file defines the authoritative rules for AI Coding Agents (Google Antigravi
 1. **Strict Toolset Execution Only (No Ad-Hoc Scripts)**:
    - Execute all video preprocessing, EDL rough-cutting, XML exporting, and rendering exclusively via the official scripts in `skills/multicam-video-preprocessing/scripts/`. Writing temporary Python scripts or custom audio/video synchronization logic is **STRICTLY FORBIDDEN**.
 2. **Mandatory 3-Stage Gated Workflow**:
-   - Follow the 3-Stage Gated Runbook defined in [SKILL.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/skills/multicam-video-preprocessing/SKILL.md):
+   - Follow the 3-Stage Gated Runbook defined in `skills/multicam-video-preprocessing/SKILL.md`:
      - **Stage 1**: `skills/multicam-video-preprocessing/scripts/multicam_pipeline.py --normalize --merge` (MFCC `<0.125ms` sync + EBU R128 `-14 LUFS` + synced masters + `multicam_merged_full.mp4` at `10 fps`, `1.2 Mbps`, `-g 10`).
      - **Stage 2**: `skills/multicam-video-preprocessing/scripts/generate_edl.py` (Vertex AI Gemini 3.8 Flash Standard Multimodal `MEDIA_RESOLUTION_LOW` + dynamic `thinking_budget`, automatic silence-aware 30-40 min smart segmentation with `finally` cleanup + 8-check deterministic EDL semantic validation).
      - **Stage 3A (Primary 90%)**: `skills/multicam-video-preprocessing/scripts/export_fcp7_xml.py` (`final_cut_full.xml` for DaVinci Resolve / Premiere Pro / Final Cut Pro).
@@ -28,15 +31,15 @@ This file defines the authoritative rules for AI Coding Agents (Google Antigravi
 
 When modifying code, prompts, infrastructure scripts, or documentation in this repository, you MUST adhere to the following engineering standards:
 
-### 1. Single Source of Truth (SSOT) Directory Architecture (Agent Plugins 1.0 Specification)
+### 1. Single Source of Truth (SSOT) Directory Architecture
 - **Canonical Code Location**: All core scripts (`scripts/*.py`), modules (`scripts/modules/*.py`), and prompt templates (`assets/*.md`) reside inside `skills/multicam-video-preprocessing/scripts/` and `skills/multicam-video-preprocessing/assets/`.
 - **Rule**: Always edit files under `skills/multicam-video-preprocessing/scripts/` and `skills/multicam-video-preprocessing/assets/`. Do not create root-level symlinks or duplicate physical directories at the repository root.
 
 ### 2. 100% Google Cloud Vertex AI (ADC) + GCS Architecture
-- **Zero API Key Policy**: All Gemini model invocations in [llm_client.py](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/skills/multicam-video-preprocessing/scripts/modules/llm_client.py) and [gcp_client.py](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/skills/multicam-video-preprocessing/scripts/modules/gcp_client.py) MUST use `genai.Client(vertexai=True, project=..., location=...)` authenticated via Application Default Credentials (ADC), defaulting to `GOOGLE_CLOUD_LOCATION=global`.
+- **Zero API Key Policy**: All Gemini model invocations in `skills/multicam-video-preprocessing/scripts/modules/llm_client.py` and `skills/multicam-video-preprocessing/scripts/modules/gcp_client.py` MUST use `genai.Client(vertexai=True, project=..., location=...)` authenticated via Application Default Credentials (ADC), defaulting to `GOOGLE_CLOUD_LOCATION=global`.
 - **No AI Studio Dependencies**: Do NOT re-introduce `GEMINI_API_KEY`, AI Studio File API (`generativelanguage.googleapis.com`), `--backend studio`, or `--fallback-studio`.
 - **GCS Infrastructure & Two-Tier Lifecycle (`setup.sh`)**:
-  - All cloud environment setup must be consolidated in [setup.sh](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/setup.sh) using 100% native `gcloud` CLI commands (`deploy.sh` is reserved for future Gemini Enterprise deployment).
+  - All cloud environment setup must be consolidated in `setup.sh` using 100% native `gcloud` CLI commands (`deploy.sh` is reserved for future Gemini Enterprise deployment).
   - Bucket Lifecycle auto-cleanup rules must maintain the two-tier retention policy:
     - **`raw/` prefix**: **2 days (`age: 2`)** for ephemeral staging videos (with local SHA-256 hash caching). Temporary chunk slices under `<output_dir>/_edl_chunks/` and `gs://<bucket>/raw/edl_chunks/` are deleted immediately in `finally` blocks after Stage 2 completes.
     - **`output/`, `deliverables/`, `multicam_assets/` prefixes**: **15 days (`age: 15`)** for deliverables retention.
@@ -47,13 +50,9 @@ When modifying code, prompts, infrastructure scripts, or documentation in this r
   python3 -m unittest discover -s tests -v
   ```
 - **Validator Invariants**:
-  - Any modification to EDL generation or parsing must preserve all 8 structural checks (`6 ERROR + 2 WARN`) in [edl_validator.py](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/skills/multicam-video-preprocessing/scripts/modules/edl_validator.py) and ensure `generate_edl.py` writes CSV/Markdown outputs to disk *before* exiting on `--strict-edl`.
+  - Any modification to EDL generation or parsing must preserve all 8 structural checks (`6 ERROR + 2 WARN`) in `skills/multicam-video-preprocessing/scripts/modules/edl_validator.py` and ensure `generate_edl.py` writes CSV/Markdown outputs to disk *before* exiting on `--strict-edl`.
 
-### 4. Antigravity Plugin Architecture & 5-Language Documentation Parity
-- **Plugin Structure**: Keep [plugin.json](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/plugin.json), [rules/AGENTS.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/rules/AGENTS.md), and [skills/multicam-video-preprocessing/SKILL.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/skills/multicam-video-preprocessing/SKILL.md) synchronized at all times. Do not use deprecated `.agent/workflows/` or `.agent/rules/` folders.
-- **Multilingual README Synchronization**: Whenever CLI options, cloud setup (`setup.sh`), lifecycle rules, or workflow behaviors change, you MUST synchronously update all 5 language READMEs:
-  1. [README.zh-TW.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/README.zh-TW.md) (Traditional Chinese)
-  2. [README.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/README.md) (English)
-  3. [README.zh-CN.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/README.zh-CN.md) (Simplified Chinese)
-  4. [README.ja.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/README.ja.md) (Japanese)
-  5. [README.ko.md](file:///Users/sylph/Documents/Antigravity/multicam-video-preprocessing/README.ko.md) (Korean)
+### 4. Antigravity Plugin Architecture, 5-Language Parity, & Commit Policy
+- **Plugin Structure**: Keep `plugin.json`, `rules/AGENTS.md`, `.agents/rules/DEVELOPMENT.md`, and `skills/multicam-video-preprocessing/SKILL.md` synchronized at all times.
+- **Multilingual README Synchronization**: Whenever CLI options, cloud setup (`setup.sh`), lifecycle rules, or workflow behaviors change, you MUST synchronously update all 5 language READMEs (`README.zh-TW.md`, `README.md`, `README.zh-CN.md`, `README.ja.md`, `README.ko.md`).
+- **Human Authorship Only**: Author all commits using the repository's configured human git user (`sylphlin`) with zero AI assistant branding or `Co-Authored-By` trailers.

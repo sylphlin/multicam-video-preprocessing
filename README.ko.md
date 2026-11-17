@@ -46,10 +46,15 @@ chmod +x setup.sh
 ### 디렉터리 구조 (Agent Plugins 1.0 표준)
 ```text
 multicam-video-preprocessing/
-├── plugin.json                                           # Agent Plugins 1.0 매니페스트
+├── plugin.json                                           # Antigravity 플러그인 매니페스트
+├── assets/
+│   └── logo.svg                                          # 플러그인 벡터 아이콘
 ├── requirements.txt                                      # Python 및 크로스 플랫폼 static-ffmpeg 의존성 목록
 ├── rules/
 │   └── AGENTS.md                                         # 플러그인 내장 클라이언트 실행 규칙 (<PLUGIN_ROOT> 직접 CLI 호출 및 Fail-Fast)
+├── .agents/
+│   └── rules/
+│       └── DEVELOPMENT.md                                # 워크스페이스 및 개발 표준 (Part I & Part II)
 ├── skills/
 │   └── multicam-video-preprocessing/                     # 표준 스킬 번들 (Single Source of Truth)
 │       ├── SKILL.md                                      # 스킬 명세 및 3단계 실행 런북
@@ -61,7 +66,6 @@ multicam-video-preprocessing/
 │       │   └── modules/                                  # 음향, 비디오, 무음 분할, 검증기 및 GCP/Vertex AI 모듈
 │       └── assets/                                       # 프롬프트 템플릿 (SSOT)
 │           └── edl_interview_template.md                 # Gemini 멀티모달 인터뷰 러프컷 규칙
-├── AGENTS.md                                             # 워크스페이스 및 개발 표준 (Part I & Part II)
 ├── setup.sh                                              # 네이티브 gcloud 설정 스크립트 (GCS, 수명 주기, IAM, .env)
 ├── .env.example                                          # Vertex AI (ADC) 및 GCS 환경 변수 템플릿
 └── tests/                                                # 오프라인 단위 테스트 스위트 (50개 테스트)
