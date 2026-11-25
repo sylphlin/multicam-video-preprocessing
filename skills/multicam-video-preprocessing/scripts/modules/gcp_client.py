@@ -157,7 +157,7 @@ def resolve_gcp_config(cli_project=None, cli_bucket=None, cli_location=None, cli
     if not bucket and project:
         bucket = f"multicam-video-{project}"
 
-    # Default location for Vertex AI Gemini 3.8 Flash is 'global', GCS region is 'us-central1'
+    # Set default Vertex AI Gemini 4 Hydrogen location to 'global' and GCS region to 'us-central1'.
     if not location:
         location = "global"
     if not region:

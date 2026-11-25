@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI Multimodal Video to EDL Decision Generator (generate_edl.py).
-Powered by Google Cloud Vertex AI (ADC) & Gemini 3.8 Flash Multimodal Video Understanding.
+Powered by Google Cloud Vertex AI (ADC) and Gemini 4 Hydrogen Multimodal Video Understanding.
 
 Features:
   - 100% Vertex AI (ADC) & GCS Architecture: Uses Application Default Credentials
@@ -13,9 +13,11 @@ Features:
     inference, shifts and stitches timestamps into a single `edl_full.csv`, and deletes
     all temporary local and GCS chunks in a `finally` block.
   - Standard Low-Res Multimodal Mode (Default): Uses `MEDIA_RESOLUTION_LOW` and dynamic
-    `thinking_budget` for fast, timeout-free inference.
+    `thinking_level` for fast, timeout-free inference.
   - Deterministic EDL Semantic Validation: Built-in 8-rule structural validation (`--strict-edl`).
 """
+
+from __future__ import annotations
 
 import argparse
 import concurrent.futures
@@ -30,7 +32,7 @@ import time
 # Support internal modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from modules.llm_client import get_vertex_client
+    from modules.llm_client import get_vertex_client, resolve_thinking_level
     from modules.gcp_client import (
         resolve_gcp_config,
         upload_file_to_gcs_with_cache,
@@ -53,7 +55,7 @@ try:
     )
     from modules.time_utils import ensure_ffmpeg_in_path
 except ImportError:
-    from scripts.modules.llm_client import get_vertex_client
+    from scripts.modules.llm_client import get_vertex_client, resolve_thinking_level
     from scripts.modules.gcp_client import (
         resolve_gcp_config,
         upload_file_to_gcs_with_cache,
@@ -123,7 +125,7 @@ def _probe_video_duration_sec(video_path: str) -> float:
 
 def calculate_dynamic_thinking_budget(video_duration_seconds: float) -> int:
     """
-    Calculate the optimal thinking budget for Gemini Flash based on video duration.
+    Calculate the dynamic thinking token budget from the video duration.
     Balance multi-camera cut reasoning with the 300-second gateway deadline.
     """
     est_cuts = max(10.0, float(video_duration_seconds) / 25.0)
@@ -263,15 +265,15 @@ def call_agentic_video_edl(
     gcs_uri,
     prompt_text,
     client,
-    model="gemini-3.8-flash",
+    model="gemini-4-hydrogen",
     max_output_tokens=65536,
     thinking_budget=4096,
     timeout_sec=600.0,
 ):
     """
-    Call Vertex AI Gemini with Agentic Video Understanding (processing="agentic").
-    Uses client.interactions.create with explicit timeout and max_output_tokens,
-    with fallback to client.models.generate_content (MediaProcessing.AGENTIC).
+    Call Vertex AI Gemini with Agentic Video Understanding (`processing="agentic"`).
+    Use `client.interactions.create` with an explicit timeout and `max_output_tokens`,
+    and fall back to `client.models.generate_content` (`MediaProcessing.AGENTIC`) on error.
     """
     from google.genai import types
 
@@ -324,12 +326,20 @@ def call_agentic_video_edl(
                     file_data=types.FileData(file_uri=gcs_uri, mime_type=mime_type),
                     media_processing=types.MediaProcessing.AGENTIC,
                 )
+                is_gemini_4 = "gemini-4" in str(model).lower()
+                resolved_budget = int(thinking_budget) if thinking_budget is not None else None
                 cfg_kwargs = {
-                    "temperature": 0.2,
                     "max_output_tokens": max_output_tokens,
                 }
-                if thinking_budget is not None and hasattr(types, "ThinkingConfig"):
-                    cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
+                if is_gemini_4:
+                    thinking_level = resolve_thinking_level(resolved_budget)
+                    print(f"  • Fallback config: model={model}, thinking_level={thinking_level}")
+                    if hasattr(types, "ThinkingConfig"):
+                        cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_level)
+                else:
+                    cfg_kwargs["temperature"] = 0.2
+                    if resolved_budget is not None and hasattr(types, "ThinkingConfig"):
+                        cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=resolved_budget)
                 if hasattr(types, "AutomaticFunctionCallingConfig"):
                     cfg_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
 
@@ -361,7 +371,7 @@ def generate_edl_content_standard(
     gcs_uri,
     prompt_text,
     client,
-    model="gemini-3.8-flash",
+    model="gemini-4-hydrogen",
     max_output_tokens=65536,
     thinking_budget=None,
     video_duration_sec=1800.0,
@@ -369,8 +379,8 @@ def generate_edl_content_standard(
     use_ticker=True,
 ):
     """
-    Standard Vertex AI multimodal generateContent call with MEDIA_RESOLUTION_LOW
-    and dynamic thinking budget.
+    Run standard Vertex AI multimodal `generate_content` with `MEDIA_RESOLUTION_LOW`.
+    Use `thinking_level` on Gemini 4 models and `thinking_budget` on legacy 3.x models.
     """
     from google.genai import types
 
@@ -379,22 +389,34 @@ def generate_edl_content_standard(
         if thinking_budget is not None
         else calculate_dynamic_thinking_budget(video_duration_sec)
     )
+    is_gemini_4 = "gemini-4" in str(model).lower()
     tag = f"[{label_prefix}] " if label_prefix else ""
-    print(
-        f"  ► {tag}Calling Vertex AI Gemini ({model}, Standard Low-Res, "
-        f"thinking_budget={resolved_budget} tokens) -> {gcs_uri}"
-    )
 
     mime_type = guess_mime_type(gcs_uri)
     t0 = time.time()
     cfg_kwargs = {
-        "temperature": 0.1,
         "max_output_tokens": max_output_tokens,
     }
     if hasattr(types, "MediaResolution"):
         cfg_kwargs["media_resolution"] = types.MediaResolution.MEDIA_RESOLUTION_LOW
-    if hasattr(types, "ThinkingConfig"):
-        cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=resolved_budget)
+
+    if is_gemini_4:
+        thinking_level = resolve_thinking_level(resolved_budget)
+        print(
+            f"  ► {tag}Calling Vertex AI Gemini ({model}, Standard Low-Res, "
+            f"thinking_level={thinking_level}) -> {gcs_uri}"
+        )
+        if hasattr(types, "ThinkingConfig"):
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_level)
+    else:
+        cfg_kwargs["temperature"] = 0.1
+        print(
+            f"  ► {tag}Calling Vertex AI Gemini ({model}, Standard Low-Res, "
+            f"thinking_budget={resolved_budget} tokens) -> {gcs_uri}"
+        )
+        if hasattr(types, "ThinkingConfig"):
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=resolved_budget)
+
     if hasattr(types, "AutomaticFunctionCallingConfig"):
         cfg_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
 
@@ -486,8 +508,8 @@ def main():
                         help="Custom destination path for analysis report markdown (optional)")
     parser.add_argument("-t", "--template", default=None,
                         help="Custom prompt template file path (defaults to assets/edl_interview_template.md)")
-    parser.add_argument("--model", default="gemini-3.8-flash",
-                        help="Vertex AI Gemini model name (default: gemini-3.8-flash)")
+    parser.add_argument("--model", default="gemini-4-hydrogen",
+                        help="Vertex AI Gemini model name (default: gemini-4-hydrogen)")
     parser.add_argument("--processing", choices=["standard", "agentic"], default="standard",
                         help="Video processing mode: 'standard' (default, Non-Agentic Low-Res + silence-aware segmentation) or 'agentic'")
     parser.add_argument("--chunk-min-dur", type=float, default=1800.0,
@@ -499,7 +521,7 @@ def main():
     parser.add_argument("--max-output-tokens", type=int, default=65536,
                         help="Maximum output tokens for EDL generation (default: 65536)")
     parser.add_argument("--thinking-budget", type=int, default=None,
-                        help="Thinking token budget for generate_content mode (default: auto-calculated by video duration)")
+                        help="Thinking token budget mapped to thinking_level on Gemini 4 models (default: auto-calculated from video duration)")
     parser.add_argument("--project", default=None,
                         help="Google Cloud Project ID for Vertex AI / GCS (or set GOOGLE_CLOUD_PROJECT in .env)")
     parser.add_argument("--gcs-bucket", "--bucket", dest="gcs_bucket", default=None,
@@ -731,7 +753,11 @@ def main():
                         client=genai_client,
                         model=args.model,
                         max_output_tokens=args.max_output_tokens,
-                        thinking_budget=args.thinking_budget or calculate_dynamic_thinking_budget(total_video_dur),
+                        thinking_budget=(
+                            args.thinking_budget
+                            if args.thinking_budget is not None
+                            else calculate_dynamic_thinking_budget(total_video_dur)
+                        ),
                         timeout_sec=float(args.timeout),
                     )
                 except Exception as e:

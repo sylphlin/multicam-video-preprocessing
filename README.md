@@ -1,16 +1,20 @@
 # Multi-Camera Video Pipeline & AI Editing Suite
 
+[![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v2.0+-4285F4.svg)](https://github.com/googleapis/python-genai)
+[![Gemini 4 Hydrogen](https://img.shields.io/badge/Gemini%204-Hydrogen-yellow.svg)](https://cloud.google.com/vertex-ai)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-EBU%20R128-red.svg)](https://ffmpeg.org/)
+
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
 > [!IMPORTANT]
 > **Google Antigravity Native Plugin & Workflow Suite**  
-> This toolkit provides a 3-stage multi-camera preprocessing and AI rough-cut workflow for **Google Antigravity** (powered by **Vertex AI Gemini 3.8 Flash**) and professional NLE systems (**DaVinci Resolve**, **Adobe Premiere Pro**, and **Final Cut Pro**).
+> This toolkit provides a 3-stage multi-camera preprocessing and AI rough-cut workflow for **Google Antigravity** (powered by **Vertex AI Gemini 4 Hydrogen**, `gemini-4-hydrogen`) and professional NLE systems (**DaVinci Resolve**, **Adobe Premiere Pro**, and **Final Cut Pro**).
 
 ---
 
-**Multi-Camera Video Pipeline & AI Editing Suite** synchronizes 2 to 6 camera angles, normalizes broadcast loudness, generates AI rough-cut timelines, and renders multi-camera preview videos. Instruct the Antigravity Agent in natural language to execute the complete multi-camera preprocessing and rough-cut workflow.
+**Multi-Camera Video Pipeline & AI Editing Suite** synchronizes 2 to 6 camera angles, normalizes broadcast loudness, generates AI rough-cut timelines, and renders multi-camera preview videos. Instruct the Antigravity Agent in natural language to execute the complete multi-camera workflow.
 
 ---
 
@@ -26,7 +30,7 @@ agy plugin install https://github.com/sylphlin/multicam-video-preprocessing
 
 ### Step 2 — Install Python and Media Dependencies
 
-Install `requirements.txt`. The `static-ffmpeg` package automatically provides cross-platform `ffmpeg` and `ffprobe` binaries when system FFmpeg is absent, while preserving native system FFmpeg and hardware acceleration (`h264_videotoolbox`) when already installed.
+Install `requirements.txt`. When system FFmpeg is absent, `static-ffmpeg` provides cross-platform `ffmpeg` and `ffprobe` binaries. When native FFmpeg is installed, the pipeline preserves system FFmpeg and hardware acceleration (`h264_videotoolbox`).
 
 ```bash
 pip install -r ~/.gemini/config/plugins/multicam-video-preprocessing/requirements.txt
@@ -34,7 +38,7 @@ pip install -r ~/.gemini/config/plugins/multicam-video-preprocessing/requirement
 
 ### Step 3 — Authenticate ADC and Provision Google Cloud Resources (`setup.sh`)
 
-Authenticate Application Default Credentials and run `setup.sh` to provision the GCS bucket, two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days), IAM bindings, and `.env`:
+Authenticate Application Default Credentials and run `setup.sh`. This script provisions the GCS bucket, configures two-tier lifecycle rules (`raw/`: 2 days; deliverables: 15 days), binds IAM permissions, and generates `.env`:
 
 ```bash
 gcloud auth application-default login
@@ -60,7 +64,7 @@ multicam-video-preprocessing/
 │       ├── SKILL.md                                      # Antigravity skill manifest and 3-stage gated runbook
 │       ├── scripts/                                      # Canonical execution scripts & modules (SSOT)
 │       │   ├── multicam_pipeline.py                      # Stage 1: MFCC sync, -14 LUFS norm, synced masters, grid merge
-│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 3.8 Flash EDL generation & smart segmentation
+│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 4 Hydrogen EDL generation & smart segmentation
 │       │   ├── export_fcp7_xml.py                        # Stage 3A: FCP7 XML timeline export (Primary)
 │       │   ├── edl_to_video.py                           # Stage 3B: Single-pass hardware video rendering (Secondary)
 │       │   └── modules/                                  # Acoustic, video, segmenter, validator, and GCP/Vertex AI modules
@@ -68,7 +72,7 @@ multicam-video-preprocessing/
 │           └── edl_interview_template.md                 # Gemini multimodal interview rough-cut rules
 ├── setup.sh                                              # Native gcloud setup script (GCS, Lifecycle, IAM, .env)
 ├── .env.example                                          # Vertex AI (ADC) and GCS configuration template
-└── tests/                                                # Offline unit test suite (50 tests)
+└── tests/                                                # Offline unit test suite (54 tests)
 ```
 
 ---
@@ -98,8 +102,8 @@ flowchart TD
         S1_3 --> S1_4
     end
 
-    subgraph S2["Stage 2: Gemini 3.8 Flash Multimodal Video Rough-Cut"]
-        S2_1["2.1 Silence-Aware Smart Segmentation (30-40 min) & Parallel Inference<br/>(MEDIA_RESOLUTION_LOW + Dynamic Thinking Budget)"]:::stage2Style
+    subgraph S2["Stage 2: Gemini 4 Hydrogen Multimodal Video Rough-Cut"]
+        S2_1["2.1 Silence-Aware Smart Segmentation (30-40 min) & Parallel Inference<br/>(gemini-4-hydrogen, 1M Context / 65,536 Max Output, MEDIA_RESOLUTION_LOW + Dynamic Thinking Level)"]:::stage2Style
         S2_2["2.2 8-Check Deterministic EDL Semantic Validator<br/>(6 ERROR + 2 WARN Checks)"]:::stage2Style
         EDL["Artifact: Unified EDL & Audit Report<br/>(edl_full.csv + edl_full_report.md)"]:::artifactStyle
         S2_1 --> S2_2
@@ -167,7 +171,7 @@ Interact with the Agent in Antigravity using two methods:
   2. `edl_full.csv` and `edl_full_report.md` (Camera switching decisions and semantic validation report).
 
 ### Scenario 3: Multi-Camera Rough-Cut from a Google Drive Folder
-- **Use Case**: Process all camera angles stored in a shared Google Drive folder with automatic `md5Checksum` cache verification.
+- **Use Case**: Process all camera angles in a shared Google Drive folder with automatic `md5Checksum` cache verification.
 - **Mode A (`/ + @` Concise Command)**:
   ```text
   /multicam-video-preprocessing Folder: https://drive.google.com/drive/folders/FOLDER_ID
@@ -203,15 +207,19 @@ Interact with the Agent in Antigravity using two methods:
 
 ---
 
-### Stage 2: Gemini 3.8 Flash Multimodal Video Rough-Cut
+### Stage 2: Gemini 4 Hydrogen Multimodal Video Rough-Cut
 
 1. **Pre-Roll and Countdown Removal**:
    - Removes clapperboards, mic checks, and on-set countdowns (`5, 4, 3, 2, 1`).
-   - Verifies `[Global_Start_Time, Global_Start_Time + 2.0s]` to ensure zero countdown residue and trims post-interview chatter at `Global_End_Time`.
-2. **Standard Multimodal Inference & Silence-Aware Smart Segmentation (`30–40 min` Windows)**:
-   - Runs **Vertex AI Gemini 3.8 Flash** in Standard Multimodal mode (`MEDIA_RESOLUTION_LOW` + dynamic `thinking_budget` `1024–4096`) by default.
-   - For videos longer than 40 minutes (`2400s`), the pipeline detects natural speech pauses (`ffmpeg silencedetect` + RMS energy minimum fallback), slices lossless temporary chunks into `<output_dir>/_edl_chunks/`, runs parallel inference via `gs://<bucket>/raw/edl_chunks/`, stitches all shifted timestamps into `edl_full.csv`, and deletes all temporary local and GCS chunks in `finally` blocks.
-3. **8-Check Deterministic EDL Semantic Validation**:
+   - Verifies `[Global_Start_Time, Global_Start_Time + 2.0s]` to prevent countdown residue and trims post-interview chatter at `Global_End_Time`.
+2. **Gemini 4 Hydrogen Standard Multimodal Inference**:
+   - Defaults to model `gemini-4-hydrogen` (**Vertex AI Gemini 4 Hydrogen**), which provides a unified `1M` token context window with a `65,536` `max_output_tokens` cap across thinking and output tokens.
+   - Runs Standard Multimodal mode (`MEDIA_RESOLUTION_LOW`) with a dynamic `thinking_level` (`low`, `medium`, or `high` mapped from video duration via `resolve_thinking_level`) and omits `temperature` for Gemini 4 compatibility.
+3. **Silence-Aware Smart Segmentation (`30–40 min` Windows)**:
+   - Processes videos up to 40 minutes (`2400s`) in one pass.
+   - For videos longer than 40 minutes, `generate_edl.py` detects natural speech pauses (`ffmpeg silencedetect` and RMS energy minimum) and slices temporary chunks into `<output_dir>/_edl_chunks/`.
+   - Runs parallel Vertex AI inference via `gs://<bucket>/raw/edl_chunks/`, stitches shifted timestamps into `edl_full.csv`, and deletes all temporary local and GCS chunks in `finally` blocks.
+4. **8-Check Deterministic EDL Semantic Validation**:
    - Validates `E_NO_ROWS`, `E_PARSE_TIME`, `E_NEGATIVE_DURATION`, `E_NON_MONOTONIC`, `E_OVERLAP`, `E_EMPTY_CAMERA`, `W_UNKNOWN_CAMERA`, and `W_GAP`.
    - Writes `edl_full.csv` and `edl_full_report.md` to disk for review.
 
@@ -226,7 +234,7 @@ Interact with the Agent in Antigravity using two methods:
 
 ### Stage 3B: Single-Pass Video Rendering
 
-Renders `final_cut_full.mp4` directly from the synchronized camera masters in a single hardware-accelerated pass when requested by the user.
+Renders `final_cut_full.mp4` directly from the synchronized camera masters in one hardware-accelerated pass upon user request.
 
 ---
 
@@ -241,4 +249,4 @@ Renders `final_cut_full.mp4` directly from the synchronized camera masters in a 
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project uses the [MIT License](LICENSE).

@@ -1,16 +1,20 @@
 # Multi-Camera Video Pipeline & AI Editing Suite
 
+[![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v2.0+-4285F4.svg)](https://github.com/googleapis/python-genai)
+[![Gemini 4 Hydrogen](https://img.shields.io/badge/Gemini%204-Hydrogen-yellow.svg)](https://cloud.google.com/vertex-ai)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-EBU%20R128-red.svg)](https://ffmpeg.org/)
+
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
 > [!IMPORTANT]
 > **Google Antigravity ネイティブプラグイン＆ワークフロースイート**  
-> 本ツールキットは、**Google Antigravity**（**Vertex AI Gemini 3.8 Flash** 搭載）およびプロ向け NLE（**DaVinci Resolve**、**Adobe Premiere Pro**、**Final Cut Pro**）向けの 3 ステージ・マルチカメラ前処理＆AI ラフカットスイートです。
+> 本ツールキットは、**Google Antigravity**（**Vertex AI Gemini 4 Hydrogen**, `gemini-4-hydrogen` 搭載）およびプロ向け NLE（**DaVinci Resolve**、**Adobe Premiere Pro**、**Final Cut Pro**）向けの 3 ステージ・マルチカメラ前処理＆AI ラフカットワークフローを提供します。
 
 ---
 
-**Multi-Camera Video Pipeline & AI Editing Suite** は、2〜6 台のカメラ映像の音響同期、ラウドネス正規化、AI ラフカットタイムライン生成、およびマルチカメラプレビュー動画レンダリングを実行します。Antigravity チャット画面で自然言語で指示するだけで、マルチカメラ前処理からラフカット生成までを自動実行します。
+**Multi-Camera Video Pipeline & AI Editing Suite** は、2〜6 台のカメラ映像の音響同期、ラウドネス正規化、AI ラフカットタイムライン生成、およびマルチカメラプレビュー動画レンダリングを実行します。Antigravity チャット画面で自然言語で指示すると、マルチカメラ前処理からラフカット生成までを自動実行します。
 
 ---
 
@@ -60,7 +64,7 @@ multicam-video-preprocessing/
 │       ├── SKILL.md                                      # スキル仕様および 3 ステージ実行ランブック
 │       ├── scripts/                                      # コア実行スクリプト＆モジュール (SSOT)
 │       │   ├── multicam_pipeline.py                      # Stage 1: MFCC 同期、-14 LUFS 正規化、同期マスター、グリッド合成
-│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 3.8 Flash EDL 生成＆無音スマート分割
+│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 4 Hydrogen EDL 生成＆無音スマート分割
 │       │   ├── export_fcp7_xml.py                        # Stage 3A: FCP7 XML タイムライン出力（主要ルート）
 │       │   ├── edl_to_video.py                           # Stage 3B: シングルパス・ハードウェア動画レンダリング（副ルート）
 │       │   └── modules/                                  # 音響、動画、無音分割、検証、GCP/Vertex AI モジュール
@@ -68,7 +72,7 @@ multicam-video-preprocessing/
 │           └── edl_interview_template.md                 # Gemini マルチモーダル・インタビューラフカット規則
 ├── setup.sh                                              # ネイティブ gcloud セットアップスクリプト（GCS、ライフサイクル、IAM、.env）
 ├── .env.example                                          # Vertex AI (ADC) および GCS 環境変数テンプレート
-└── tests/                                                # オフライン単体テストスイート (50 テスト)
+└── tests/                                                # オフライン単体テストスイート (54 テスト)
 ```
 
 ---
@@ -98,8 +102,8 @@ flowchart TD
         S1_3 --> S1_4
     end
 
-    subgraph S2["Stage 2: Gemini 3.8 Flash マルチモーダル動画ラフカット"]
-        S2_1["2.1 無音検出スマート分割 (30-40 分) ＆並列推論<br/>(MEDIA_RESOLUTION_LOW + 動的 Thinking Budget)"]:::stage2Style
+    subgraph S2["Stage 2: Gemini 4 Hydrogen マルチモーダル動画ラフカット"]
+        S2_1["2.1 無音検出スマート分割 (30-40 分) ＆並列推論<br/>(gemini-4-hydrogen, 1M Context / 65,536 Max Output, MEDIA_RESOLUTION_LOW + 動的 Thinking Level)"]:::stage2Style
         S2_2["2.2 8 項目決定論的 EDL 検証<br/>(6 ERROR + 2 WARN チェック)"]:::stage2Style
         EDL["中間アーティファクト: 統合 EDL ＆検証レポート<br/>(edl_full.csv + edl_full_report.md)"]:::artifactStyle
         S2_1 --> S2_2
@@ -130,9 +134,9 @@ flowchart TD
 
 ## Antigravity の操作方法と利用シナリオ (Usage & Scenarios)
 
-Antigravity では以下の 2 つの方法で実行できます：
-1. **ショートカット指定（`/skill` + `@ファイル`）**：`/multicam-video-preprocessing` を選択し、`@` でカメラ映像や Google Drive フォルダを指定するだけで実行できます。
-2. **自然言語プロンプト**：通常の会話文で要望を伝え、`@` ファイルやクラウドリンクを添付すると自動的にプラグインが呼び出されます。
+Antigravity では以下の 2 つの方法で実行します：
+1. **ショートカット指定（`/skill` + `@ファイル`）**：`/multicam-video-preprocessing` を選択し、`@` でカメラ映像や Google Drive フォルダを指定します。
+2. **自然言語プロンプト**：同期や編集の要件を自然言語で記述し、`@` ファイルやクラウドリンクを添付します。
 
 ### シナリオ 1：NLE 用 FCP7 XML タイムライン出力（推奨メインワークフロー）
 - **ユースケース**：AI ラフカットのカメラ切り替え判定を DaVinci Resolve、Adobe Premiere Pro、または Final Cut Pro に読み込み、本編集やカラーグレーディングを行います。
@@ -147,9 +151,13 @@ Antigravity では以下の 2 つの方法で実行できます：
 - **生成される成果物**：
   1. `final_cut_full.xml`（カメラ切り替え点と理由マーカーを含むタイムライン）。
   2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（時間同期および `-14 LUFS` 正規化済みカメラマスター）。
+- **DaVinci Resolve への読み込み手順**：
+  1. DaVinci Resolve を開き、新規プロジェクトを作成します。
+  2. `output/CAM1_synced.mp4` と `output/CAM2_synced.mp4` を **Media Pool** にドラッグします。
+  3. **File -> Import -> Timeline...**（`Cmd + Shift + I`）を選択し、`final_cut_full.xml` を読み込みます。
 
 ### シナリオ 2：ラフカット動画の直接レンダリング
-- **ユースケース**：NLE を開かずに、カメラ切り替え済みの MP4 プレビュー動画を直接レンダリングします。
+- **ユースケース**：NLE を開かずに、カメラ切り替え済みの MP4 ラフカット動画を直接レンダリングします。
 - **方法 A（`/ + @` ショートカット指定）**：
   ```text
   /multicam-video-preprocessing CAM1: @CAM1.mp4, CAM2: @CAM2.mp4, 出力: MP4 直接レンダリング
@@ -163,7 +171,7 @@ Antigravity では以下の 2 つの方法で実行できます：
   2. `edl_full.csv` および `edl_full_report.md`（カメラ切り替えリストと 8 項目検証レポート）。
 
 ### シナリオ 3：Google Drive フォルダからのマルチカメラ同期＆ラフカット
-- **ユースケース**：Google Drive 共有フォルダ内の全カメラ映像を MD5 キャッシュ検証付きで自動取得し、同期からタイムライン出力まで一括実行します。
+- **ユースケース**：Google Drive 共有フォルダ内の全カメラ映像を `md5Checksum` キャッシュ検証付きで取得し、同期からタイムライン出力までを実行します。
 - **方法 A（`/ + @` ショートカット指定）**：
   ```text
   /multicam-video-preprocessing フォルダ: https://drive.google.com/drive/folders/FOLDER_ID
@@ -180,9 +188,26 @@ Antigravity では以下の 2 つの方法で実行できます：
 
 ## 3 ステージ技術概要
 
-1. **Stage 1（マルチカメラ同期＆前処理）**：MFCC 音響アライメント＆サブフレーム微調整（`<0.125 ms`）、EBU R128（`-14 LUFS`）2 パス線形ラウドネス正規化、フレーム精度同期マスター出力（`CAM*_synced.mp4`, `20 Mbps`）、および軽量全編グリッド合成（`multicam_merged_full.mp4`, `10 fps`, `1.2 Mbps`, 1 秒短 GOP）を実行します。
-2. **Stage 2（Gemini 3.8 Flash マルチモーダルラフカット＆無音検出スマート分割）**：デフォルトで **Vertex AI Gemini 3.8 Flash** 標準マルチモーダルモード（`MEDIA_RESOLUTION_LOW` + 動的 `thinking_budget` `1024–4096`）を使用します。40 分を超える動画では 30〜40 分の自然な無音箇所で `<output_dir>/_edl_chunks/` に一時分割して並列推論し、`edl_full.csv` に統合した後、`finally` ブロックでローカルと GCS の一時チャンクを自動削除し、8 項目の決定論的 EDL 検証（`6 ERROR + 2 WARN`）を実行します。
-3. **Stage 3A & 3B（FCP7 XML タイムライン出力 / シングルパス動画レンダリング）**：NTSC 非整数フレームレート（`23.976`, `29.97`, `59.94`）やドロップフレームに対応した `final_cut_full.xml` の出力、または `final_cut_full.mp4` の直接レンダリングを行います。
+### Stage 1：マルチカメラ同期＆前処理
+1. **MFCC 音響アライメント＆サブフレーム微調整（`<0.125 ms`）**：3 段階フォールバック（120 秒高速スキャン $\rightarrow$ 全編 MFCC $\rightarrow$ 生波形 1D FFT）を実行し、`8 kHz` の 1 サンプル精度にロックしつつ FFT メモリ使用量を `97.7%` 削減します。
+2. **EBU R128 (`-14 LUFS`) 2 パス線形ラウドネス正規化**：パス 1 で `I`、`LRA = 11.0 LU`、`TP = -1.5 dBTP` を計測し、パス 2 で線形ゲイン（`linear=true`）を適用します。
+3. **フレーム精度同期マスター出力 (`CAM*_synced.mp4`)**：ハードウェアアクセラレーション（`h264_videotoolbox` または `libx264`、`20 Mbps`）で再エンコードし、キーフレームずれを防止します。
+4. **全編コンパクトグリッド合成 (`multicam_merged_full.mp4`)**：2〜6 台の同期カメラを 1 枚のラベル付きキャンバス（$\le 1920 \times 1080$、各セル $\ge 640 \times 480$）に `10 fps`、`1.2 Mbps`、1 秒短 GOP で合成します。
+
+### Stage 2：Gemini 4 Hydrogen マルチモーダルラフカット＆無音検出スマート分割
+1. **プリロールおよびカウントダウン除去**：カチンコ、マイクテスト、開始前カウントダウン（`5, 4, 3, 2, 1`）を除去し、`[Global_Start_Time, Global_Start_Time + 2.0s]` を検証して終了後の雑談を `Global_End_Time` でトリミングします。
+2. **Gemini 4 Hydrogen 標準マルチモーダル推論**：
+   - デフォルトモデル `gemini-4-hydrogen`（**Vertex AI Gemini 4 Hydrogen**）を使用し、統合 `1M` トークンコンテキストウィンドウと思考・出力トークン共通の `65,536` `max_output_tokens` 上限を適用します。
+   - 標準マルチモーダルモード（`MEDIA_RESOLUTION_LOW`）を実行し、`resolve_thinking_level` で動画長に応じた動的 `thinking_level`（`low` / `medium` / `high`）を設定します。Gemini 4 互換性のため `temperature` は省略します。
+3. **無音検出スマート分割（`30〜40 分` ウィンドウ）**：
+   - 40 分（`2400s`）以下の動画は 1 パスで処理します。
+   - 40 分を超える動画では、`generate_edl.py` が `ffmpeg silencedetect` と RMS エネルギー極小値で自然な発話休止点を検出し、`<output_dir>/_edl_chunks/` に一時分割します。
+   - `gs://<bucket>/raw/edl_chunks/` 経由で並列 Vertex AI 推論を実行し、タイムスタンプをシフトして `edl_full.csv` に統合した後、`finally` ブロックでローカルおよび GCS の一時チャンクを削除します。
+4. **8 項目の決定論的 EDL 検証**：`E_NO_ROWS`、`E_PARSE_TIME`、`E_NEGATIVE_DURATION`、`E_NON_MONOTONIC`、`E_OVERLAP`、`E_EMPTY_CAMERA`、`W_UNKNOWN_CAMERA`、`W_GAP` を検証し、`edl_full.csv` と `edl_full_report.md` を出力します。
+
+### Stage 3A & 3B：FCP7 XML タイムライン出力＆ハードウェア動画レンダリング
+- **Stage 3A（主要ルート）**：同期マスターを 1:1 タイムコード（`start == in`, `end == out`）でリンクし、NTSC 非整数フレームレート（`23.976`, `29.97`, `59.94`）およびドロップフレームに対応した `final_cut_full.xml` を出力します。
+- **Stage 3B（副ルート）**：ユーザーの指示に応じて同期マスターからシングルパス・ハードウェアレンダリングを実行し、`final_cut_full.mp4` を出力します。
 
 ---
 
@@ -197,4 +222,4 @@ Antigravity では以下の 2 つの方法で実行できます：
 
 ## ライセンス (License)
 
-本プロジェクトは [MIT License](LICENSE) の下で提供されています。
+本プロジェクトは [MIT License](LICENSE) を採用しています。

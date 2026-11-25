@@ -1,16 +1,20 @@
 # Multi-Camera Video Pipeline & AI Editing Suite
 
+[![Google GenAI SDK](https://img.shields.io/badge/Google%20GenAI%20SDK-v2.0+-4285F4.svg)](https://github.com/googleapis/python-genai)
+[![Gemini 4 Hydrogen](https://img.shields.io/badge/Gemini%204-Hydrogen-yellow.svg)](https://cloud.google.com/vertex-ai)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-EBU%20R128-red.svg)](https://ffmpeg.org/)
+
 [English (en)](README.md) | [繁體中文 (zh-TW)](README.zh-TW.md) | [简体中文 (zh-CN)](README.zh-CN.md) | [日本語 (ja)](README.ja.md) | [한국어 (ko)](README.ko.md)
 
 ---
 
 > [!IMPORTANT]
 > **Google Antigravity 原生技能与工作流套件**  
-> 本工具集为 **Google Antigravity**（由 **Vertex AI Gemini 3.8 Flash** 驱动）与专业非线性剪辑软件（**DaVinci Resolve**、**Adobe Premiere Pro**、**Final Cut Pro**）打造三阶段多机位预处理与 AI 粗剪工作流。
+> 本工具集提供适用于 **Google Antigravity**（采用 **Vertex AI Gemini 4 Hydrogen**，`gemini-4-hydrogen`）与专业非线性剪辑软件（**DaVinci Resolve**、**Adobe Premiere Pro**、**Final Cut Pro**）的三阶段多机位预处理与 AI 粗剪工作流。
 
 ---
 
-**Multi-Camera Video Pipeline & AI Editing Suite** 支持 2 至 6 机位音频对齐、广播级响度标准化、AI 粗剪时间线生成与多机位预览视频渲染。直接在 Antigravity 对话窗口使用自然语言下达指令，即可由 Agent 自动执行多机位同步与粗剪工作流。
+**Multi-Camera Video Pipeline & AI Editing Suite** 执行 2 至 6 机位音频对齐、广播级响度标准化、AI 粗剪时间线生成与多机位预览视频渲染。在 Antigravity 对话窗口输入自然语言指令，Agent 即自动执行完整多机位工作流。
 
 ---
 
@@ -60,7 +64,7 @@ multicam-video-preprocessing/
 │       ├── SKILL.md                                      # 技能规范与三阶段自动化执行手册
 │       ├── scripts/                                      # 核心执行脚本与模块实体目录 (SSOT)
 │       │   ├── multicam_pipeline.py                      # Stage 1: MFCC 同步、-14 LUFS 响度标准化、同步母带、网格合成
-│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 3.8 Flash 多模态粗剪与智能静音分段
+│       │   ├── generate_edl.py                           # Stage 2: Vertex AI Gemini 4 Hydrogen 多模态粗剪与智能静音分段
 │       │   ├── export_fcp7_xml.py                        # Stage 3A: FCP7 XML 时间线导出（主要路径）
 │       │   ├── edl_to_video.py                           # Stage 3B: 单次硬件加速视频渲染（次要路径）
 │       │   └── modules/                                  # 声学、视频、静音分段、验证器与 GCP/Vertex AI 模块
@@ -68,7 +72,7 @@ multicam-video-preprocessing/
 │           └── edl_interview_template.md                 # Gemini 多模态访谈粗剪规则
 ├── setup.sh                                              # 原生 gcloud 云端环境一键配置脚本
 ├── .env.example                                          # Vertex AI (ADC) 与 GCS 环境变量模板
-└── tests/                                                # 离线单元测试套件 (50 项测试)
+└── tests/                                                # 离线单元测试套件 (54 项测试)
 ```
 
 ---
@@ -98,8 +102,8 @@ flowchart TD
         S1_3 --> S1_4
     end
 
-    subgraph S2["Stage 2: Gemini 3.8 Flash 多模态视频粗剪"]
-        S2_1["2.1 静音感知智能分段 (30-40 分钟) 与并行推理<br/>(MEDIA_RESOLUTION_LOW + 动态 Thinking Budget)"]:::stage2Style
+    subgraph S2["Stage 2: Gemini 4 Hydrogen 多模态视频粗剪"]
+        S2_1["2.1 静音感知智能分段 (30-40 分钟) 与并行推理<br/>(gemini-4-hydrogen, 1M Context / 65,536 Max Output, MEDIA_RESOLUTION_LOW + 动态 Thinking Level)"]:::stage2Style
         S2_2["2.2 8 项确定性 EDL 语义验证<br/>(6 项 ERROR + 2 项 WARN 检查)"]:::stage2Style
         EDL["中间产物: 统一剪辑决策表与验证报告<br/>(edl_full.csv + edl_full_report.md)"]:::artifactStyle
         S2_1 --> S2_2
@@ -130,9 +134,9 @@ flowchart TD
 
 ## Antigravity 操作方式与使用场景 (Usage & Scenarios)
 
-在 Antigravity 中有两种调用方式：
-1. **极简指令（`/skill` + `@文件`）**：输入 `/multicam-video-preprocessing` 绑定技能，并用 `@` 指定多机位视频文件或云端文件夹链接，无需额外解释。
-2. **自然语言口语描述**：直接用口语描述需求并附上 `@` 文件或云端链接，Agent 会自动加载对应插件。
+在 Antigravity 中提供两种调用方式：
+1. **极简指令（`/skill` + `@文件`）**：选择 `/multicam-video-preprocessing`，并以 `@` 指定多机位视频文件或云端文件夹链接。
+2. **自然语言指令**：直接描述多机位同步与剪辑需求，并附上 `@` 文件或云端链接。
 
 ### 场景 1：导出专业 NLE XML 时间线（推荐主要工作流）
 - **适用场景**：将 AI 多机位粗剪决策导入 DaVinci Resolve、Adobe Premiere Pro 或 Final Cut Pro 进行精剪与调色。
@@ -140,21 +144,25 @@ flowchart TD
   ```text
   /multicam-video-preprocessing 机位1: @CAM1.mp4, 机位2: @CAM2.mp4
   ```
-- **方式 B（口语描述）**：
+- **方式 B（自然语言指令）**：
   ```text
   帮我同步 @CAM1.mp4 和 @CAM2.mp4，将响度标准化到 -14 LUFS，并导出可导入 DaVinci Resolve 的 FCP7 XML 粗剪时间线。
   ```
 - **交付成果**：
   1. `final_cut_full.xml`（包含机位切换切点与剪辑理由标记的时间线）。
-  2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（已完成毫秒级对齐与 `-14 LUFS` 响度标准化的同步母带）。
+  2. `CAM1_synced.mp4`、`CAM2_synced.mp4`（完成时间对齐与 `-14 LUFS` 响度标准化的同步母带）。
+- **导入 DaVinci Resolve 步骤**：
+  1. 打开 DaVinci Resolve 并创建新项目。
+  2. 将 `output/CAM1_synced.mp4` 与 `output/CAM2_synced.mp4` 拖入 **Media Pool**。
+  3. 选择 **File -> Import -> Timeline...**（`Cmd + Shift + I`）并导入 `final_cut_full.xml`。
 
 ### 场景 2：直接渲染多机位粗剪成品视频
-- **适用场景**：无需打开剪辑软件，直接输出完成机位切换的 MP4 预览或成品视频。
+- **适用场景**：无需打开剪辑软件，直接输出完成机位切换的 MP4 粗剪视频。
 - **方式 A（`/ + @` 极简指令）**：
   ```text
   /multicam-video-preprocessing 机位1: @CAM1.mp4, 机位2: @CAM2.mp4, 输出: 直接渲染 MP4
   ```
-- **方式 B（口语描述）**：
+- **方式 B（自然语言指令）**：
   ```text
   帮我把 @CAM1.mp4 和 @CAM2.mp4 做多机位 AI 粗剪，并直接渲染生成 final_cut_full.mp4。
   ```
@@ -163,12 +171,12 @@ flowchart TD
   2. `edl_full.csv` 与 `edl_full_report.md`（机位切换决策表与 8 项语义验证报告）。
 
 ### 场景 3：从 Google Drive 文件夹执行多机位同步与粗剪
-- **适用场景**：直接提供存放多机位素材的 Google Drive 文件夹链接，由 Agent 自动下载（含远程 MD5 缓存校验）、同步并导出粗剪时间线。
+- **适用场景**：处理共享 Google Drive 文件夹内的所有机位文件，并自动执行 `md5Checksum` 缓存校验。
 - **方式 A（`/ + @` 极简指令）**：
   ```text
   /multicam-video-preprocessing 文件夹: https://drive.google.com/drive/folders/FOLDER_ID
   ```
-- **方式 B（口语描述）**：
+- **方式 B（自然语言指令）**：
   ```text
   从这个 Google Drive 文件夹 https://drive.google.com/drive/folders/FOLDER_ID 下载多机位视频，完成音频同步与 -14 LUFS 标准化，并导出 FCP7 XML 时间线。
   ```
@@ -180,9 +188,26 @@ flowchart TD
 
 ## 三阶段核心技术说明
 
-1. **Stage 1（多机位同步与预处理）**：执行 MFCC 声学时间对齐与亚帧微调（`<0.125 ms`）、EBU R128（`-14 LUFS`）双阶段线性响度标准化、逐帧精准同步母带导出（`CAM*_synced.mp4`，`20 Mbps`）与全长轻量网格合成（`multicam_merged_full.mp4`，`10 fps`、`1.2 Mbps`、1 秒短 GOP）。
-2. **Stage 2（Gemini 3.8 Flash 多模态粗剪与静音感知智能分段）**：默认采用 **Vertex AI Gemini 3.8 Flash** 标准多模态模式（`MEDIA_RESOLUTION_LOW` + 动态 `thinking_budget` `1024–4096`）。当视频超过 40 分钟时，自动在 30–40 分钟自然静音点无损切分至 `<output_dir>/_edl_chunks/` 并行推理，自动平移缝合为 `edl_full.csv` 并在 `finally` 块清理本地与云端临时分段，同时执行 8 项确定性语义检查（`6 ERROR + 2 WARN`）。
-3. **Stage 3A & 3B（导出 FCP7 XML 时间线 / 硬件加速视频渲染）**：支持 NTSC 分数帧率（`23.976`, `29.97`, `59.94`）与丢帧时间码（Drop-Frame）导出 `final_cut_full.xml`，或直接单次硬件渲染 `final_cut_full.mp4`。
+### Stage 1：多机位同步与预处理
+1. **MFCC 声学时间对齐与亚帧微调（`<0.125 ms`）**：执行三阶扫描（120 秒快速扫描 $\rightarrow$ 全长 MFCC $\rightarrow$ 原始波形 1D FFT），将对齐精度锁定至 `8 kHz` 单一音频采样点，并降低 `97.7%` FFT 内存占用。
+2. **EBU R128 (`-14 LUFS`) 双阶段线性响度标准化**：第一阶段测量 `I`、`LRA = 11.0 LU` 与 `TP = -1.5 dBTP`；第二阶段应用线性增益（`linear=true`），消除动态压缩呼吸效应。
+3. **逐帧同步母带导出 (`CAM*_synced.mp4`)**：默认采用硬件加速重编码（`h264_videotoolbox` 或 `libx264`，`20 Mbps`），防止关键帧偏移。
+4. **全长轻量网格合成 (`multicam_merged_full.mp4`)**：将 2 至 6 机位合成为单一标记画布（$\le 1920 \times 1080$，每格 $\ge 640 \times 480$），采用 `10 fps`、`1.2 Mbps` 与 1 秒短 GOP 编码。
+
+### Stage 2：Gemini 4 Hydrogen 多模态粗剪决策与静音感知智能分段
+1. **片头倒计时与场记板剔除**：移除场记板、试音与开拍倒计时（`5, 4, 3, 2, 1`），验证 `[Global_Start_Time, Global_Start_Time + 2.0s]` 确保零倒计时残留，并在 `Global_End_Time` 裁除收工闲聊。
+2. **Gemini 4 Hydrogen 标准多模态推理**：
+   - 默认采用模型 `gemini-4-hydrogen`（**Vertex AI Gemini 4 Hydrogen**），提供统一 `1M` Token 上下文窗口，并对思考与输出 Token 共享 `65,536` `max_output_tokens` 上限。
+   - 运行标准多模态模式（`MEDIA_RESOLUTION_LOW`），通过 `resolve_thinking_level` 按视频时长动态映射 `thinking_level`（`low` / `medium` / `high`），并省略 `temperature` 参数以兼容 Gemini 4。
+3. **静音感知智能分段（`30–40 分钟` 窗口）**：
+   - 40 分钟（`2400s`）以内的视频以单次推理完成。
+   - 超过 40 分钟的视频由 `generate_edl.py` 通过 `ffmpeg silencedetect` 与 RMS 能量波谷检测自然语音停顿点，无损切分至 `<output_dir>/_edl_chunks/`。
+   - 系统将分段并行上传至 `gs://<bucket>/raw/edl_chunks/` 执行推理，平移时间码并拼接为单一 `edl_full.csv`，最后在 `finally` 块中删除本地与 GCS 临时分段。
+4. **8 项确定性 EDL 语义验证**：验证 `E_NO_ROWS`、`E_PARSE_TIME`、`E_NEGATIVE_DURATION`、`E_NON_MONOTONIC`、`E_OVERLAP`、`E_EMPTY_CAMERA`、`W_UNKNOWN_CAMERA` 与 `W_GAP`，并输出 `edl_full.csv` 与 `edl_full_report.md`。
+
+### Stage 3A & 3B：导出 FCP7 XML 时间线与硬件加速渲染
+- **Stage 3A（主要路径）**：直接链接同步母带并建立 1:1 时间码映射（`start == in`, `end == out`），支持 NTSC 分数帧率（`23.976`, `29.97`, `59.94`）与丢帧时间码（Drop-Frame）。
+- **Stage 3B（次要路径）**：按需由同步母带执行单次硬件加速渲染，输出 `final_cut_full.mp4`。
 
 ---
 

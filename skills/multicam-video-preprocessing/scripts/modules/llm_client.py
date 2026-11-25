@@ -5,6 +5,8 @@ Exclusively uses Google Cloud Vertex AI via Application Default Credentials (ADC
 and Google Cloud Storage (gs:// URIs) -- zero AI Studio API keys or File API uploads.
 """
 
+from __future__ import annotations
+
 import os
 import random
 import sys
@@ -64,26 +66,35 @@ def get_vertex_client(project=None, location=None, timeout_ms=600_000):
     )
 
 
+def resolve_thinking_level(thinking_budget: int | None) -> str:
+    """Map a numeric thinking token budget to a Gemini 4 thinking level."""
+    if thinking_budget is not None and int(thinking_budget) <= 2048:
+        return "low"
+    if thinking_budget is not None and int(thinking_budget) <= 4096:
+        return "medium"
+    return "high"
+
+
 def call_vertex_generate_content(
     prompt,
     project=None,
     location=None,
     gcs_bucket=None,
     region=None,
-    model="gemini-3.8-flash",
+    model="gemini-4-hydrogen",
     gcs_uri=None,
     audio_path=None,
     cleanup_ephemeral_audio=True,
     temperature=0.1,
-    max_tokens=8192,
+    max_tokens=65536,
     thinking_budget=None,
     max_retries=5,
 ):
     """
-    Call Google Cloud Vertex AI Gemini API using Application Default Credentials (ADC).
-    All media files (video/audio) are passed via GCS URIs (`gs://...`).
-    If a local `audio_path` is supplied without `gcs_uri`, it is staged to `gs://<bucket>/raw/audio_chunks/`
-    and automatically cleaned up after inference if `cleanup_ephemeral_audio=True`.
+    Call the Google Cloud Vertex AI Gemini API with Application Default Credentials (ADC).
+    Pass all media files (video or audio) via GCS URIs (`gs://...`).
+    Stage a local `audio_path` to `gs://<bucket>/raw/audio_chunks/` when `gcs_uri` is absent,
+    and delete the staged blob after inference when `cleanup_ephemeral_audio=True`.
     """
     from google.genai import types
 
@@ -132,9 +143,17 @@ def call_vertex_generate_content(
         contents.append(types.Part.from_uri(file_uri=effective_gcs_uri, mime_type=mime))
     contents.append(prompt)
 
-    config_params = {"temperature": temperature, "max_output_tokens": max_tokens}
-    if thinking_budget is not None and ("3.7" in model or "3.8" in model):
-        config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
+    is_gemini_4 = "gemini-4" in str(model).lower()
+    config_params = {"max_output_tokens": max_tokens}
+    if is_gemini_4:
+        if thinking_budget is not None:
+            config_params["thinking_config"] = types.ThinkingConfig(
+                thinking_level=resolve_thinking_level(thinking_budget)
+            )
+    else:
+        config_params["temperature"] = temperature
+        if thinking_budget is not None and ("3.7" in model or "3.8" in model):
+            config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=thinking_budget)
     config = types.GenerateContentConfig(**config_params)
 
     try:
@@ -169,7 +188,7 @@ def call_vertex_generate_content(
 
 def call_llm(
     prompt,
-    model="gemini-3.8-flash",
+    model="gemini-4-hydrogen",
     project=None,
     location=None,
     gcs_bucket=None,
@@ -178,7 +197,7 @@ def call_llm(
     audio_path=None,
     cleanup_ephemeral_audio=True,
     temperature=0.1,
-    max_tokens=8192,
+    max_tokens=65536,
     thinking_budget=None,
 ):
     """

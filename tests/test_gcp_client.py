@@ -228,7 +228,147 @@ class TestGcpClient(unittest.TestCase):
         self.assertIn("-g", cmd_offset)
         self.assertIn("30", cmd_offset)
 
+    def test_resolve_thinking_level(self):
+        from generate_edl import resolve_thinking_level as edl_resolve
+        from modules.llm_client import resolve_thinking_level as llm_resolve
+
+        self.assertIs(edl_resolve, llm_resolve)
+        self.assertEqual(edl_resolve(0), "low")
+        self.assertEqual(edl_resolve(1024), "low")
+        self.assertEqual(edl_resolve(2048), "low")
+        self.assertEqual(edl_resolve(2049), "medium")
+        self.assertEqual(edl_resolve(3000), "medium")
+        self.assertEqual(edl_resolve(4096), "medium")
+        self.assertEqual(edl_resolve(4097), "high")
+        self.assertEqual(edl_resolve(8192), "high")
+        self.assertEqual(edl_resolve(None), "high")
+
+    def test_generate_edl_content_standard_gemini_4_hydrogen_and_legacy_config(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from generate_edl import generate_edl_content_standard
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = SimpleNamespace(
+            candidates=[
+                SimpleNamespace(
+                    content=SimpleNamespace(parts=[SimpleNamespace(thought=False, text="00:00.000,00:05.000,CAM1,R,C")])
+                )
+            ],
+            usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=5, total_token_count=15),
+        )
+
+        # Default model is gemini-4-hydrogen: omit temperature and map short video budget to 'low'
+        generate_edl_content_standard(
+            "gs://my-bucket/raw/merged.mp4",
+            "prompt",
+            client=mock_client,
+            video_duration_sec=300.0,
+            use_ticker=False,
+        )
+        call_kwargs = mock_client.models.generate_content.call_args.kwargs
+        self.assertEqual(call_kwargs["model"], "gemini-4-hydrogen")
+        cfg = call_kwargs["config"]
+        self.assertIsNone(cfg.temperature)
+        self.assertEqual(cfg.max_output_tokens, 65536)
+        self.assertIsNone(cfg.thinking_config.thinking_budget)
+        self.assertTrue(str(cfg.thinking_config.thinking_level).lower().endswith("low"))
+
+        # Long chunk (32 mins -> 4096 budget): map to 'medium'
+        generate_edl_content_standard(
+            "gs://my-bucket/raw/merged.mp4",
+            "prompt",
+            client=mock_client,
+            video_duration_sec=1920.0,
+            use_ticker=False,
+        )
+        cfg_med = mock_client.models.generate_content.call_args.kwargs["config"]
+        self.assertIsNone(cfg_med.temperature)
+        self.assertTrue(str(cfg_med.thinking_config.thinking_level).lower().endswith("medium"))
+
+        # Legacy non-Gemini-4 override: preserve temperature and thinking_budget
+        generate_edl_content_standard(
+            "gs://my-bucket/raw/merged.mp4",
+            "prompt",
+            client=mock_client,
+            model="gemini-2.5-flash",
+            thinking_budget=2048,
+            use_ticker=False,
+        )
+        cfg_legacy = mock_client.models.generate_content.call_args.kwargs["config"]
+        self.assertEqual(cfg_legacy.temperature, 0.1)
+        self.assertEqual(cfg_legacy.thinking_config.thinking_budget, 2048)
+        self.assertIsNone(cfg_legacy.thinking_config.thinking_level)
+
+    def test_call_agentic_video_edl_fallback_gemini_4_hydrogen_config(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from generate_edl import call_agentic_video_edl
+
+        mock_client = MagicMock()
+        mock_client.interactions.create.side_effect = RuntimeError("interactions endpoint unavailable")
+        mock_client.models.generate_content.return_value = SimpleNamespace(
+            candidates=[
+                SimpleNamespace(
+                    content=SimpleNamespace(parts=[SimpleNamespace(thought=False, text="00:00.000,00:05.000,CAM1,R,C")])
+                )
+            ],
+            usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=5, total_token_count=15),
+        )
+
+        call_agentic_video_edl(
+            "gs://my-bucket/raw/merged.mp4",
+            "prompt",
+            client=mock_client,
+        )
+        call_kwargs = mock_client.models.generate_content.call_args.kwargs
+        self.assertEqual(call_kwargs["model"], "gemini-4-hydrogen")
+        cfg = call_kwargs["config"]
+        self.assertIsNone(cfg.temperature)
+        self.assertEqual(cfg.max_output_tokens, 65536)
+        self.assertIsNone(cfg.thinking_config.thinking_budget)
+        self.assertTrue(str(cfg.thinking_config.thinking_level).lower().endswith("medium"))
+
+    @patch("modules.llm_client.get_vertex_client")
+    @patch("modules.llm_client.resolve_gcp_config")
+    def test_call_vertex_generate_content_gemini_4_hydrogen_config(self, mock_cfg, mock_get_client):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from modules.llm_client import call_vertex_generate_content
+
+        mock_cfg.return_value = {
+            "project": "demo-proj",
+            "location": "global",
+            "region": "us-central1",
+            "bucket": "multicam-video-demo-proj",
+        }
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = SimpleNamespace(text="ok")
+        mock_get_client.return_value = mock_client
+
+        # Default Gemini 4 Hydrogen call without thinking_budget
+        out = call_vertex_generate_content("hello")
+        self.assertEqual(out, "ok")
+        kwargs_default = mock_client.models.generate_content.call_args.kwargs
+        self.assertEqual(kwargs_default["model"], "gemini-4-hydrogen")
+        self.assertEqual(kwargs_default["config"].max_output_tokens, 65536)
+        self.assertIsNone(kwargs_default["config"].temperature)
+        self.assertIsNone(kwargs_default["config"].thinking_config)
+
+        # thinking_budget=0 maps to 'low'
+        call_vertex_generate_content("hello", thinking_budget=0)
+        cfg_zero = mock_client.models.generate_content.call_args.kwargs["config"]
+        self.assertIsNone(cfg_zero.temperature)
+        self.assertTrue(str(cfg_zero.thinking_config.thinking_level).lower().endswith("low"))
+
+        # thinking_budget=8192 maps to 'high'
+        call_vertex_generate_content("hello", thinking_budget=8192)
+        cfg_high = mock_client.models.generate_content.call_args.kwargs["config"]
+        self.assertIsNone(cfg_high.temperature)
+        self.assertTrue(str(cfg_high.thinking_config.thinking_level).lower().endswith("high"))
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

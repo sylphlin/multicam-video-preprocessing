@@ -5,7 +5,7 @@
   "version": "1.7.0",
   "category": "productivity",
   "logo": "assets/logo.svg",
-  "description": "Universal multi-camera video processing pipeline and AI editing suite for 2 to 6 cameras. Features MFCC acoustic time alignment with subframe refinement (<0.125ms), EBU R128 loudness normalization (-14 LUFS), multi-in-one compact grid composition (10 fps, 1.2 Mbps, 1s GOP), Gemini 3.8 Flash multimodal rough-cut with silence-aware smart segmentation (30-40 min windows) and auto-cleanup, deterministic 8-check EDL semantic validation, FCP7 XML timeline export, and single-pass hardware video rendering.",
+  "description": "Universal multi-camera video processing pipeline and AI editing suite for 2 to 6 cameras. Features MFCC acoustic time alignment with subframe refinement (<0.125ms), EBU R128 loudness normalization (-14 LUFS), multi-in-one compact grid composition (10 fps, 1.2 Mbps, 1s GOP), Gemini 4 Hydrogen multimodal rough-cut with silence-aware smart segmentation (30-40 min windows) and auto-cleanup, deterministic 8-check EDL semantic validation, FCP7 XML timeline export, and single-pass hardware video rendering.",
   "author": {
     "name": "sylphlin",
     "url": "https://github.com/sylphlin"
